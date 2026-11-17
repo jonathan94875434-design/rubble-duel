@@ -4,6 +4,7 @@ import { mkdirSync } from 'node:fs';
 const OUT = process.argv[2] || 'shots';
 mkdirSync(OUT, { recursive: true });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const BASE = (process.env.BASE || 'http://localhost:8765/').replace(/\/?$/, '/'); // 要測線上版就設 BASE=網址
 const browser = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: 'new',
   args: ['--window-size=1280,760', '--ignore-gpu-blocklist', '--enable-unsafe-swiftshader'], defaultViewport: { width: 1280, height: 760 }, protocolTimeout: 40000 });
 const page = await browser.newPage();
@@ -12,7 +13,7 @@ page.on('console', (m) => { if (m.type() === 'error' && !(m.location().url || ''
 page.on('pageerror', (e) => errs.push('[pageerror] ' + e.message + '\n' + e.stack));
 const ok = (name, cond, extra = '') => console.log(`${cond ? 'PASS' : 'FAIL'}  ${name} ${extra}`);
 const waitPhase = (ph, ms = 15000) => page.waitForFunction((ph) => __game.phase === ph, { timeout: ms }, ph);
-await page.goto('http://localhost:8765/?nolock=1', { waitUntil: 'load' });
+await page.goto(BASE + '?nolock=1', { waitUntil: 'load' });
 await sleep(600);
 await page.screenshot({ path: OUT + '/p0-menu.png' });
 await page.click('#btn-bot'); await waitPhase('loadout');

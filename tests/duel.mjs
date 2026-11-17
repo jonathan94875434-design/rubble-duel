@@ -7,6 +7,7 @@ mkdirSync(OUT, { recursive: true });
 const PEER = process.argv[3] === 'peer';
 const Q = PEER ? 'nolock=1' : 'local=1&nolock=1';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const BASE = (process.env.BASE || 'http://localhost:8765/').replace(/\/?$/, '/'); // 要測線上版就設 BASE=網址
 const browser = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: 'new',
   args: ['--window-size=1100,680', '--ignore-gpu-blocklist', '--enable-unsafe-swiftshader', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows'],
   defaultViewport: { width: 1100, height: 680 }, protocolTimeout: 40000 });
@@ -27,7 +28,7 @@ const waitPhase = async (page, ph, ms = 15000) => { await page.waitForFunction((
 const hash = (page) => page.evaluate(() => { const t = __game.world.types, h = __game.world.hp; let a = 0, n = 0, s = 0; for (let i = 0; i < t.length; i++) { if (t[i]) { n++; a = (Math.imul(a, 31) + i * t[i]) | 0; s += h[i]; } } return `${n}/${a}/${Math.round(s)}`; });
 const ok = (name, cond, extra = '') => console.log(`${cond ? 'PASS' : 'FAIL'}  ${name} ${extra}`);
 
-await A.goto(`http://localhost:8765/?${Q}`, { waitUntil: 'load' });
+await A.goto(`${BASE}?${Q}`, { waitUntil: 'load' });
 await A.type('#in-name', '阿強');
 await A.click('#btn-host');
 await waitPhase(A, 'lobby', 20000);
