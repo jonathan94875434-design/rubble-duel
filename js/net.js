@@ -63,6 +63,7 @@ export class Net {
       peer.on('open', () => { opened = true; resolve(); });
       peer.on('connection', (conn) => {
         if (this.conn && this.conn.open) { conn.on('open', () => conn.close()); return; } // 房間已滿
+        if (this.connected) this._closed(); // 舊連線已死但還沒被判定斷線：先收尾，新對手才會從大廳開始
         this._wire(conn);
       });
       peer.on('disconnected', () => { if (!peer.destroyed) setTimeout(() => { try { peer.reconnect(); } catch { /* 已關閉 */ } }, 1500); });

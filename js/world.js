@@ -54,8 +54,8 @@ export class World {
   inb(x, y, z) { return x >= 0 && y >= 0 && z >= 0 && x < this.X && y < this.Y && z < this.Z; }
   get(x, y, z) {
     if (y < 0) return B.BEDROCK;
+    if (x < 0 || z < 0 || x >= this.X || z >= this.Z) return B.WALL; // 地圖外視為看不見的牆（多高都出不去）
     if (y >= this.Y) return B.AIR;
-    if (x < 0 || z < 0 || x >= this.X || z >= this.Z) return B.WALL; // 地圖外視為看不見的牆
     return this.types[x + this.X * (z + this.Z * y)];
   }
   set(x, y, z, t) {
@@ -204,6 +204,7 @@ export class World {
 
   // 體素 DDA。回傳 null 或 { x,y,z, nx,ny,nz, dist, type, oob }
   raycast(ox, oy, oz, dx, dy, dz, maxDist) {
+    if (!(dx || dy || dz)) return null;
     let x = Math.floor(ox / BS), y = Math.floor(oy / BS), z = Math.floor(oz / BS);
     const sx = dx > 0 ? 1 : -1, sy = dy > 0 ? 1 : -1, sz = dz > 0 ? 1 : -1;
     const tdx = dx !== 0 ? Math.abs(BS / dx) : Infinity, tdy = dy !== 0 ? Math.abs(BS / dy) : Infinity, tdz = dz !== 0 ? Math.abs(BS / dz) : Infinity;

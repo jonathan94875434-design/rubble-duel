@@ -74,8 +74,13 @@ const hp = await page.evaluate(() => ({ hp: __game.gs.p[0].hp, pk: __game.gs.pk 
 ok('吃到補血包 +40', hp.hp === 80 && hp.pk[0] === 0, JSON.stringify(hp));
 
 // ── 讓 bot 把玩家打死 ──
-await page.evaluate(() => { delete __game.bot.fire; __game.bot.aimErr = 0.3; const p = __game.player, b = __game.bot.body; p.pos.set(b.pos.x + 6, b.pos.y, b.pos.z); p.vel.set(0, 0, 0); });
-await waitPhase('roundEnd', 20000);
+// 兩邊都擺到空曠處，避免把人傳送進牆裡
+await page.evaluate(() => { delete __game.bot.fire; __game.bot.aimErr = 0.3; const p = __game.player, b = __game.bot.body; p.pos.set(26, 1.5, 9.5); p.vel.set(0, 0, 0); b.pos.set(26, 1.5, 4); b.vel.set(0, 0, 0); });
+try { await waitPhase('roundEnd', 20000); } catch (e) {
+  console.log('DIAG bot 沒殺掉玩家：', JSON.stringify(await page.evaluate(() => { const g = __game, b = g.bot, now = performance.now(); const ex = b.body.pos.x, ey = b.body.pos.y + 1.62, ez = b.body.pos.z; let dx = b.tx - ex, dy = b.ty + 1.15 - ey, dz = b.tz - ez; const d = Math.hypot(dx, dy, dz); const hit = g.world.raycast(ex, ey, ez, dx / d, dy / d, dz / d, d);
+    return { phase: g.phase, t: Math.round(g.phaseEnd - now), hp: g.gs.p.map((p) => p.hp), al: g.gs.p.map((p) => p.al), bot: b.body.pos.toArray().map((v) => +v.toFixed(2)), me: g.player.pos.toArray().map((v) => +v.toFixed(2)), tgt: [b.tx, b.ty, b.tz], w: b.weapon, ammo: b.ammo, next: Math.round(b.nextShot - now), react: Math.round(b.reactAt - now), stuck: +b.stuck.toFixed(2), dist: +d.toFixed(2), block: hit && [hit.x, hit.y, hit.z, hit.type, +hit.dist.toFixed(2)], ownFire: Object.prototype.hasOwnProperty.call(b, 'fire'), yaw: +b.body.yaw.toFixed(2), pitch: +b.body.pitch.toFixed(2) }; })));
+  throw e;
+}
 await sleep(500);
 const res = await page.evaluate(() => ({ res: __game.gs.res, sc: __game.gs.p.map((p) => p.sc) }));
 ok('bot 擊殺玩家得分', res.res.winner === 1 && res.sc[1] === 1, JSON.stringify(res));

@@ -116,7 +116,10 @@ export class Hud {
       this._set('lb-p0', P[0].n); this._set('lb-p1', gs.here[1] ? P[1].n : '等待對手加入…');
       $('lb-p1').parentElement.classList.toggle('empty', !gs.here[1]);
       this._set('lb-hint', g.net.isHost
-        ? (gs.here[1] ? '對手已連線，調好規則就可以開始。' : '按「複製邀請連結」傳給朋友，對方打開連結、按加入就會進來。這個分頁請保持開著。')
+        ? (gs.here[1] ? '對手已連線，調好規則就可以開始。'
+          : g.net.mode === 'peer' && ['localhost', '127.0.0.1'].includes(location.hostname)
+            ? '注意：現在是本機網址（localhost），朋友的電腦打不開這個連結。要先把遊戲放上網路，再從那個網址建立房間。'
+            : '按「複製邀請連結」傳給朋友，對方打開連結、按加入就會進來。這個分頁請保持開著。')
         : '已連線，等房主按開始。');
       for (const [id, key] of [['set-target', 'target'], ['set-time', 'roundTime'], ['set-buff', 'buffMode']]) {
         const el = $(id); el.disabled = !g.net.isHost;

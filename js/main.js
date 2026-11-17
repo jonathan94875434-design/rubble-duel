@@ -241,7 +241,7 @@ class Game {
   leave() {
     this.net.close();
     if (this.authority) { this.authority.destroy(); this.authority = null; }
-    this.bot = null; this.gs = null; this.phase = 'menu';
+    this.bot = null; this.gs = null; this.phase = 'menu'; this.round = 0;
     this.remote.alive = false; this.remote.group.visible = false;
     this.exitLock(); this.hud.showHud(false); this.hud.clearBanner(); this.hud.show('menu'); this.hud.menuMsg('');
     this.combat.clearProjectiles(); this.fx.clear();
@@ -288,8 +288,13 @@ class Game {
       this.mouse.l = this.mouse.r = false;
       this.auth('loadout', this.sel);
     } else if (gs.phase === 'countdown') this.startRound(gs);
-    else if (gs.phase === 'playing') { h.banner('開戰！', '', 800); this.sfx.beep(true); }
-    else if (gs.phase === 'roundEnd') this.onRoundEnd(gs);
+    else if (gs.phase === 'playing') {
+      if (this.round !== gs.round) this.startRound(gs); // 保險：沒收到倒數階段也要先把這一局建好
+      h.banner('開戰！', '', 800); this.sfx.beep(true);
+    } else if (gs.phase === 'roundEnd') {
+      if (this.round !== gs.round) this.startRound(gs);
+      this.onRoundEnd(gs);
+    }
     else if (gs.phase === 'matchEnd') {
       this.exitLock(); h.showHud(false); h.clearBanner(); h.show('end');
       if (gs.mw === this.me) this.sfx.win(); else this.sfx.lose();

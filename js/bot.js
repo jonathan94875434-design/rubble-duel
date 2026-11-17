@@ -3,6 +3,7 @@ import { Player } from './player.js';
 import { WEAPONS, falloff } from './weapons.js';
 import { buffMods } from './buffs.js';
 import { SPAWNS } from './maps.js';
+import { BLOCK } from './world.js';
 import { rayPlayer, lerp, lerpAngle, r3 } from './util.js';
 
 // 練習用對手。它假裝成「訪客」，走跟真人一樣的訊息格式，
@@ -14,8 +15,8 @@ export class Bot {
     this.tx = 0; this.ty = 0; this.tz = 0;
     this.weapon = 'ar'; this.mods = buffMods([]);
     this.nextShot = 0; this.reactAt = 0; this.burst = 0; this.ammo = 30;
-    this.strafe = 1; this.strafeT = 0; this.stuck = 0; this.wantJump = false; this.sendAcc = 0;
-    this.aimErr = 3.2; // 度；越小越準
+    this.strafe = 1; this.strafeT = 0; this.stuck = 0; this.noLos = 0; this.holdT = 0; this.wantJump = false; this.sendAcc = 0;
+    this.aimErr = 5.5; // 度；越小越準（之後可做成難度選項）
   }
   send(type, data) { if (this.link) this.link([type, data]); }
 
@@ -46,7 +47,7 @@ export class Bot {
       this.mods = buffMods(me.bf);
       this.body.maxAirJumps = this.mods.airJumps;
       this.ammo = Math.round(WEAPONS[this.weapon].mag * this.mods.mag);
-      this.nextShot = 0; this.stuck = 0;
+      this.nextShot = 0; this.stuck = 0; this.noLos = 0; this.holdT = 0;
     }
   }
 
@@ -61,38 +62,43 @@ export class Bot {
       let dx = this.tx - ex, dy = this.ty + 1.15 - ey, dz = this.tz - ez;
       const dist = Math.hypot(dx, dy, dz) || 1;
       dx /= dist; dy /= dist; dz /= dist;
-      b.yaw = lerpAngle(b.yaw, Math.atan2(-dx, -dz), Math.min(1, dt * 7));
-      b.pitch = lerp(b.pitch, Math.asin(dy), Math.min(1, dt * 7));
-      const los = !this.world.raycast(ex, ey, ez, dx, dy, dz, dist);
+      b.yaw = lerpAngle(b.yaw, Math.atan2(-dx, -dz), Math.min(1, dt * 12));
+      b.pitch = lerp(b.pitch, Math.asin(dy), Math.min(1, dt * 12));
+      const wall = this.world.raycast(ex, ey, ez, dx, dy, dz, dist);
+      const los = !wall;
+      this.noLos = los ? 0 : this.noLos + dt;
+      // 繞不過去就直接把擋路的牆打穿（打不壞的牆除外）
+      const breach = !los && this.noLos > 1.2 && !wall.oob && BLOCK[wall.type].hp !== Infinity;
+      if (breach) { this.holdT = 1.5; this.reactAt = 0; }       // 打穿後站定一下，從洞口繼續射
+      else if (this.noLos > 0.4) this.reactAt = now + 380;       // 短暫被柱子擋一下不算，不重置反應時間
+      this.holdT = Math.max(0, this.holdT - dt);
 
       this.strafeT -= dt;
       if (this.strafeT <= 0) { this.strafe = Math.random() < 0.5 ? -1 : 1; this.strafeT = 0.5 + Math.random() * 1.3; this.wantJump = Math.random() < 0.18; }
       let f, r;
-      if (los) { r = this.strafe; f = dist > 16 ? 1 : dist < 6 ? -0.7 : 0.15; }
+      if (this.holdT > 0) { f = 0; r = 0; }
+      else if (los) { r = this.strafe; f = dist > 16 ? 1 : dist < 6 ? -0.7 : 0.15; }
       else { f = 1; r = this.strafe * 0.35; }
       const sp = Math.hypot(b.vel.x, b.vel.z);
       if (f > 0.5 && sp < 1.2) this.stuck += dt; else this.stuck = Math.max(0, this.stuck - dt * 2);
-      const jump = b.onGround && ((this.stuck > 0.2 && this.stuck < 0.9) || (los && this.wantJump));
+      const jump = b.onGround && this.holdT <= 0 && ((this.stuck > 0.2 && this.stuck < 0.9) || (los && this.wantJump));
       if (jump) this.wantJump = false;
       b.update(dt, { f, r, jump, speed: def.move * this.mods.speed * 0.92 });
 
-      if (!los) this.reactAt = now + 380;
-      // 看得到就打人；被牆擋住太久就直接把牆打穿
-      if (foe.al && now >= this.nextShot && ((los && now >= this.reactAt) || this.stuck > 0.9)) this.fire(def, now);
+      if (foe.al && now >= this.nextShot && ((los && now >= this.reactAt) || breach || this.stuck > 0.9)) this.fire(def, now, dx, dy, dz);
     } else b.update(dt, { f: 0, r: 0, jump: false, speed: 1 });
 
     this.sendAcc += dt;
     if (this.sendAcc >= 1 / 20) { this.sendAcc = 0; this.send('st', [r3(b.pos.x), r3(b.pos.y), r3(b.pos.z), r3(b.yaw), r3(b.pitch), this.weapon]); }
   }
 
-  fire(def, now) {
+  // (fx,fy,fz)：朝目標的方向。準度只由 aimErr 決定，不受自己橫移影響
+  fire(def, now, fx, fy, fz) {
     const b = this.body;
     this.nextShot = now + (60000 / def.rpm) * (def.auto ? 1 : 1.5);
     if (--this.ammo <= 0) { this.ammo = Math.round(def.mag * this.mods.mag); this.nextShot = now + def.reload * 1000; }
     else if (def.auto && ++this.burst >= 7) { this.burst = 0; this.nextShot += 350 + Math.random() * 300; }
     const ox = b.pos.x, oy = b.pos.y + PLAYER.EYE, oz = b.pos.z;
-    const cp = Math.cos(b.pitch);
-    const fx = -Math.sin(b.yaw) * cp, fy = Math.sin(b.pitch), fz = -Math.cos(b.yaw) * cp;
     const err = ((this.aimErr + def.spread[0] * 0.5) * Math.PI) / 180;
     const ends = [], blk = [];
     let total = 0, head = false;
