@@ -1,0 +1,11 @@
+{
+  "name": "rubble-duel-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "practice": "node practice.mjs shots",
+    "duel": "node duel.mjs shots",
+    "duel:peer": "node duel.mjs shots peer"
+  },
+  "devDependencies": { "puppeteer-core": "23.10.4" }
+}

@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RUBBLE 1v1</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27%3E%3Crect width=%2716%27 height=%2716%27 rx=%273%27 fill=%27%23ffb238%27/%3E%3Crect x=%273%27 y=%273%27 width=%275%27 height=%275%27 fill=%27%231b1405%27/%3E%3Crect x=%278%27 y=%278%27 width=%275%27 height=%275%27 fill=%27%231b1405%27/%3E%3C/svg%3E">
+<link rel="stylesheet" href="css/style.css">
+<script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js" } }</script>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<!-- 對戰中的抬頭顯示 -->
+<div id="hud" class="hidden">
+  <div id="scope"></div>
+  <div id="vignette"></div>
+  <div id="hurt-arc"><i></i></div>
+  <div id="crosshair"><i class="t"></i><i class="b"></i><i class="l"></i><i class="r"></i><i class="dot"></i></div>
+  <div id="hitmarker"></div>
+
+  <div id="top">
+    <div class="side me"><span class="nm" id="nm-me"></span><span class="sc" id="sc-me">0</span></div>
+    <div class="mid"><div id="timer">2:00</div><div id="roundno"></div></div>
+    <div class="side opp"><span class="sc" id="sc-opp">0</span><span class="nm" id="nm-opp"></span></div>
+  </div>
+
+  <div id="vitals">
+    <div id="buffs"></div>
+    <div class="row"><span class="lbl">護甲</span><div class="bar armor"><i id="bar-armor"></i></div><span class="num" id="num-armor">0</span></div>
+    <div class="row"><span class="lbl">生命</span><div class="bar hp"><i id="bar-hp"></i></div><span class="num" id="num-hp">100</span></div>
+  </div>
+
+  <div id="ammo">
+    <div id="wother"></div>
+    <div id="wname"></div>
+    <div class="cnt"><span id="ammo-n">30</span><span class="sep">/</span><span id="ammo-r">∞</span></div>
+    <div id="reloadbar"><i></i></div>
+  </div>
+
+  <div id="banner"><div class="big"></div><div class="sub"></div></div>
+  <div id="feed"></div>
+  <div id="netinfo"></div>
+</div>
+
+<div id="screens">
+  <!-- 主選單 -->
+  <section id="scr-menu" class="screen">
+    <div class="panel menu">
+      <h1>RUBBLE<span>1v1</span></h1>
+      <p class="tagline">把牆打穿，把朋友打爆。</p>
+      <label class="field"><span>你的名字</span><input id="in-name" maxlength="14" placeholder="玩家" autocomplete="off"></label>
+      <button id="btn-host" class="btn primary">建立房間</button>
+      <div class="joinrow">
+        <input id="in-code" maxlength="5" placeholder="房號" autocomplete="off">
+        <button id="btn-join" class="btn">加入房間</button>
+      </div>
+      <button id="btn-bot" class="btn ghost">單人練習（打電腦）</button>
+      <div id="menu-msg" class="msg"></div>
+      <div class="keys">
+        <b>WASD</b> 移動　<b>空白鍵</b> 跳　<b>左鍵</b> 開火　<b>右鍵</b> 瞄準<br>
+        <b>R</b> 換彈　<b>1 / 2 / Q / 滾輪</b> 切槍　<b>Esc</b> 設定
+      </div>
+    </div>
+  </section>
+
+  <!-- 大廳 -->
+  <section id="scr-lobby" class="screen hidden">
+    <div class="panel lobby">
+      <h2>房間</h2>
+      <div class="codebox"><div class="code" id="lb-code">-----</div><button id="btn-copy" class="btn small">複製邀請連結</button></div>
+      <div class="hint" id="lb-hint"></div>
+      <div class="players">
+        <div class="pl p0"><i></i><span id="lb-p0"></span></div>
+        <div class="vs">VS</div>
+        <div class="pl p1"><i></i><span id="lb-p1"></span></div>
+      </div>
+      <div class="settings">
+        <label>獲勝分數<select id="set-target"><option value="3">搶 3</option><option value="5">搶 5</option><option value="7">搶 7</option><option value="10">搶 10</option></select></label>
+        <label>每局時間<select id="set-time"><option value="60">60 秒</option><option value="90">90 秒</option><option value="120">120 秒</option><option value="180">180 秒</option></select></label>
+        <label>輸家補償<select id="set-buff"><option value="streak">連敗累積，贏了清空</option><option value="single">只維持下一局</option><option value="permanent">整場保留</option></select></label>
+      </div>
+      <div class="actions"><button id="btn-leave" class="btn ghost">離開</button><button id="btn-start" class="btn primary">開始對戰</button></div>
+    </div>
+  </section>
+
+  <!-- 選槍 / 選 buff -->
+  <section id="scr-loadout" class="screen hidden">
+    <div class="panel loadout">
+      <div class="lo-head">
+        <div><h2 id="lo-title">第 1 局</h2><div id="lo-score" class="score"></div></div>
+        <div id="lo-timer" class="timer">30</div>
+      </div>
+      <div id="lo-buff" class="hidden">
+        <h3>上一局落敗補償 — 選一個強化</h3>
+        <div id="lo-buff-cards" class="buffcards"></div>
+      </div>
+      <div class="lo-cols">
+        <div class="col wide"><h3>主武器</h3><div id="lo-p" class="wgrid"></div></div>
+        <div class="col"><h3>副武器</h3><div id="lo-s" class="wgrid one"></div></div>
+      </div>
+      <div class="lo-foot">
+        <div id="lo-mybuffs" class="mybuffs"></div>
+        <div id="lo-opp" class="oppstate"></div>
+        <button id="btn-ready" class="btn primary">準備</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- 比賽結束 -->
+  <section id="scr-end" class="screen hidden">
+    <div class="panel end">
+      <h1 id="end-title">勝利</h1>
+      <div id="end-score" class="bigscore"></div>
+      <table id="end-stats"></table>
+      <div class="actions"><button id="btn-end-leave" class="btn ghost">離開</button><button id="btn-rematch" class="btn primary">再來一場</button></div>
+      <div id="end-wait" class="hint"></div>
+    </div>
+  </section>
+
+  <!-- 暫停 / 設定（滑鼠沒被鎖定時顯示） -->
+  <div id="pause" class="hidden">
+    <div class="panel pausebox">
+      <h2>點一下畫面繼續</h2>
+      <label>滑鼠靈敏度 <output id="out-sens"></output><input id="rng-sens" type="range" min="0.2" max="3" step="0.05"></label>
+      <label>視野 FOV <output id="out-fov"></output><input id="rng-fov" type="range" min="65" max="105" step="1"></label>
+      <label>音量 <output id="out-vol"></output><input id="rng-vol" type="range" min="0" max="1" step="0.05"></label>
+      <div class="actions"><button id="btn-quit" class="btn ghost small">離開對戰</button><button id="btn-resume" class="btn primary">繼續</button></div>
+    </div>
+  </div>
+  <div id="toast"></div>
+</div>
+
+<script src="vendor/peerjs.min.js"></script>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
