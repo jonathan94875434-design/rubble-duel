@@ -6,9 +6,9 @@ const TICK = 1 / 120;
 
 // 玩家物理：方盒 vs 方塊世界。真人和練習用 bot 共用這一份。
 //
-// 移動模型是 Source 引擎那一套：
+// 移動模型：
 //   地面 = 摩擦 + 往按鍵方向加速（放開方向鍵會滑一小段，按反方向可以「急停」）
-//   空中 = 沒有摩擦，只能往按鍵方向補一點點速度 → 邊轉視角邊按 A/D 就能越跳越快（旋轉跳、連跳）
+//   空中 = 沒有摩擦；按方向鍵或轉視角就能轉彎，速度不會掉；按住跳躍鍵落地瞬間再跳 → 動力一路保持
 //   蹲下 = 身高變矮；在空中蹲會把腳收起來，所以「蹲跳」能上更高的箱子
 export class Player {
   constructor(world) {
@@ -103,8 +103,16 @@ export class Player {
         if (add > 0) { const a = Math.min(P.ACCEL * dt * maxS, add); v.x += a * wx; v.z += a * wz; }
       }
     } else if (wl > 0) {
-      const add = Math.min(maxS, P.AIR_CAP) - (v.x * wx + v.z * wz);
-      if (add > 0) { const a = Math.min(P.AIR_ACCEL * maxS * dt, add); v.x += a * wx; v.z += a * wz; }
+      // 空中：把前進方向轉向你按的方向（或視角轉到哪就轉到哪），速度大小不變
+      let sp = Math.hypot(v.x, v.z);
+      if (sp > 0.2) {
+        let d = Math.atan2(wx, wz) - Math.atan2(v.x, v.z);
+        if (d > Math.PI) d -= Math.PI * 2; else if (d < -Math.PI) d += Math.PI * 2;
+        const a = Math.atan2(v.x, v.z) + Math.max(-P.AIR_TURN * dt, Math.min(P.AIR_TURN * dt, d));
+        v.x = Math.sin(a) * sp; v.z = Math.cos(a) * sp;
+      } else { v.x = wx * 0.2; v.z = wz * 0.2; sp = 0.2; }
+      // 還沒到跑速就補上去；已經比跑速快（例如被炸飛）就維持
+      if (sp < maxS) { const k = Math.min(maxS, sp + P.AIR_ACCEL * dt) / sp; v.x *= k; v.z *= k; }
     }
 
     v.y -= P.GRAVITY * dt;

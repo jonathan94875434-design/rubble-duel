@@ -12,7 +12,7 @@ import { Authority } from './authority.js';
 import { Bot } from './bot.js';
 import { validLook } from './skins.js';
 import { Hud } from './hud.js';
-import { WEAPONS, GEAR, validLoadout, fitLoadout, loadoutCost, itemName, DEFAULT_LOADOUT } from './weapons.js';
+import { WEAPONS, GEAR, validLoadout, loadoutCost, itemName } from './weapons.js';
 import { DEFAULT_BINDS, loadBinds } from './binds.js';
 import { MAPS } from './maps.js';
 import { clamp, lerp, r3, roomCode, store } from './util.js';
@@ -33,8 +33,7 @@ class Game {
       bot: store.get('bot', 'normal'), pmap: store.get('pmap', 'random'),  // 練習模式的難度與地圖
       skin: look.s, wskin: look.w,
     };
-    // wish = 你理想中的裝備（會記住）；sel = 這一局實際買的（受金錢與規則限制）
-    this.wish = validLoadout(store.get('wish', DEFAULT_LOADOUT)); this.sel = { ...this.wish };
+    this.sel = validLoadout(null);   // 這一局在商店選的裝備；每局都從「只有免費手槍」開始，不沿用上一局
     this.binds = loadBinds(store.get('binds'));
     this.phase = 'menu'; this.gs = null; this.me = 0; this.round = 0; this.code = '';
     this.authority = null; this.bot = null; this.locked = false; this.phaseEnd = 0;
@@ -214,7 +213,7 @@ class Game {
     this._dressDoll();
     if (this.authority || this.net.connected) this.auth('look', this.look());
   }
-  _dressDoll() { this.doll.applySkin(this.settings.skin, TEAM[0]); this.doll.setWeapon(this.wish.p || this.wish.s, this.settings.wskin); }
+  _dressDoll() { this.doll.applySkin(this.settings.skin, TEAM[0]); this.doll.setWeapon('ar', this.settings.wskin); }
   openLocker() { this.lockerOpen = true; this._dressDoll(); this.doll.group.visible = this.pedestal.visible = true; this.hud.show('locker'); }
   closeLocker() { this.lockerOpen = false; this.doll.group.visible = this.pedestal.visible = false; this.hud.show('menu'); }
   myName() { return this.settings.name || (this.net.isHost ? '房主' : '挑戰者'); }
@@ -327,8 +326,7 @@ class Game {
     }
     else return;
     if (loadoutCost(next) > money) { this.sfx.deny(); this.hud.toast('錢不夠'); return; }
-    this.sel = next; this.wish = { ...next, p: gs.round <= 1 ? this.wish.p : next.p };   // 手槍局不會把你想要的主武器忘掉
-    store.set('wish', this.wish); this.sfx.buy();
+    this.sel = next; this.sfx.buy();
     this.auth('loadout', this.sel);
     this.hud.onState(gs);
   }
@@ -359,7 +357,7 @@ class Game {
     else if (gs.phase === 'loadout') {
       this.exitLock(); h.showHud(false); h.clearBanner(); h.show('loadout');
       this.mouse.l = this.mouse.r = false;
-      this.sel = fitLoadout(this.wish, gs.p[this.me].$, gs.round);   // 依這一局的錢，自動幫你配一套買得起的
+      this.sel = validLoadout(null);   // 商店重置：每局都要自己重新買
       this.auth('loadout', this.sel);
     } else if (gs.phase === 'countdown') this.startRound(gs);
     else if (gs.phase === 'playing') {

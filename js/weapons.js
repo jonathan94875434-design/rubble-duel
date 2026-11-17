@@ -136,8 +136,7 @@ export const GEAR = {
 };
 export const GEAR_IDS = Object.keys(GEAR);
 
-// 一套裝備：p 主武器（可以不買 = null）、s 副武器、其餘是數量
-export const DEFAULT_LOADOUT = { p: 'ar', s: 'pistol', armor: 1, he: 1, flash: 1, smoke: 0 };
+// 一套裝備：p 主武器（可以不買 = null）、s 副武器、其餘是數量。validLoadout(null) = 只有免費手槍
 
 export function validLoadout(l) {
   const o = { p: null, s: 'pistol' };
@@ -153,7 +152,7 @@ export function loadoutCost(l) {
   return c;
 }
 
-// 把「想要的裝備」配成「這一局買得起、規則也允許」的一套：
+// 裁判結帳用的保險：把送來的裝備修成「這一局買得起、規則也允許」的一套（正常情況下商店已經擋掉買不起的）：
 // 第 1 局是手槍局（不能買主武器）；其餘照 主武器 → 副武器 → 防彈衣 → 投擲物 的順序，買得起就買
 export function fitLoadout(l, money, round) {
   const w = validLoadout(l), o = { p: null, s: 'pistol' };

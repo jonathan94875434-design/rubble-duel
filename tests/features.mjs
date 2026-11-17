@@ -45,22 +45,28 @@ const open = async (store = {}) => {
     p = mk(4, 4, -Math.PI / 2); run(p, 1.2, { f: 1, crouch: true }); out.crouchSpeed = p.speed2d(); out.crouchEye = p.eyeH; out.crouchH = p.h;
     // 連跳（只按 W + 空白）：速度不該被摩擦吃掉
     p = mk(4, 4, -Math.PI / 2); run(p, 1, { f: 1 }); let minS = 99; run(p, 3, { f: 1, jump: true }, (q, t) => { if (t > 0.5) minS = Math.min(minS, q.speed2d()); }); out.bhopKeep = minS;
-    // 旋轉跳：只按 D、視角往右轉；再換 A、視角往左轉 → 應該越跳越快
-    p = mk(6, 30, -Math.PI / 2); run(p, 0.6, { f: 1 });
-    let maxS = 0, hops = 0;
-    for (let i = 0; i < 3 / DT; i++) { const right = Math.floor(i * DT / 0.75) % 2 === 0; p.yaw += (right ? -1 : 1) * 0.7 * DT; p.update(DT, { f: 0, r: right ? 1 : -1, jump: true, crouch: false, speed: 1 }); if (p.justJumped) hops++; maxS = Math.max(maxS, p.speed2d()); }
-    out.strafeMax = maxS; out.hops = hops; out.strafeEnd = [p.pos.x, p.pos.z];
-    // 60Hz 和 144Hz 的畫面更新率要得到一樣的結果
-    const sim = (fps) => { const q = mk(6, 30, -Math.PI / 2); const d = 1 / fps; for (let i = 0; i < 0.6 * fps; i++) q.update(d, { f: 1, r: 0, jump: false, crouch: false, speed: 1 }); for (let i = 0; i < 2 * fps; i++) { q.yaw -= 0.7 * d; q.update(d, { f: 0, r: 1, jump: true, crouch: false, speed: 1 }); } return q.speed2d(); };
-    out.fps60 = sim(60); out.fps144 = sim(144);
-    // 空中不能直接加速：原地起跳後按 W，水平速度只能到 AIR_CAP
-    p = mk(4, 4, -Math.PI / 2); let airS = 0; run(p, 0.5, (t) => ({ f: 1, jump: t < 0.02 }), (q) => { if (!q.onGround) airS = Math.max(airS, q.speed2d()); }); out.airFromStand = airS;
+    // 空中轉向：全速起跳後按住前進、把視角往右轉 90° → 前進方向跟著轉，速度不掉
+    p = mk(6, 30, -Math.PI / 2); run(p, 0.8, { f: 1 });               // 面向 +x 跑到全速
+    let minAir = 99; const yaw0 = p.yaw;
+    for (let i = 0; i < 0.55 / DT; i++) { p.yaw = yaw0 - Math.min(Math.PI / 2, i * DT * 4); p.update(DT, { f: 1, r: 0, jump: i < 3, crouch: false, speed: 1 }); if (!p.onGround) minAir = Math.min(minAir, p.speed2d()); }
+    out.steerMin = minAir; out.steerVx = p.vel.x; out.steerVz = p.vel.z;   // 轉完應該朝 +z
+    // 一邊連跳一邊持續轉彎 3 秒：速度全程保持
+    p = mk(24, 24, 0); run(p, 0.8, { f: 1 }); let turnMin = 99;
+    for (let i = 0; i < 3 / DT; i++) { p.yaw -= 1.2 * DT; p.update(DT, { f: 1, r: 0, jump: true, crouch: false, speed: 1 }); turnMin = Math.min(turnMin, p.speed2d()); }
+    out.turnMin = turnMin; out.turnMax = p.speed2d();
+    // 60Hz 和 144Hz 的畫面更新率要得到一樣的結果（比最後的位置）
+    const sim = (fps) => { const q = mk(24, 24, 0); const d = 1 / fps; for (let i = 0; i < 0.6 * fps; i++) q.update(d, { f: 1, r: 0, jump: false, crouch: false, speed: 1 }); for (let i = 0; i < 2 * fps; i++) { q.yaw -= 1.2 * d; q.update(d, { f: 1, r: 0, jump: true, crouch: false, speed: 1 }); } return [q.pos.x, q.pos.z]; };
+    const a60 = sim(60), a144 = sim(144); out.fpsDiff = Math.hypot(a60[0] - a144[0], a60[1] - a144[1]);
+    // 原地起跳後按前進：空中也能加速到跑速
+    p = mk(4, 4, -Math.PI / 2); let airS = 0; run(p, 0.6, (t) => ({ f: 1, jump: t < 0.02 }), (q) => { if (!q.onGround) airS = Math.max(airS, q.speed2d()); }); out.airFromStand = airS;
+    // 空中不按方向：速度維持不變
+    p = mk(4, 4, -Math.PI / 2); run(p, 0.8, { f: 1 }); let coastMin = 99; run(p, 0.5, (t) => ({ jump: t < 0.03 }), (q) => { if (!q.onGround) coastMin = Math.min(coastMin, q.speed2d()); }); out.airCoast = coastMin;
     p = mk(4, 4, 0); let top = 0; run(p, 0.9, (t) => ({ jump: t < 0.05 }), (q) => { top = Math.max(top, q.pos.y - 1.5); }); out.jumpH = top;
     // 1.5m 箱子：普通跳上不去、蹲跳上得去
     p = mk(9.4, 11, -Math.PI / 2); run(p, 1.2, (t) => ({ f: 1, jump: t < 0.6 })); out.normalJumpY = p.pos.y;
     p = mk(9.4, 11, -Math.PI / 2); run(p, 1.2, (t) => ({ f: t < 0.75 ? 1 : 0, jump: t < 0.05, crouch: t > 0.12 && t < 0.7 })); out.crouchJumpY = p.pos.y; out.crouchJumpX = p.pos.x;
     // 貼著 1m 箱子從靜止起跳也上得去
-    p = mk(9.69, 16, -Math.PI / 2); run(p, 1.0, (t) => ({ f: 1, jump: t > 0.2 && t < 0.3 })); out.standJump1m = p.pos.y;
+    p = mk(9.69, 16, -Math.PI / 2); run(p, 1.2, (t) => ({ f: t < 0.6 ? 1 : 0, jump: t > 0.2 && t < 0.3 })); out.standJump1m = p.pos.y;
     // 矮通道：站著進不去、蹲著過得去、在裡面站不起來、出來自動站起來（往 +z 走）
     p = mk(13, 18.5, Math.PI); run(p, 1.2, { f: 1 }); out.standBlockedZ = p.pos.z;
     p = mk(13, 18.5, Math.PI); run(p, 1.6, { f: 1, crouch: true }); out.crouchInZ = p.pos.z;
@@ -76,12 +82,14 @@ const open = async (store = {}) => {
   ok('按反方向急停明顯比較快（< 0.14 秒降到可開槍速度）', r.counter < 0.14, f(r.counter) + 's');
   ok('蹲走速度約 2.9 m/s、視線降低', Math.abs(r.crouchSpeed - 2.88) < 0.15 && r.crouchEye < 1.15 && r.crouchH === 1.3, `${f(r.crouchSpeed)} m/s, eye ${f(r.crouchEye)}`);
   ok('按住空白連跳不掉速', r.bhopKeep > 6.2, '最低 ' + f(r.bhopKeep));
-  ok('旋轉跳會加速（> 8 m/s）且不超過上限', r.strafeMax > 8 && r.strafeMax <= 11.6, `最高 ${f(r.strafeMax)} m/s，跳了 ${r.hops} 次`);
-  ok('60Hz 與 144Hz 螢幕的身法結果一致', Math.abs(r.fps60 - r.fps144) < 0.25, `${f(r.fps60)} vs ${f(r.fps144)} m/s`);
-  ok('原地起跳空中只能補一點速度', r.airFromStand < 0.9, f(r.airFromStand));
+  ok('空中轉向：視角轉 90°，前進方向跟著轉、速度不掉', r.steerMin > 6.3 && r.steerVz > 6 && Math.abs(r.steerVx) < 1.2, `最低 ${f(r.steerMin)} m/s，轉完速度 (${f(r.steerVx)}, ${f(r.steerVz)})`);
+  ok('邊連跳邊轉彎 3 秒，速度全程保持', r.turnMin > 6.3 && r.turnMax < 6.5, `${f(r.turnMin)} ~ ${f(r.turnMax)} m/s`);
+  ok('60Hz 與 144Hz 螢幕的移動結果一致', r.fpsDiff < 0.35, `終點差 ${f(r.fpsDiff)} m`);
+  ok('原地起跳後空中能加速到跑速', r.airFromStand > 6.2 && r.airFromStand < 6.5, f(r.airFromStand));
+  ok('空中不按方向鍵，速度維持', r.airCoast > 6.3, f(r.airCoast));
   ok('跳躍高度約 1.3m', r.jumpH > 1.2 && r.jumpH < 1.4, f(r.jumpH));
   ok('1.5m 箱子：普通跳上不去', Math.abs(r.normalJumpY - 1.5) < 0.01, 'y=' + f(r.normalJumpY));
-  ok('1.5m 箱子：蹲跳上得去', Math.abs(r.crouchJumpY - 3.0) < 0.01 && r.crouchJumpX > 10 && r.crouchJumpX < 12, `y=${f(r.crouchJumpY)} x=${f(r.crouchJumpX)}`);
+  ok('1.5m 箱子：蹲跳上得去', Math.abs(r.crouchJumpY - 3.0) < 0.01 && r.crouchJumpX > 10 && r.crouchJumpX < 12.3, `y=${f(r.crouchJumpY)} x=${f(r.crouchJumpX)}`);
   ok('貼著 1m 箱子原地跳也上得去', Math.abs(r.standJump1m - 2.5) < 0.01, 'y=' + f(r.standJump1m));
   ok('矮通道：站著被擋住', r.standBlockedZ < 19.75, 'z=' + f(r.standBlockedZ));
   ok('矮通道：蹲著進得去，在裡面站不起來', r.crouchInZ > 20.4 && r.crouchInZ < 25.6 && r.cantStand === true, 'z=' + f(r.crouchInZ));
@@ -204,24 +212,38 @@ for (const [map, spots] of [
   await page.close();
 }
 
-// ═══ 6. 經濟：連敗加碼、自動配裝 ═══
+// ═══ 6. 經濟：連敗加碼、商店每局重置 ═══
 {
   const page = await open({ pmap: 'plaza', bot: 'dummy' });
-  await page.evaluate(() => localStorage.removeItem('rubble.wish'));
   await page.click('#btn-bot'); await page.waitForFunction(() => __game.phase === 'loadout');
   await page.evaluate(() => { __game.authority.settings.buffMode = 'off'; __game.authority.settings.target = 10; });
   const incs = [], sels = [];
+  let carried = null, bought = null;
   for (let r = 1; r <= 5; r++) {
     await sleep(300);
-    sels.push(await page.evaluate(() => `${__game.gs.p[0].$}→${__game.sel.p || '無'}`));
+    sels.push(await page.evaluate(() => `${__game.gs.p[0].$}→${JSON.stringify(Object.values(__game.sel))}`));
+    if (r >= 2) { await page.evaluate(() => { __game.buy('p', 'ar'); __game.buy('armor'); __game.buy('flash'); }); await sleep(200); }   // 每局都把錢花掉，才不會碰到金錢上限
     await page.click('#btn-ready'); await page.waitForFunction(() => __game.phase === 'playing', { timeout: 15000 });
+    if (r === 2) bought = await page.evaluate(() => `${__game.combat.slots[0] && __game.combat.slots[0].id}/${__game.gs.p[0].ar}/${__game.combat.nades.flash}/$${__game.gs.p[0].$}`);
     await page.evaluate(() => __game.authority.damage(0, 999, 1, 'pistol', false));   // 我輸
     await page.waitForFunction(() => __game.phase === 'roundEnd', { timeout: 5000 });
     incs.push(await page.evaluate(() => __game.gs.res.inc.join('/')));
     await page.waitForFunction(() => __game.phase === 'loadout', { timeout: 9000 });
+    if (r === 2) { await sleep(300); carried = await page.evaluate(() => JSON.stringify({ sel: __game.sel, host: __game.gs.p[0].lo })); }
   }
+  const empty = '[null,"pistol",0,0,0,0]', none = { p: null, s: 'pistol', armor: 0, he: 0, flash: 0, smoke: 0 };
   ok('連敗加碼：3000 → 3500 → 4000 → 4500（上限），贏家固定 2000', incs.join(' ') === '3000/2000 3500/2000 4000/2000 4500/2000 4500/2000', incs.join(' '));
-  ok('自動配裝：手槍局不買主武器，有錢後自動買回步槍', sels[0] === '800→無' && sels[1].endsWith('→ar'), sels.join(' | '));
+  ok('商店每局都是空的（只有免費手槍），有錢也不會自動買', sels.every((x) => x.endsWith('→' + empty)), '每局開始的錢：' + sels.map((x) => x.split('→')[0]).join(' → '));
+  ok('第 2 局買的步槍、防彈衣、閃光彈有拿到並扣錢', bought === 'ar/50/1/$500', bought);
+  ok('上一局買的東西不會沿用到下一局', carried === JSON.stringify({ sel: none, host: none }), carried);
+  // 金錢上限：快滿的時候只會補到 $12000
+  await page.evaluate(() => { __game.authority.players[0].money = 11000; });
+  await page.click('#btn-ready'); await page.waitForFunction(() => __game.phase === 'playing', { timeout: 15000 });
+  await page.evaluate(() => __game.authority.damage(0, 999, 1, 'pistol', false));
+  await page.waitForFunction(() => __game.phase === 'roundEnd', { timeout: 5000 });
+  const cap = await page.evaluate(() => `${__game.gs.p[0].$}/${__game.gs.res.inc[0]}`);
+  ok('金錢上限 $12000', cap === '12000/1000', cap);
+  await page.waitForFunction(() => __game.phase === 'loadout', { timeout: 9000 });
   ok('關閉強化後輸家不會有強化選項', (await page.evaluate(() => __game.gs.p[0].ch)) === null);
   await page.screenshot({ path: OUT + '/f5-buy.png' });
   await page.close();

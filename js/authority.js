@@ -1,6 +1,6 @@
 import { MATCH, PLAYER, ECON } from './config.js';
 import { rollBuffChoices } from './buffs.js';
-import { validLoadout, fitLoadout, loadoutCost, DEFAULT_LOADOUT } from './weapons.js';
+import { validLoadout, fitLoadout, loadoutCost } from './weapons.js';
 import { MAPS, MAP_IDS } from './maps.js';
 import { validLook } from './skins.js';
 
@@ -23,7 +23,7 @@ export class Authority {
   destroy() { clearInterval(this.timer); }
 
   _mk(name) {
-    return { name, score: 0, hp: PLAYER.MAX_HP, maxHp: PLAYER.MAX_HP, armor: 0, alive: false, buffs: [], streak: 0, money: ECON.START, spent: 0, loadout: validLoadout(DEFAULT_LOADOUT), look: { s: 'recruit', w: 'stock' }, ready: false, choices: null, dmg: 0, heads: 0, lastHurt: 0 };
+    return { name, score: 0, hp: PLAYER.MAX_HP, maxHp: PLAYER.MAX_HP, armor: 0, alive: false, buffs: [], streak: 0, money: ECON.START, spent: 0, loadout: validLoadout(null), look: { s: 'recruit', w: 'stock' }, ready: false, choices: null, dmg: 0, heads: 0, lastHurt: 0 };
   }
 
   setName(i, n) { this.players[i].name = String(n || '').slice(0, 14) || '玩家 ' + (i + 1); this.dirty = true; }
@@ -52,7 +52,7 @@ export class Authority {
     this.phase = 'loadout'; this.round++;
     if (this.settings.map === 'rotate') this.map = MAP_IDS[(this.mapStart + this.round - 1) % MAP_IDS.length];
     this.tEnd = Date.now() + MATCH.LOADOUT_TIME * 1000;
-    for (const p of this.players) p.ready = false;
+    for (const p of this.players) { p.ready = false; p.loadout = validLoadout(null); }   // 商店重置：沒買就是只有免費手槍
     this.dirty = true;
   }
 
