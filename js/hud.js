@@ -1,16 +1,23 @@
 import { WEAPONS, PRIMARIES, SECONDARIES, weaponBars } from './weapons.js';
 import { BUFFS } from './buffs.js';
 import { TEAM_CSS } from './config.js';
+import { MAPS, MAP_IDS } from './maps.js';
+import { BOT_LEVELS } from './bot.js';
+import { SKINS, SKIN_IDS, WSKINS, WSKIN_IDS } from './skins.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const SCREENS = ['menu', 'lobby', 'loadout', 'end'];
+const SCREENS = ['menu', 'lobby', 'loadout', 'end', 'locker'];
+const hex = (n) => '#' + n.toString(16).padStart(6, '0');
+const MAP_OPTS = [['random', '隨機一張（整場固定）'], ['rotate', '每局輪流換圖'], ...MAP_IDS.map((id) => [id, MAPS[id].name])];
+const opts = (list, cur) => list.map(([v, t]) => `<option value="${v}"${v === cur ? ' selected' : ''}>${esc(t)}</option>`).join('');
 
 // 所有 DOM 介面：選單、大廳、選槍、結算、對戰中的 HUD
 export class Hud {
   constructor(g) {
     this.g = g; this.cache = {}; this.bannerT = 0; this.toastT = 0; this.buffKey = ''; this.hurtT = 0;
     this._buildWeapons();
+    this._buildLocker();
     this._bind();
   }
 
@@ -30,6 +37,24 @@ export class Hud {
     for (const id of SECONDARIES) $('lo-s').appendChild(mk(id));
   }
 
+  _buildLocker() {
+    const g = this.g;
+    const mk = (box, kind, id, name, c1, c2) => {
+      const el = document.createElement('div');
+      el.className = 'swatch'; el.dataset.kind = kind; el.dataset.id = id;
+      el.innerHTML = `<i style="background:${c1};--c2:${c2}"></i><span>${esc(name)}</span>`;
+      el.addEventListener('click', () => { g.setLook(kind, id); this._lockerSel(); });
+      $(box).appendChild(el);
+    };
+    for (const id of SKIN_IDS) { const k = SKINS[id]; mk('lk-skins', 'skin', id, k.name, k.body === null ? TEAM_CSS[0] : hex(k.body), hex(k.glow || k.legs)); }
+    for (const id of WSKIN_IDS) { const k = WSKINS[id]; mk('lk-wskins', 'wskin', id, k.name, k.color === null ? '#4b5a48' : hex(k.color), k.glow ? hex(k.glow) : 'transparent'); }
+    this._lockerSel();
+  }
+  _lockerSel() {
+    const st = this.g.settings;
+    document.querySelectorAll('.swatch').forEach((el) => el.classList.toggle('sel', st[el.dataset.kind] === el.dataset.id));
+  }
+
   _bind() {
     const g = this.g;
     document.addEventListener('pointerdown', () => g.sfx.init(), true);
@@ -39,11 +64,20 @@ export class Hud {
     $('btn-join').addEventListener('click', () => g.joinGame($('in-code').value));
     $('in-code').addEventListener('keydown', (e) => { if (e.key === 'Enter') g.joinGame($('in-code').value); });
     $('btn-bot').addEventListener('click', () => g.practice());
+    $('sel-bot').innerHTML = opts(Object.keys(BOT_LEVELS).map((k) => [k, '對手：' + BOT_LEVELS[k].name]), g.settings.bot);
+    $('sel-bot').addEventListener('change', (e) => g.setSetting('bot', e.target.value));
+    $('sel-pmap').innerHTML = opts(MAP_OPTS.filter(([v]) => v !== 'rotate').map(([v, t]) => [v, v === 'random' ? '地圖：隨機' : t]), g.settings.pmap);
+    $('sel-pmap').addEventListener('change', (e) => g.setSetting('pmap', e.target.value));
+    $('btn-locker').addEventListener('click', () => { g.sfx.ui(); g.openLocker(); });
+    $('btn-locker-back').addEventListener('click', () => { g.sfx.ui(); g.closeLocker(); });
+    $('set-map').innerHTML = opts(MAP_OPTS, 'random');
+    $('chk-wheel').checked = !!g.settings.wheel;
+    $('chk-wheel').addEventListener('change', (e) => g.setSetting('wheel', e.target.checked));
     $('btn-copy').addEventListener('click', async () => {
       try { await navigator.clipboard.writeText(g.inviteLink()); this.toast('邀請連結已複製，貼給朋友吧'); }
       catch { this.toast('複製失敗，請手動告訴朋友房號'); }
     });
-    for (const [id, key] of [['set-target', 'target'], ['set-time', 'roundTime'], ['set-buff', 'buffMode']]) {
+    for (const [id, key] of [['set-target', 'target'], ['set-time', 'roundTime'], ['set-buff', 'buffMode'], ['set-map', 'map']]) {
       $(id).addEventListener('change', (e) => g.changeSettings({ [key]: e.target.value }));
     }
     $('btn-start').addEventListener('click', () => g.startMatch());
@@ -64,7 +98,7 @@ export class Hud {
   showHud(v) { $('hud').classList.toggle('hidden', !v); }
   setPaused(v) { $('pause').classList.toggle('hidden', !v); }
   menuMsg(t) { $('menu-msg').textContent = t || ''; }
-  menuBusy(b) { for (const id of ['btn-host', 'btn-join', 'btn-bot']) $(id).disabled = b; }
+  menuBusy(b) { for (const id of ['btn-host', 'btn-join', 'btn-bot', 'btn-locker']) $(id).disabled = b; }
   setCode(c) { $('in-code').value = c; }
 
   toast(text, ms = 2600) {
@@ -109,7 +143,7 @@ export class Hud {
     document.documentElement.style.setProperty('--opp', TEAM_CSS[opp]);
     this._set('nm-me', P[me].n); this._set('nm-opp', P[opp].n);
     this._set('sc-me', String(P[me].sc)); this._set('sc-opp', String(P[opp].sc));
-    this._set('roundno', `第 ${gs.round} 局 · 搶 ${gs.set.target}`);
+    this._set('roundno', `第 ${gs.round} 局 · 搶 ${gs.set.target} · ${MAPS[gs.map].name}`);
 
     if (gs.phase === 'lobby') {
       this._set('lb-code', g.code || '-----');
@@ -121,7 +155,7 @@ export class Hud {
             ? '注意：現在是本機網址（localhost），朋友的電腦打不開這個連結。要先把遊戲放上網路，再從那個網址建立房間。'
             : '按「複製邀請連結」傳給朋友，對方打開連結、按加入就會進來。這個分頁請保持開著。')
         : '已連線，等房主按開始。');
-      for (const [id, key] of [['set-target', 'target'], ['set-time', 'roundTime'], ['set-buff', 'buffMode']]) {
+      for (const [id, key] of [['set-target', 'target'], ['set-time', 'roundTime'], ['set-buff', 'buffMode'], ['set-map', 'map']]) {
         const el = $(id); el.disabled = !g.net.isHost;
         if (document.activeElement !== el) el.value = String(gs.set[key]);
       }
@@ -135,6 +169,7 @@ export class Hud {
   _loadout(gs) {
     const g = this.g, me = gs.p[g.me], opp = gs.p[1 - g.me];
     this._set('lo-title', `第 ${gs.round} 局 — 選擇武器`);
+    this._set('lo-map', `地圖：${MAPS[gs.map].name}　${MAPS[gs.map].desc}`);
     const sk = `${me.sc}:${opp.sc}:${gs.set.target}`;
     if (this.cache.loScore !== sk) {
       this.cache.loScore = sk;
@@ -216,5 +251,7 @@ export class Hud {
     const so = d.scoped ? '1' : '0';
     if (this.cache.scope !== so) { this.cache.scope = so; $('scope').style.opacity = so; }
     this._set('netinfo', d.net);
+    this._set('speed-n', d.spd.toFixed(1));
+    this._cls('speed', 'fast', d.spd > 7.2); this._cls('speed', 'crouch', !!d.crouch);
   }
 }

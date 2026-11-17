@@ -18,17 +18,18 @@ export class ViewModel {
 
   setAspect(a) { this.camera.aspect = a; this.camera.updateProjectionMatrix(); }
 
-  setWeapon(id) {
+  setWeapon(id, wskin = 'stock') {
+    const key = id + '|' + wskin;
     if (this.cur && this.guns[this.cur]) this.guns[this.cur].visible = false;
-    if (!this.guns[id]) { this.guns[id] = buildGun(id); this.holder.add(this.guns[id]); }
-    this.guns[id].visible = true; this.cur = id;
-    this.flashG.position.copy(this.guns[id].userData.muzzle); this.flashG.position.z -= 0.05;
-    this.sightY = this.guns[id].userData.sightY;
+    if (!this.guns[key]) { this.guns[key] = buildGun(id, wskin); this.holder.add(this.guns[key]); }
+    this.guns[key].visible = true; this.cur = key;
+    this.flashG.position.copy(this.guns[key].userData.muzzle); this.flashG.position.z -= 0.05;
+    this.sightY = this.guns[key].userData.sightY;
   }
 
   fire(big) { this.kick = big ? 1.6 : 1; this.flashT = 0.045; this.flashG.rotation.z = Math.random() * Math.PI; this.flashG.scale.setScalar(big ? 1.7 : 0.8 + Math.random() * 0.5); }
 
-  // s: { ads 0..1, walkPhase, moving 0..1, reload 0..1(0=沒在換彈), draw 0..1(1=已舉好), dx, dy 滑鼠位移, scoped }
+  // s: { ads 0..1, walkPhase, moving 0..1, reload 0..1(0=沒在換彈), draw 0..1(1=已舉好), dx, dy 滑鼠位移, scoped, dip 落地下沉, vy 垂直速度 }
   update(dt, s) {
     this.kick = Math.max(0, this.kick - dt * 9);
     this.flashT -= dt; this.flashG.visible = this.flashT > 0;
@@ -41,7 +42,7 @@ export class ViewModel {
     const dr = 1 - s.draw;
     h.position.set(
       lerp(0.19, 0, a) + bx - this.sway.x * 0.012,
-      lerp(-0.19, (-this.sightY - 0.01) * 0.78, a) + by + this.sway.y * 0.012 - rl * 0.13 - dr * 0.3,
+      lerp(-0.19, (-this.sightY - 0.01) * 0.78, a) + by + this.sway.y * 0.012 - rl * 0.13 - dr * 0.3 - ((s.dip || 0) * 0.25 + Math.max(-0.03, Math.min(0.03, (s.vy || 0) * 0.004))) * (1 - a),
       lerp(-0.5, -0.36, a) + this.kick * 0.045,
     );
     h.rotation.set(this.kick * 0.07 - rl * 0.75 - dr * 0.9, -this.sway.x * 0.05 + rl * 0.35, rl * 0.3 - this.sway.x * 0.04);

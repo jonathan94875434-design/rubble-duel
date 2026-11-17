@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { BS, NET, TEAM } from './config.js';
+import { BS, NET, TEAM, PLAYER } from './config.js';
 import { World } from './world.js';
 import { Player } from './player.js';
 import { RemotePlayer } from './remote.js';
@@ -10,9 +10,10 @@ import { ViewModel } from './viewmodel.js';
 import { Net } from './net.js';
 import { Authority } from './authority.js';
 import { Bot } from './bot.js';
+import { validLook } from './skins.js';
 import { Hud } from './hud.js';
 import { WEAPONS, validLoadout } from './weapons.js';
-import { SPAWNS, PICKUPS } from './maps.js';
+import { MAPS } from './maps.js';
 import { clamp, lerp, r3, roomCode, store } from './util.js';
 
 const qs = new URLSearchParams(location.search);
@@ -24,14 +25,21 @@ const ROUND_PHASES = ['countdown', 'playing', 'roundEnd'];
 
 class Game {
   constructor() {
-    this.settings = { name: store.get('name', ''), sens: store.get('sens', 1), fov: store.get('fov', 82), vol: store.get('vol', 0.6) };
+    const look = validLook({ s: store.get('skin'), w: store.get('wskin') });
+    this.settings = {
+      name: store.get('name', ''), sens: store.get('sens', 1), fov: store.get('fov', 82), vol: store.get('vol', 0.6),
+      wheel: store.get('wheel', true),          // 滾輪切槍（Magic Mouse 容易誤觸，可以關）
+      bot: store.get('bot', 'normal'), pmap: store.get('pmap', 'random'),  // 練習模式的難度與地圖
+      skin: look.s, wskin: look.w,
+    };
     this.sel = validLoadout(store.get('loadout'));
     this.phase = 'menu'; this.gs = null; this.me = 0; this.round = 0; this.code = '';
     this.authority = null; this.bot = null; this.locked = false; this.phaseEnd = 0;
     this.keys = {}; this.mouse = { l: false, r: false, lp: false, dx: 0, dy: 0 }; this.reloadPressed = false;
     this.shake = 0; this.deathT = 0; this.sendAcc = 0; this.orbit = 0; this.lastCount = -1; this.stepPhase = 0;
-    this.pickAt = PICKUPS.map(() => 0);
-    this.lastWheel = 0;
+    this.pickAt = []; this.pickDefs = []; this.pickMeshes = []; this.pickMap = null;
+    this.lastWheel = 0; this.wheelAcc = 0; this.wheelT = 0;
+    this.landDip = 0; this.roll = 0; this.rStep = 0; this.lockerOpen = false; this.oppLook = '';
 
     this._initRender();
     this.world = new World(this.scene);
@@ -40,10 +48,14 @@ class Game {
     this.view = new ViewModel();
     this.player = new Player(this.world);
     this.remote = new RemotePlayer(this.scene, TEAM[1]);
+    this.doll = new RemotePlayer(this.scene, TEAM[0]);   // 造型預覽用的假人，站在地圖上空的小平台
+    this.doll.pos.set(24, 15, 24);
+    this.pedestal = new THREE.Mesh(new THREE.CylinderGeometry(0.95, 1.05, 0.14, 28), new THREE.MeshLambertMaterial({ color: 0x23272f }));
+    this.pedestal.position.set(24, 14.93, 24); this.pedestal.visible = false; this.scene.add(this.pedestal);
     this.combat = new Combat(this);
     this.net = new Net();
     this.hud = new Hud(this);
-    this._initPickups();
+    this._setPickups(this.world.mapId);
     this._bindInput();
     this._bindNet();
     this._resize();
@@ -93,8 +105,14 @@ class Game {
     this.view.setAspect(w / h);
   }
 
-  _initPickups() {
-    this.pickMeshes = PICKUPS.map((p) => {
+  // 補給品的模型跟著地圖換
+  _setPickups(mapId) {
+    if (this.pickMap === mapId) return;
+    this.pickMap = mapId;
+    for (const g of this.pickMeshes) { this.scene.remove(g); g.traverse((o) => { if (o.geometry) o.geometry.dispose(); }); }
+    this.pickDefs = MAPS[mapId].pickups;
+    this.pickAt = this.pickDefs.map(() => 0);
+    this.pickMeshes = this.pickDefs.map((p) => {
       const g = new THREE.Group();
       const c = p.type === 'hp' ? 0x54e07a : 0x4aa8ff;
       const mat = new THREE.MeshBasicMaterial({ color: c });
@@ -122,7 +140,7 @@ class Game {
         else if (e.code === 'KeyQ') this.combat.switchTo(1 - this.combat.cur);
         else if (e.code === 'KeyR') this.reloadPressed = true;
       }
-      if (['Space', 'Tab', 'KeyW', 'KeyA', 'KeyS', 'KeyD'].includes(e.code)) e.preventDefault();
+      if (['Space', 'Tab', 'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyC'].includes(e.code)) e.preventDefault();
     });
     addEventListener('keyup', (e) => { this.keys[e.code] = false; });
     addEventListener('blur', () => { this.keys = {}; this.mouse.l = this.mouse.r = false; });
@@ -141,10 +159,12 @@ class Game {
       this.mouse.dx += mx; this.mouse.dy += my;
     });
     addEventListener('wheel', (e) => {
-      // 觸控板/滑鼠滾一下會送出一大串事件，300ms 內只算一次
+      // 要累積到一定的滾動量才切槍：真的滾輪一格就夠，Magic Mouse／觸控板的輕微滑動不會誤觸
+      if (!this.active() || !this.settings.wheel || !e.deltaY) return;
       const now = performance.now();
-      if (!this.active() || !e.deltaY || now - this.lastWheel < 300) return;
-      this.lastWheel = now; this.combat.switchTo(1 - this.combat.cur);
+      if (now - this.wheelT > 250) this.wheelAcc = 0;
+      this.wheelT = now; this.wheelAcc += Math.abs(e.deltaY);
+      if (this.wheelAcc >= 40 && now - this.lastWheel > 350) { this.lastWheel = now; this.wheelAcc = 0; this.combat.switchTo(1 - this.combat.cur); }
     }, { passive: true });
     addEventListener('contextmenu', (e) => e.preventDefault());
     document.addEventListener('pointerlockchange', () => {
@@ -171,6 +191,15 @@ class Game {
     if (k === 'vol') this.sfx.setVolume(v);
     if (k === 'name' && this.net.connected) this.auth('name', { name: this.myName() });
   }
+  look() { return { s: this.settings.skin, w: this.settings.wskin }; }
+  setLook(kind, id) {
+    this.settings[kind] = id; store.set(kind, id); this.sfx.ui();
+    this._dressDoll();
+    if (this.authority || this.net.connected) this.auth('look', this.look());
+  }
+  _dressDoll() { this.doll.applySkin(this.settings.skin, TEAM[0]); this.doll.setWeapon(this.sel.p, this.settings.wskin); }
+  openLocker() { this.lockerOpen = true; this._dressDoll(); this.doll.group.visible = this.pedestal.visible = true; this.hud.show('locker'); }
+  closeLocker() { this.lockerOpen = false; this.doll.group.visible = this.pedestal.visible = false; this.hud.show('menu'); }
   myName() { return this.settings.name || (this.net.isHost ? '房主' : '挑戰者'); }
   inviteLink() { return `${location.origin}${location.pathname}?room=${this.code}${LOCAL ? '&local=1' : ''}`; }
 
@@ -179,7 +208,7 @@ class Game {
     const n = this.net;
     n.on('_open', () => {
       if (n.isHost) { if (this.authority) this.authority.setPresent(1, true); if (n.mode !== 'bot') this.hud.toast('對手加入了房間'); }
-      else this.auth('name', { name: this.myName() });
+      else { this.auth('name', { name: this.myName() }); this.auth('look', this.look()); }
     });
     n.on('_close', () => {
       if (n.isHost) {
@@ -191,7 +220,7 @@ class Game {
     n.on('auth', (d) => { if (n.isHost && this.authority && d) this.authority.handle(1, d.t, d); });
     n.on('gs', (d) => { if (!n.isHost) this.onGs(d); });
     n.on('ev', (d) => { if (!n.isHost) this.onEv(d); });
-    n.on('st', (d) => { this.remote.push(d); if (WEAPONS[d[5]]) this.remote.setWeapon(d[5]); });
+    n.on('st', (d) => { this.remote.push(d); if (WEAPONS[d[5]]) this.remote.setWeapon(d[5], this.remote.wskin); });
     n.on('fire', (d) => this.onRemoteFire(d));
     n.on('blk', (d) => this.onRemoteBlk(d));
     n.on('expl', (d) => { if (d.r !== this.round) return; this.combat.removeProjectile(d.pid); this.doExplosion(d); });
@@ -204,6 +233,7 @@ class Game {
       else this.net.send(type, data);
     });
     this.authority.setName(0, this.myName());
+    this.authority.handle(0, 'look', this.look());
   }
 
   async hostGame() {
@@ -230,18 +260,22 @@ class Game {
 
   practice() {
     this.sfx.init(); this.me = 0; this.code = '';
-    this.bot = new Bot(this.world);
+    const level = this.settings.bot;
+    this.bot = new Bot(this.world, level);
     this.net.isHost = true;
     this._mkAuthority();
     this.net.hostBot(this.bot);
-    this.authority.setName(1, '練習機器人');
+    this.authority.setName(1, level === 'dummy' ? '木樁' : '練習機器人');
+    // 木樁模式是給你練身法、練槍的：每局 15 分鐘，對手不動也不開槍
+    this.authority.setSettings({ map: this.settings.pmap, roundTime: level === 'dummy' ? 900 : 120 });
     this.authority.startMatch();
   }
 
   leave() {
     this.net.close();
     if (this.authority) { this.authority.destroy(); this.authority = null; }
-    this.bot = null; this.gs = null; this.phase = 'menu'; this.round = 0;
+    this.bot = null; this.gs = null; this.phase = 'menu'; this.round = 0; this.oppLook = '';
+    this.lockerOpen = false; this.doll.group.visible = this.pedestal.visible = false;
     this.remote.alive = false; this.remote.group.visible = false;
     this.exitLock(); this.hud.showHud(false); this.hud.clearBanner(); this.hud.show('menu'); this.hud.menuMsg('');
     this.combat.clearProjectiles(); this.fx.clear();
@@ -273,6 +307,10 @@ class Game {
     const changed = !prev || prev.phase !== gs.phase || prev.round !== gs.round;
     if (changed) this.enterPhase(gs);
     const opp = gs.p[1 - this.me];
+    const lk = opp.lk.s + '|' + opp.lk.w;
+    if (lk !== this.oppLook) { this.oppLook = lk; this.remote.applySkin(opp.lk.s, TEAM[1 - this.me]); this.remote.setWeapon(this.remote.weapon, opp.lk.w); }
+    // 大廳裡房主指定地圖時，背景直接換成那張圖預覽
+    if (gs.phase === 'lobby' && MAPS[gs.set.map] && this.world.mapId !== gs.set.map) this.world.reset(gs.set.map);
     this.remote.alive = this.inRound() && opp.al;
     this.remote.group.visible = this.remote.alive;
     for (let i = 0; i < this.pickMeshes.length; i++) this.pickMeshes[i].visible = this.inRound() && !!gs.pk[i];
@@ -303,15 +341,16 @@ class Game {
 
   startRound(gs) {
     this.round = gs.round;
-    this.world.reset(); this.fx.clear();
-    const meS = gs.p[this.me];
-    this.player.spawn(SPAWNS[(this.me + gs.round) % 2]);
+    this.world.reset(gs.map); this._setPickups(gs.map); this.fx.clear();
+    const meS = gs.p[this.me], opp = gs.p[1 - this.me], sp = MAPS[gs.map].spawns;
+    this.player.spawn(sp[(this.me + gs.round) % 2]);
     this.combat.setLoadout(meS.lo, meS.bf);
     this.player.maxAirJumps = this.combat.mods.airJumps;
-    const os = SPAWNS[(1 - this.me + gs.round) % 2];
+    const os = sp[(1 - this.me + gs.round) % 2];
     this.remote.clearBuffer(); this.remote.pos.set(os.x, os.y, os.z); this.remote.yaw = os.yaw; this.remote.lastPos.copy(this.remote.pos);
-    this.remote.setColor(TEAM[1 - this.me]); this.remote.setWeapon(gs.p[1 - this.me].lo.p);
-    this.deathT = 0; this.shake = 0; this.lastCount = -1; this.keys = {}; this.mouse.l = this.mouse.r = false;
+    this.remote.applySkin(opp.lk.s, TEAM[1 - this.me]); this.remote.setWeapon(opp.lo.p, opp.lk.w);
+    this.deathT = 0; this.shake = 0; this.landDip = 0; this.roll = 0; this.rStep = 0;
+    this.lastCount = -1; this.keys = {}; this.mouse.l = this.mouse.r = false;
     this.hud.show(null); this.hud.showHud(true); this.hud.clearBanner();
     this.requestLock();
     // 瀏覽器不給自動鎖滑鼠時（例如剛按過 Esc），顯示「點一下繼續」
@@ -406,16 +445,19 @@ class Game {
       const act = this.active();
       const canMove = act && alive && this.phase !== 'countdown';
       const k = this.keys, w = cb.w;
+      const adsKey = this.mouse.r || !!k.ShiftLeft || !!k.ShiftRight;   // 右鍵或 Shift 都能瞄準
       if (alive) {
         p.update(dt, {
           f: canMove ? (k.KeyW ? 1 : 0) - (k.KeyS ? 1 : 0) : 0,
           r: canMove ? (k.KeyD ? 1 : 0) - (k.KeyA ? 1 : 0) : 0,
           jump: canMove && !!k.Space,
+          crouch: canMove && !!k.KeyC,
           speed: (w ? w.def.move : 1) * cb.mods.speed * lerp(1, 0.6, cb.ads),
         });
         if (p.justJumped) this.sfx.jump();
-        if (p.justLanded) this.sfx.land();
-        if (p.walkPhase - this.stepPhase > Math.PI) { this.stepPhase = p.walkPhase; this.sfx.step(); }
+        if (p.justLanded) { this.sfx.land(); this.landDip = Math.min(0.24, p.landSpeed * 0.02); }
+        // 跑步才有腳步聲；瞄準走、蹲走是安靜的（對手也聽不到）
+        if (p.walkPhase - this.stepPhase > Math.PI) { this.stepPhase = p.walkPhase; if (!p.crouched && p.speed2d() > PLAYER.STEP_SOUND_SPEED) this.sfx.step(); }
       } else this.deathT = Math.min(1, this.deathT + dt * 2.2);
 
       this.shake = Math.max(0, this.shake - dt * 3.5);
@@ -423,22 +465,26 @@ class Game {
       const zoom = this.zoom();
       const fov = 2 * Math.atan(Math.tan((this.settings.fov * DEG) / 2) / zoom) / DEG;
       if (Math.abs(cam.fov - fov) > 0.01) { cam.fov = fov; cam.updateProjectionMatrix(); }
-      cam.position.set(p.pos.x, p.eyeY() - this.deathT * 1.15, p.pos.z);
+      // 鏡頭小動作：落地下沉、橫移時微微傾斜
+      this.landDip *= Math.exp(-9 * dt);
+      const side = clamp((p.vel.x * Math.cos(p.yaw) - p.vel.z * Math.sin(p.yaw)) / PLAYER.SPEED, -1, 1);
+      this.roll += (side * 0.013 - this.roll) * Math.min(1, dt * 8);
+      cam.position.set(p.rpos.x, p.eyeY() - this.deathT * 1.15 - this.landDip, p.rpos.z);
       cam.rotation.set(
         clamp(p.pitch + cb.recP, -1.55, 1.55) + (Math.random() - 0.5) * sh,
         p.yaw + cb.recY + (Math.random() - 0.5) * sh,
-        this.deathT * 0.6 + (Math.random() - 0.5) * sh,
+        this.deathT * 0.6 - this.roll + (Math.random() - 0.5) * sh,
       );
       cam.updateMatrixWorld();
 
-      cb.update(dt, { fire: this.mouse.l, firePressed: this.mouse.lp, ads: this.mouse.r, reload: this.reloadPressed }, act && alive && this.phase === 'playing');
+      cb.update(dt, { fire: this.mouse.l, firePressed: this.mouse.lp, ads: adsKey, reload: this.reloadPressed }, act && alive && this.phase === 'playing');
       cb.updateProjectiles(dt);
       this.mouse.lp = false; this.reloadPressed = false;
 
       // 補給品：走過去就向裁判申請
       if (alive && this.phase === 'playing' && gs) {
-        for (let i = 0; i < PICKUPS.length; i++) {
-          const pk = PICKUPS[i];
+        for (let i = 0; i < this.pickDefs.length; i++) {
+          const pk = this.pickDefs[i];
           if (!gs.pk[i] || now < this.pickAt[i]) continue;
           if (Math.hypot(p.pos.x - pk.x, p.pos.z - pk.z) < 0.95 && Math.abs(p.pos.y - pk.y) < 1.6) {
             if (pk.type === 'hp' ? meS.hp < meS.mhp : meS.ar < 50) { this.pickAt[i] = now + 400; this.auth('pick', { i }); }
@@ -449,7 +495,7 @@ class Game {
       this.sendAcc += dt;
       if (this.sendAcc >= 1 / NET.SEND_HZ) {
         this.sendAcc = 0;
-        this.sendPeer('st', [r3(p.pos.x), r3(p.pos.y), r3(p.pos.z), r3(p.yaw), r3(p.pitch + cb.recP), w ? w.id : 'ar']);
+        this.sendPeer('st', [r3(p.pos.x), r3(p.pos.y), r3(p.pos.z), r3(p.yaw), r3(p.pitch + cb.recP), w ? w.id : 'ar', (p.crouched ? 1 : 0) | (p.onGround ? 2 : 0)]);
       }
 
       if (this.phase === 'countdown') {
@@ -460,8 +506,16 @@ class Game {
       this.view.update(dt, {
         ads: cb.ads, walkPhase: p.walkPhase, moving: p.onGround ? Math.min(1, Math.hypot(p.vel.x, p.vel.z) / 5) : 0,
         reload: cb.reloadProgress(), draw: cb.drawProgress(), dx: this.mouse.dx, dy: this.mouse.dy, scoped: !!(w && w.def.scope),
+        dip: this.landDip, vy: p.onGround ? 0 : p.vel.y,
       });
       this.mouse.dx = this.mouse.dy = 0;
+    } else if (this.lockerOpen) {
+      // 造型預覽：假人在右邊慢慢左右轉
+      const d = this.doll;
+      d.yaw = Math.PI + Math.sin(now * 0.0007) * 1.2; d.update(dt);   // 面向鏡頭（也面向太陽，才不會背光）
+      if (Math.abs(cam.fov - 38) > 0.01) { cam.fov = 38; cam.updateProjectionMatrix(); }
+      cam.position.set(d.pos.x - 0.9, d.pos.y + 1.25, d.pos.z + 4.1);
+      cam.lookAt(d.pos.x - 0.9, d.pos.y + 0.95, d.pos.z);
     } else {
       // 選單背景：鏡頭繞著地圖轉
       this.orbit += dt * 0.07;
@@ -472,6 +526,15 @@ class Game {
 
     if (this.bot) this.bot.update(dt, now);
     this.remote.update(dt);
+    // 對手的腳步聲與落地聲（對手跑步、跳下來時聽得到位置）
+    const rm = this.remote;
+    if (inRound && rm.alive) {
+      if (rm.grounded && !rm.crouched && rm.speed > PLAYER.STEP_SOUND_SPEED) {
+        this.rStep += rm.speed * dt;
+        if (this.rStep > 2.3) { this.rStep = 0; this.sfx.stepRemote(rm.pos.distanceTo(cam.position), this.panOf(rm.pos.x, rm.pos.z)); }
+      }
+      if (rm.justLanded) this.sfx.landRemote(rm.pos.distanceTo(cam.position), this.panOf(rm.pos.x, rm.pos.z));
+    }
     this.fx.update(dt);
     this.world.update();
     const t = now * 0.001;
@@ -484,6 +547,7 @@ class Game {
         w, slot: cb.cur, other: cb.slots[1 - cb.cur], reload: cb.reloadProgress(), scoped,
         gap: (Math.tan(cb.spread() * DEG) / Math.tan((cam.fov * DEG) / 2)) * (innerHeight / 2),
         net: this.net.mode === 'bot' ? '練習模式' : `延遲 ${this.net.ping} ms`,
+        spd: alive ? p.speed2d() : 0, crouch: p.crouched,
       });
     }
 

@@ -15,9 +15,9 @@ export class Combat {
     this.g = g;
     this.slots = []; this.cur = 0; this.mods = buffMods([]);
     this.bloom = 0; this.recP = 0; this.recY = 0; this.ads = 0;
-    this.switchEnd = 0; this.switchDur = 350; this.fireQueued = 0; this.lastShotT = 0;
+    this.switchEnd = 0; this.switchDur = 350; this.fireQueued = 0; this.lastShotT = 0; this.prevShotT = 0;
     this.projectiles = []; this.pid = 1; this.blkOut = [];
-    this.shots = 0; this.hits = 0;
+    this.shots = 0; this.hits = 0; this.shotIdx = 0;
   }
 
   get w() { return this.slots[this.cur]; }
@@ -29,7 +29,7 @@ export class Combat {
       return { id, def, mag, ammo: mag, reserve: def.reserve === undefined ? Infinity : def.reserve, nextFire: 0, reloadEnd: 0, reloadStart: 0 };
     });
     this.cur = 0; this.bloom = 0; this.recP = this.recY = 0; this.ads = 0; this.switchEnd = 0; this.fireQueued = 0;
-    this.g.view.setWeapon(lo.p);
+    this.g.view.setWeapon(lo.p, this.g.settings.wskin);
     this.clearProjectiles();
   }
 
@@ -44,7 +44,7 @@ export class Combat {
     this.cur = i; this.ads = 0;
     this.switchDur = 350 * this.mods.handling;
     this.switchEnd = performance.now() + this.switchDur;
-    this.g.view.setWeapon(this.w.id);
+    this.g.view.setWeapon(this.w.id, this.g.settings.wskin);
     this.g.sfx.swap();
   }
 
@@ -58,14 +58,16 @@ export class Combat {
   reloadProgress() { const w = this.w; if (!w || !w.reloadEnd) return 0; return Math.min(1, (performance.now() - w.reloadStart) / (w.reloadEnd - w.reloadStart)); }
   drawProgress() { const left = this.switchEnd - performance.now(); return left <= 0 ? 1 : 1 - left / this.switchDur; }
 
+  // 目前的散布（度）。CS 式：站定最準、蹲下更準，跑動和跳躍會散；速度降到三成以下就算停住（急停）
   spread() {
     const w = this.w; if (!w) return 1;
-    const def = w.def, p = this.g.player;
-    const sp = Math.min(1.3, Math.hypot(p.vel.x, p.vel.z) / PLAYER.SPEED);
-    const s = lerp(def.spread[0], def.spread[1], this.ads)
+    const def = w.def, p = this.g.player, mv = def.mv === undefined ? 1.6 : def.mv;
+    const sp = Math.min(1.4, p.speed2d() / PLAYER.SPEED);
+    let s = lerp(def.spread[0], def.spread[1], this.ads)
       + this.bloom * (1 - this.ads * 0.5)
-      + sp * 1.2 * (1 - this.ads * 0.4) * (def.pellets > 1 ? 0.3 : 1)
-      + (p.onGround ? 0 : 2.2);
+      + (Math.max(0, sp - 0.3) / 0.7) * mv * (1 - this.ads * 0.3)
+      + (p.onGround ? 0 : 1.5 + mv * 1.3);
+    if (p.crouched && p.onGround) s *= 0.75;
     return s * this.mods.spread;
   }
 
@@ -147,9 +149,14 @@ export class Combat {
       }
     }
 
-    const ak = this.ads > 0.5 ? 0.75 : 1;
-    this.recP = Math.min(14 * DEG, this.recP + def.recoil[0] * DEG * this.mods.recoil * ak);
-    this.recY += (Math.random() - 0.5) * 2 * def.recoil[1] * DEG * this.mods.recoil * ak;
+    // 後座力軌跡：前幾發往上爬，之後改成固定節奏的左右擺（可以練壓槍）；蹲下、瞄準時較小
+    if (now - this.prevShotT > 320) this.shotIdx = 0;
+    this.prevShotT = now;
+    const n = this.shotIdx++;
+    const ak = (this.ads > 0.5 ? 0.75 : 1) * (g.player.crouched && g.player.onGround ? 0.85 : 1) * this.mods.recoil;
+    const vk = n === 0 ? 0.6 : n < 9 ? 1 : 0.4, hk = n < 3 ? 0.3 : 1.5;
+    this.recP = Math.min(14 * DEG, this.recP + def.recoil[0] * DEG * vk * ak);
+    this.recY += (Math.sin(n * 0.62 + def.dmg) * hk + (Math.random() - 0.5) * 0.5) * def.recoil[1] * DEG * ak;
     this.bloom = Math.min(3.5, this.bloom + def.bloom);
     g.view.fire(def.pellets > 1 || def.dmg >= 50);
     g.sfx.shot(def.snd);

@@ -50,6 +50,12 @@ h3 { font-size: 13px; color: var(--dim); font-weight: 700; margin-bottom: 8px; l
 .joinrow input { width: 120px; text-transform: uppercase; letter-spacing: 0.25em; text-align: center; font-weight: 800; }
 .joinrow .btn { flex: 1; }
 .keys { margin-top: 10px; padding-top: 14px; border-top: 1px solid var(--line); font-size: 12px; color: var(--dim); line-height: 2; }
+.botrow { display: flex; gap: 8px; }
+.botrow .btn { flex: 1.2; }
+.botrow select { flex: 1; min-width: 0; }
+.keys details { margin-top: 6px; }
+.keys summary { cursor: pointer; color: var(--acc); font-weight: 700; }
+.keys details p { margin: 6px 0 0; line-height: 1.55; }
 .keys b { color: var(--txt); background: rgba(255, 255, 255, 0.1); padding: 2px 6px; border-radius: 5px; font-weight: 700; }
 
 /* ───────── 大廳 ───────── */
@@ -65,9 +71,24 @@ h3 { font-size: 13px; color: var(--dim); font-weight: 700; margin-bottom: 8px; l
 .vs { color: var(--dim); font-weight: 900; }
 .settings { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .settings label { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--dim); }
-.settings label:last-child { grid-column: 1 / -1; }
+
 select { background: rgba(0, 0, 0, 0.35); color: var(--txt); border: 1px solid var(--line); border-radius: 8px; padding: 9px; font: inherit; font-size: 14px; }
 select:disabled { opacity: 0.6; }
+
+/* ───────── 造型衣櫃 ───────── */
+.screen.side { background: linear-gradient(90deg, rgba(8, 10, 14, 0.82) 0%, rgba(8, 10, 14, 0.5) 38%, rgba(8, 10, 14, 0) 62%); justify-content: flex-start; padding-left: 5vw; }
+.screen.side > .panel { margin: auto 0; }
+.locker { width: min(440px, 46vw); }
+.locker h3 { margin-top: 16px; }
+.swatches { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.swatch { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 10px; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--line); cursor: pointer; font-weight: 700; font-size: 14px; }
+.swatch:hover { background: rgba(255, 255, 255, 0.1); }
+.swatch.sel { border-color: var(--acc); box-shadow: inset 0 0 0 1px var(--acc); background: rgba(255, 178, 56, 0.13); }
+.swatch i { flex: none; width: 26px; height: 26px; border-radius: 7px; border: 1px solid rgba(255, 255, 255, 0.25); position: relative; overflow: hidden; }
+.swatch i::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 35%; background: var(--c2, transparent); }
+.mapname { margin-top: 2px; font-size: 13px; color: var(--acc); font-weight: 700; }
+.pausebox label.check { flex-direction: row; align-items: center; gap: 8px; line-height: 1.4; }
+.pausebox label.check input { flex: none; width: 16px; height: 16px; accent-color: var(--acc); }
 
 /* ───────── 選槍 ───────── */
 .loadout { width: min(1120px, 100%); padding: 18px 22px; }
@@ -179,6 +200,9 @@ input[type=range] { width: 100%; accent-color: var(--acc); }
 #reloadbar { height: 4px; background: rgba(0, 0, 0, 0.5); border-radius: 2px; margin-top: 6px; overflow: hidden; opacity: 0; }
 #reloadbar i { display: block; height: 100%; width: 0; background: var(--acc); }
 
+#speed { position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%); text-align: center; text-shadow: 0 1px 3px #000; color: rgba(255, 255, 255, 0.75); }
+#speed b { font-size: 20px; font-weight: 900; margin-right: 4px; } #speed span { font-size: 11px; }
+#speed.fast b { color: var(--acc); } #speed.crouch b { color: #7fd0ff; }
 #banner { position: absolute; left: 0; right: 0; top: 24%; text-align: center; opacity: 0; transition: opacity 0.25s; text-shadow: 0 3px 14px rgba(0, 0, 0, 0.8); }
 #banner.show { opacity: 1; }
 #banner .big { font-size: 64px; font-weight: 900; letter-spacing: 0.05em; }

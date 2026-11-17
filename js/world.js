@@ -1,9 +1,9 @@
 import * as THREE from 'three';
 import { BS, WORLD, CHUNK } from './config.js';
 import { hash3 } from './util.js';
-import { buildMap } from './maps.js';
+import { MAPS } from './maps.js';
 
-export const B = { AIR: 0, BEDROCK: 1, GROUND: 2, CONCRETE: 3, BRICK: 4, WOOD: 5, METAL: 6, WALL: 7 };
+export const B = { AIR: 0, BEDROCK: 1, GROUND: 2, CONCRETE: 3, BRICK: 4, WOOD: 5, METAL: 6, WALL: 7, CONT_R: 8, CONT_B: 9, CONT_Y: 10, SAND: 11, SANDGROUND: 12, PLASTER: 13 };
 
 // hp = 要打多少傷害才會碎；Infinity = 打不壞
 export const BLOCK = [
@@ -15,6 +15,12 @@ export const BLOCK = [
   { name: '木板', hp: 55, color: [0.60, 0.40, 0.19] },
   { name: '鋼板', hp: 380, color: [0.17, 0.26, 0.36] },
   { name: '圍牆', hp: Infinity, color: [0.13, 0.15, 0.20] },
+  { name: '紅貨櫃', hp: 300, color: [0.50, 0.10, 0.07] },
+  { name: '藍貨櫃', hp: 300, color: [0.07, 0.20, 0.44] },
+  { name: '黃貨櫃', hp: 300, color: [0.58, 0.40, 0.05] },
+  { name: '砂岩牆', hp: 130, color: [0.60, 0.47, 0.30] },
+  { name: '沙地', hp: 160, color: [0.47, 0.40, 0.27] },
+  { name: '灰泥牆', hp: 100, color: [0.70, 0.67, 0.60] },
 ];
 
 const AO = [0.5, 0.66, 0.83, 1.0];
@@ -46,6 +52,8 @@ export class World {
       this.chunks.push({ cx, cy, cz, mesh });
     }
     this.dirty = new Set();
+    this.rev = 0;        // 地形每變一次就 +1（尋路用來判斷要不要重算）
+    this.mapId = 'plaza';
     this.reset();
   }
 
@@ -73,9 +81,16 @@ export class World {
     this.box(this.X - 1 - x1, y0, this.Z - 1 - z1, this.X - 1 - x0, y1, this.Z - 1 - z0, t);
   }
 
-  reset() {
-    this.types.fill(0); this.hp.fill(0);
-    buildMap(this);
+  // 鏡像版：以 z 中線對折（三線地圖用）
+  boxMir(x0, y0, z0, x1, y1, z1, t) {
+    this.box(x0, y0, z0, x1, y1, z1, t);
+    this.box(x0, y0, this.Z - 1 - z1, x1, y1, this.Z - 1 - z0, t);
+  }
+
+  reset(mapId) {
+    if (mapId && MAPS[mapId]) this.mapId = mapId;
+    this.types.fill(0); this.hp.fill(0); this.rev++;
+    MAPS[this.mapId].build(this);
     for (let i = 0; i < this.chunks.length; i++) this.dirty.add(i);
     this.update();
   }
@@ -93,7 +108,7 @@ export class World {
     const before = this._stage(i, t);
     this.hp[i] -= dmg;
     if (this.hp[i] <= 0) {
-      this.types[i] = 0; this.hp[i] = 0;
+      this.types[i] = 0; this.hp[i] = 0; this.rev++;
       this._mark(x, y, z, true);
       return { destroyed: true, type: t };
     }
@@ -156,6 +171,9 @@ export class World {
       else if (t === B.GROUND) k *= 0.9 + 0.2 * hash3(x >> 2, 7, z >> 2);
       else if (t === B.WALL) k *= (y % 4 === 0) ? 0.8 : 1;
       else if (t === B.METAL) k *= ((x >> 1) + (z >> 1)) & 1 ? 0.92 : 1;
+      else if (t >= B.CONT_R && t <= B.CONT_Y) k = (0.94 + 0.12 * hash3(x, y, z)) * (((x + z) & 1) ? 0.86 : 1); // 貨櫃的波浪板
+      else if (t === B.SAND) k *= (y % 3 === 0) ? 0.88 : 1;
+      else if (t === B.SANDGROUND) k *= 0.9 + 0.2 * hash3(x >> 2, 7, z >> 2);
       if (def.hp !== Infinity) { const st = this._stage(i, t); if (st) k *= st === 1 ? 0.78 : 0.58; }
       const cr = def.color[0] * k, cg = def.color[1] * k, cb = def.color[2] * k;
 

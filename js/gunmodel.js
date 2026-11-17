@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { WEAPONS } from './weapons.js';
+import { WSKINS } from './skins.js';
 
 const DARK = new THREE.MeshLambertMaterial({ color: 0x1b1d22 });
 const MID = new THREE.MeshLambertMaterial({ color: 0x33363d });
@@ -9,11 +10,18 @@ function accent(c) {
   return matCache.get(c);
 }
 
-// 用方塊拼出一把槍。槍口朝 -Z，原點在握把上方。
-export function buildGun(id) {
-  const m = WEAPONS[id].model;
+const glowCache = new Map();
+function glowMat(c) {
+  if (!glowCache.has(c)) glowCache.set(c, new THREE.MeshBasicMaterial({ color: c }));
+  return glowCache.get(c);
+}
+
+// 用方塊拼出一把槍。槍口朝 -Z，原點在握把上方。wskin = 武器塗裝
+export function buildGun(id, wskin = 'stock') {
+  const m = WEAPONS[id].model, sk = WSKINS[wskin] || WSKINS.stock;
   const g = new THREE.Group();
-  const acc = accent(m.color);
+  const acc = accent(sk.color === null ? m.color : sk.color);
+  const rail = sk.glow ? glowMat(sk.glow) : MID;
   const box = (w, h, d, mat, x, y, z) => {
     const me = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
     me.position.set(x, y, z); g.add(me); return me;
@@ -21,7 +29,7 @@ export function buildGun(id) {
   const bw = m.bw || 0.028;
   if (m.tube) {
     box(m.bw, m.bw, m.len, acc, 0, 0.02, -m.len / 2 + 0.06);
-    box(m.bw + 0.03, m.bw + 0.03, 0.08, DARK, 0, 0.02, -m.len + 0.08);
+    box(m.bw + 0.03, m.bw + 0.03, 0.08, sk.glow ? rail : DARK, 0, 0.02, -m.len + 0.08);
     box(m.bw + 0.02, m.bw + 0.02, 0.05, DARK, 0, 0.02, 0.05);
     box(0.045, 0.11, 0.05, DARK, 0, -0.09, -0.05);
     box(0.045, 0.09, 0.05, DARK, 0, -0.08, -0.25);
@@ -30,7 +38,7 @@ export function buildGun(id) {
     return g;
   }
   box(0.058, m.h, m.len, acc, 0, 0, -m.len / 2);                         // 機匣
-  box(0.05, m.h * 0.35, m.len * 0.7, MID, 0, m.h * 0.62, -m.len * 0.5);  // 上護木
+  box(0.05, m.h * 0.35, m.len * 0.7, rail, 0, m.h * 0.62, -m.len * 0.5); // 上護木
   box(bw, bw, m.barrel, DARK, 0, m.h * 0.12, -m.len - m.barrel / 2);     // 槍管
   box(0.045, 0.11, 0.05, DARK, 0, -m.h / 2 - 0.05, -0.03).rotation.x = -0.25; // 握把
   if (m.mag) {

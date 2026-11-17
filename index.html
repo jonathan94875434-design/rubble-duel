@@ -38,6 +38,7 @@
     <div id="reloadbar"><i></i></div>
   </div>
 
+  <div id="speed"><b id="speed-n">0.0</b><span>m/s</span></div>
   <div id="banner"><div class="big"></div><div class="sub"></div></div>
   <div id="feed"></div>
   <div id="netinfo"></div>
@@ -55,11 +56,24 @@
         <input id="in-code" maxlength="5" placeholder="房號" autocomplete="off">
         <button id="btn-join" class="btn">加入房間</button>
       </div>
-      <button id="btn-bot" class="btn ghost">單人練習（打電腦）</button>
+      <div class="botrow">
+        <button id="btn-bot" class="btn">單人練習</button>
+        <select id="sel-bot" title="對手難度"></select>
+        <select id="sel-pmap" title="練習地圖"></select>
+      </div>
+      <button id="btn-locker" class="btn ghost">造型</button>
       <div id="menu-msg" class="msg"></div>
       <div class="keys">
-        <b>WASD</b> 移動　<b>空白鍵</b> 跳　<b>左鍵</b> 開火　<b>右鍵</b> 瞄準<br>
-        <b>R</b> 換彈　<b>1 / 2 / Q / 滾輪</b> 切槍　<b>Esc</b> 設定
+        <b>WASD</b> 移動　<b>空白鍵</b> 跳（按住連跳）　<b>C</b> 蹲下<br>
+        <b>左鍵</b> 開火　<b>右鍵 / Shift</b> 瞄準　<b>R</b> 換彈<br>
+        <b>1 / 2 / Q / 滾輪</b> 切槍　<b>Esc</b> 設定
+        <details><summary>身法小抄</summary>
+          <p><b>急停</b>：跑動時子彈會散，放開方向鍵或點一下反方向鍵，停住再開槍。蹲下更準。</p>
+          <p><b>蹲跳</b>：跳起來後按住 C 把腳收起來，可以上 1.5 公尺高的箱子、鑽窗戶。</p>
+          <p><b>旋轉跳</b>：在空中放開 W，只按 A 或 D，同時把滑鼠往同一邊慢慢轉，速度會越來越快。</p>
+          <p><b>連跳</b>：按住空白鍵，落地瞬間自動再跳，不會被地面摩擦減速；配合旋轉跳可以一路加速。</p>
+          <p><b>靜步</b>：瞄準走或蹲走沒有腳步聲；跑步、跳下來對手聽得到你在哪。</p>
+        </details>
       </div>
     </div>
   </section>
@@ -78,6 +92,7 @@
       <div class="settings">
         <label>獲勝分數<select id="set-target"><option value="3">搶 3</option><option value="5">搶 5</option><option value="7">搶 7</option><option value="10">搶 10</option></select></label>
         <label>每局時間<select id="set-time"><option value="60">60 秒</option><option value="90">90 秒</option><option value="120">120 秒</option><option value="180">180 秒</option></select></label>
+        <label>地圖<select id="set-map"></select></label>
         <label>輸家補償<select id="set-buff"><option value="streak">連敗累積，贏了清空</option><option value="single">只維持下一局</option><option value="permanent">整場保留</option></select></label>
       </div>
       <div class="actions"><button id="btn-leave" class="btn ghost">離開</button><button id="btn-start" class="btn primary">開始對戰</button></div>
@@ -88,7 +103,7 @@
   <section id="scr-loadout" class="screen hidden">
     <div class="panel loadout">
       <div class="lo-head">
-        <div><h2 id="lo-title">第 1 局</h2><div id="lo-score" class="score"></div></div>
+        <div><h2 id="lo-title">第 1 局</h2><div id="lo-score" class="score"></div><div id="lo-map" class="mapname"></div></div>
         <div id="lo-timer" class="timer">30</div>
       </div>
       <div id="lo-buff" class="hidden">
@@ -104,6 +119,17 @@
         <div id="lo-opp" class="oppstate"></div>
         <button id="btn-ready" class="btn primary">準備</button>
       </div>
+    </div>
+  </section>
+
+  <!-- 造型衣櫃（右邊是 3D 預覽） -->
+  <section id="scr-locker" class="screen side hidden">
+    <div class="panel locker">
+      <h2>造型</h2>
+      <p class="hint">純外觀，不影響數值。對手看到的就是你選的樣子。</p>
+      <h3>角色</h3><div id="lk-skins" class="swatches"></div>
+      <h3>武器塗裝</h3><div id="lk-wskins" class="swatches"></div>
+      <div class="actions"><button id="btn-locker-back" class="btn primary">完成</button></div>
     </div>
   </section>
 
@@ -125,6 +151,7 @@
       <label>滑鼠靈敏度 <output id="out-sens"></output><input id="rng-sens" type="range" min="0.2" max="3" step="0.05"></label>
       <label>視野 FOV <output id="out-fov"></output><input id="rng-fov" type="range" min="65" max="105" step="1"></label>
       <label>音量 <output id="out-vol"></output><input id="rng-vol" type="range" min="0" max="1" step="0.05"></label>
+      <label class="check"><input id="chk-wheel" type="checkbox"> 滾輪切槍（用 Magic Mouse 容易誤觸可以關掉，改用 1 / 2 / Q）</label>
       <div class="actions"><button id="btn-quit" class="btn ghost small">離開對戰</button><button id="btn-resume" class="btn primary">繼續</button></div>
     </div>
   </div>

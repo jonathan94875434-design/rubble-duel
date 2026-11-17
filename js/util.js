@@ -29,10 +29,11 @@ export function rayAABB(ox, oy, oz, dx, dy, dz, x0, y0, z0, x1, y1, z1) {
   return t0;
 }
 
-// 玩家受擊判定盒（腳底中心座標）。回傳 {t, head} 或 null
-export function rayPlayer(ox, oy, oz, dx, dy, dz, px, py, pz) {
-  const th = rayAABB(ox, oy, oz, dx, dy, dz, px - 0.2, py + 1.42, pz - 0.2, px + 0.2, py + 1.82, pz + 0.2);
-  const tb = rayAABB(ox, oy, oz, dx, dy, dz, px - 0.33, py, pz - 0.33, px + 0.33, py + 1.42, pz + 0.33);
+// 玩家受擊判定盒（腳底中心座標）。蹲下時整個上半身降低 0.5。回傳 {t, head} 或 null
+export function rayPlayer(ox, oy, oz, dx, dy, dz, px, py, pz, crouched) {
+  const n = crouched ? 0.92 : 1.42; // 脖子高度
+  const th = rayAABB(ox, oy, oz, dx, dy, dz, px - 0.2, py + n, pz - 0.2, px + 0.2, py + n + 0.4, pz + 0.2);
+  const tb = rayAABB(ox, oy, oz, dx, dy, dz, px - 0.33, py, pz - 0.33, px + 0.33, py + n, pz + 0.33);
   if (th < 0 && tb < 0) return null;
   if (th >= 0 && (tb < 0 || th <= tb + 0.05)) return { t: th, head: true };
   return { t: tb, head: false };

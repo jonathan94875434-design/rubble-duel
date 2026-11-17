@@ -68,6 +68,9 @@ export class Sfx {
   jump() { if (!this.ctx) return; this._noise(0.08, 300, 'lowpass', 0.15, 0); }
   land() { if (!this.ctx) return; this._noise(0.1, 220, 'lowpass', 0.3, 0); }
   step() { if (!this.ctx) return; this._noise(0.05, 260 + Math.random() * 80, 'lowpass', 0.09, 0); }
+  // 對手的腳步聲：22 公尺內聽得到，越近越大聲、有左右方向
+  stepRemote(dist, pan) { if (!this.ctx) return; const a = Math.max(0, 1 - dist / 22); if (a <= 0) return; this._noise(0.07, 330 + Math.random() * 90, 'lowpass', 0.4 * a, pan); this._tone(110, 70, 0.05, 0.22 * a, 'sine', pan); }
+  landRemote(dist, pan) { if (!this.ctx) return; const a = Math.max(0, 1 - dist / 24); if (a <= 0) return; this._noise(0.13, 240, 'lowpass', 0.6 * a, pan); this._tone(90, 50, 0.1, 0.35 * a, 'sine', pan); }
   bounce(dist = 0) { if (!this.ctx) return; this._tone(700, 400, 0.05, 0.2 * Math.max(0.2, 1 / (1 + dist * 0.1)), 'triangle'); }
   pickup() { if (!this.ctx) return; this._tone(660, 990, 0.12, 0.25, 'sine'); this._tone(990, 1320, 0.15, 0.2, 'sine', 0, 0.08); }
   ui() { if (!this.ctx) return; this._tone(700, 900, 0.05, 0.12, 'sine'); }

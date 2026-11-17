@@ -45,8 +45,14 @@ await sleep(500);
 ok('大廳看到雙方名字', (await A.$eval('#lb-p1', (e) => e.textContent)) === '小明' && (await B.$eval('#lb-p0', (e) => e.textContent)) === '阿強');
 await A.screenshot({ path: OUT + '/n1-lobby-host.png' });
 await A.select('#set-target', '3');
+await A.select('#set-map', 'plaza'); // 後面的座標測試照廢墟廣場寫
 await sleep(300);
 ok('訪客看到房主改的規則', (await B.evaluate(() => __game.gs.set.target)) === 3);
+ok('訪客的背景換成房主指定的地圖', (await B.evaluate(() => __game.world.mapId)) === 'plaza');
+// 造型同步：B 換造型，A 看到的對手要跟著變
+await B.evaluate(() => { __game.setLook('skin', 'neon'); __game.setLook('wskin', 'gold'); });
+await sleep(400);
+ok('造型同步給對手', (await A.evaluate(() => __game.remote.skin + '/' + __game.remote.wskin)) === 'neon/gold', await A.evaluate(() => JSON.stringify(__game.gs.p[1].lk)));
 await A.click('#btn-start');
 await waitPhase(A, 'loadout'); await waitPhase(B, 'loadout');
 await B.click('.wcard[data-id="shotgun"]'); await A.click('.wcard[data-id="rocket"]');
@@ -62,6 +68,11 @@ ok('A 看到的 B 位置正確', d(s1.rem, s1b.me) < 0.3 && s1.vis, d(s1.rem, s1
 ok('B 看到的 A 位置正確', d(s1b.rem, s1.me) < 0.3, d(s1b.rem, s1.me).toFixed(3));
 ok('兩人出生點不同', d(s1.me, s1b.me) > 20);
 ok('開局地圖一致', (await hash(A)) === (await hash(B)));
+// 蹲下狀態同步（影響受擊判定盒）
+await B.evaluate(() => { __game.keys.KeyC = true; }); await sleep(500);
+ok('B 蹲下，A 看到對手是蹲著的', await A.evaluate(() => __game.remote.crouched && __game.remote.cr > 0.8));
+await B.evaluate(() => { __game.keys.KeyC = false; }); await sleep(400);
+ok('B 站起來，A 也同步', await A.evaluate(() => !__game.remote.crouched));
 
 // A 朝牆射火箭 → 兩邊地形要一致
 const h0 = await hash(A);
@@ -131,6 +142,7 @@ await B.screenshot({ path: OUT + '/n7-end-winner.png' });
 await A.click('#btn-rematch');
 await waitPhase(B, 'loadout', 5000);
 ok('再來一場：分數歸零', (await B.evaluate(() => __game.gs.p.map((p) => p.sc).join())) === '0,0');
+ok('再來一場：造型還在', (await A.evaluate(() => __game.remote.skin)) === 'neon');
 // 訪客離線 → 房主回大廳
 const tClose = Date.now();
 await B.close();
