@@ -50,5 +50,16 @@ export const MATCH = {
   PICKUP_RESPAWN: 20,
 };
 
+// 經濟系統：每局開打前用錢買裝備（買了就扣，不會留到下一局）。輸的人拿比較多，連敗再加碼
+export const ECON = {
+  START: 800,        // 開場金額 → 第 1 局只買得起手槍和小東西（而且規則上也只開放手槍）
+  MAX: 12000,
+  WIN: 2000,         // 贏一局
+  LOSE: 3000,        // 輸一局
+  LOSE_STREAK: 500,  // 每多連敗一局再加
+  LOSE_MAX: 4500,
+  DRAW: 2500,
+};
+
 export const TEAM = [0xff7a3c, 0x3cc8ff];      // 房主橘、訪客藍
 export const TEAM_CSS = ['#ff7a3c', '#3cc8ff'];

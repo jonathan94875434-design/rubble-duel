@@ -1,5 +1,6 @@
 // 槍枝數值表。要加新槍：在這裡加一筆就會自動出現在選槍畫面。
 //
+// price   價格（P9 手槍免費，每局都有）
 // slot    'p' 主武器 / 's' 副武器
 // rpm     射速（每分鐘發數）；auto=false 時是連點上限
 // dmg     每發（每顆彈丸）身體傷害；head 是爆頭倍率
@@ -14,7 +15,7 @@
 // proj    拋射物（火箭、榴彈）
 export const WEAPONS = {
   ar: {
-    name: 'VK-30 突擊步槍', tag: '步槍', slot: 'p', auto: true, rpm: 600, dmg: 22, head: 1.6, pellets: 1,
+    name: 'VK-30 突擊步槍', price: 2500, tag: '步槍', slot: 'p', auto: true, rpm: 600, dmg: 22, head: 1.6, pellets: 1,
     spread: [1.0, 0.22], mv: 1.8, bloom: 0.32, recoil: [0.85, 0.3], mag: 30, reload: 2.1,
     range: [25, 55, 0.7], block: 1.0, zoom: 1.35, move: 1.0,
     desc: '全能型，中距離穩定輸出',
@@ -22,7 +23,7 @@ export const WEAPONS = {
     snd: { f: 1400, dur: 0.16, thump: 150, gain: 0.8 },
   },
   smg: {
-    name: '蜂鳥 衝鋒槍', tag: '衝鋒槍', slot: 'p', auto: true, rpm: 900, dmg: 15, head: 1.5, pellets: 1,
+    name: '蜂鳥 衝鋒槍', price: 1400, tag: '衝鋒槍', slot: 'p', auto: true, rpm: 900, dmg: 15, head: 1.5, pellets: 1,
     spread: [1.3, 0.5], mv: 0.7, bloom: 0.22, recoil: [0.55, 0.3], mag: 32, reload: 1.7,
     range: [10, 28, 0.5], block: 0.8, zoom: 1.2, move: 1.08,
     desc: '射速極快、跑得快，貼臉最強',
@@ -30,7 +31,7 @@ export const WEAPONS = {
     snd: { f: 2200, dur: 0.1, thump: 210, gain: 0.6 },
   },
   shotgun: {
-    name: '破門者 霰彈槍', tag: '霰彈槍', slot: 'p', auto: false, rpm: 75, dmg: 12, head: 1.25, pellets: 8,
+    name: '破門者 霰彈槍', price: 1600, tag: '霰彈槍', slot: 'p', auto: false, rpm: 75, dmg: 12, head: 1.25, pellets: 8,
     spread: [4.6, 3.6], mv: 0.4, bloom: 0, recoil: [3.6, 0.8], mag: 6, reload: 2.7,
     range: [6, 20, 0.2], block: 1.7, zoom: 1.15, move: 0.97,
     desc: '近距離一槍半殘，開牆也很快',
@@ -38,7 +39,7 @@ export const WEAPONS = {
     snd: { f: 800, dur: 0.3, thump: 90, gain: 1.0 },
   },
   dmr: {
-    name: 'M-12 射手步槍', tag: '射手步槍', slot: 'p', auto: false, rpm: 300, dmg: 40, head: 1.75, pellets: 1,
+    name: 'M-12 射手步槍', price: 2700, tag: '射手步槍', slot: 'p', auto: false, rpm: 300, dmg: 40, head: 1.75, pellets: 1,
     spread: [1.8, 0.08], mv: 2.4, bloom: 0.5, recoil: [1.8, 0.4], mag: 12, reload: 2.3,
     range: [45, 90, 0.8], block: 1.4, zoom: 2.2, move: 0.96,
     desc: '半自動，三槍帶走，爆頭更痛',
@@ -46,7 +47,7 @@ export const WEAPONS = {
     snd: { f: 1100, dur: 0.22, thump: 120, gain: 0.9 },
   },
   sniper: {
-    name: '長釘 狙擊槍', tag: '狙擊槍', slot: 'p', auto: false, rpm: 46, dmg: 85, head: 2.5, pellets: 1,
+    name: '長釘 狙擊槍', price: 4200, tag: '狙擊槍', slot: 'p', auto: false, rpm: 46, dmg: 85, head: 2.5, pellets: 1,
     spread: [5.5, 0.0], mv: 4.0, bloom: 0, recoil: [4.5, 0.6], mag: 5, reload: 3.0,
     range: [200, 200, 1], block: 3.0, zoom: 4.5, move: 0.9, scope: true,
     desc: '爆頭必殺，一槍打穿水泥牆',
@@ -54,7 +55,7 @@ export const WEAPONS = {
     snd: { f: 700, dur: 0.42, thump: 70, gain: 1.1 },
   },
   lmg: {
-    name: '鐵砧 輕機槍', tag: '機槍', slot: 'p', auto: true, rpm: 540, dmg: 23, head: 1.5, pellets: 1,
+    name: '鐵砧 輕機槍', price: 3600, tag: '機槍', slot: 'p', auto: true, rpm: 540, dmg: 23, head: 1.5, pellets: 1,
     spread: [1.6, 0.45], mv: 2.6, bloom: 0.2, recoil: [0.9, 0.42], mag: 75, reload: 4.2,
     range: [30, 60, 0.7], block: 1.7, zoom: 1.3, move: 0.85,
     desc: '75 發大彈鼓，壓制兼拆房，跑得慢',
@@ -62,7 +63,7 @@ export const WEAPONS = {
     snd: { f: 1000, dur: 0.18, thump: 110, gain: 0.9 },
   },
   rocket: {
-    name: '拆遷令 火箭筒', tag: '爆裂物', slot: 'p', auto: false, rpm: 40, dmg: 110, head: 1, pellets: 1,
+    name: '拆遷令 火箭筒', price: 4000, tag: '爆裂物', slot: 'p', auto: false, rpm: 40, dmg: 110, head: 1, pellets: 1,
     spread: [0.3, 0.1], mv: 0.3, bloom: 0, recoil: [3, 0.5], mag: 1, reserve: 4, reload: 2.4,
     range: [999, 999, 1], block: 1, zoom: 1.2, move: 0.9,
     proj: { speed: 42, gravity: 0, radius: 4.5, blockR: 2.4, blockPow: 520, self: 0.5, kick: 11 },
@@ -71,7 +72,7 @@ export const WEAPONS = {
     snd: { f: 500, dur: 0.5, thump: 60, gain: 1.0 },
   },
   gl: {
-    name: '彈跳 榴彈槍', tag: '爆裂物', slot: 'p', auto: false, rpm: 75, dmg: 85, head: 1, pellets: 1,
+    name: '彈跳 榴彈槍', price: 3200, tag: '爆裂物', slot: 'p', auto: false, rpm: 75, dmg: 85, head: 1, pellets: 1,
     spread: [0.5, 0.2], mv: 0.3, bloom: 0, recoil: [2.4, 0.4], mag: 4, reserve: 4, reload: 2.9,
     range: [999, 999, 1], block: 1, zoom: 1.2, move: 0.94,
     proj: { speed: 27, gravity: 17, radius: 3.8, blockR: 1.9, blockPow: 420, self: 0.5, kick: 9, bounce: 0.45, fuse: 1.5 },
@@ -81,7 +82,7 @@ export const WEAPONS = {
   },
 
   pistol: {
-    name: 'P9 手槍', tag: '手槍', slot: 's', auto: false, rpm: 420, dmg: 24, head: 1.7, pellets: 1,
+    name: 'P9 手槍', price: 0, tag: '手槍', slot: 's', auto: false, rpm: 420, dmg: 24, head: 1.7, pellets: 1,
     spread: [0.9, 0.3], mv: 0.9, bloom: 0.45, recoil: [1.3, 0.35], mag: 12, reload: 1.4,
     range: [18, 40, 0.6], block: 0.8, zoom: 1.2, move: 1.05,
     desc: '可靠的備用槍，換彈很快',
@@ -89,7 +90,7 @@ export const WEAPONS = {
     snd: { f: 1800, dur: 0.12, thump: 180, gain: 0.6 },
   },
   revolver: {
-    name: '審判者 左輪', tag: '手槍', slot: 's', auto: false, rpm: 140, dmg: 52, head: 2.0, pellets: 1,
+    name: '審判者 左輪', price: 600, tag: '手槍', slot: 's', auto: false, rpm: 140, dmg: 52, head: 2.0, pellets: 1,
     spread: [1.2, 0.15], mv: 1.6, bloom: 0.8, recoil: [4.2, 0.7], mag: 6, reload: 2.4,
     range: [30, 60, 0.75], block: 1.6, zoom: 1.4, move: 1.03,
     desc: '爆頭一槍帶走，但射速慢、後座大',
@@ -97,7 +98,7 @@ export const WEAPONS = {
     snd: { f: 900, dur: 0.3, thump: 100, gain: 1.0 },
   },
   mp: {
-    name: '黃蜂 衝鋒手槍', tag: '手槍', slot: 's', auto: true, rpm: 1000, dmg: 12, head: 1.4, pellets: 1,
+    name: '黃蜂 衝鋒手槍', price: 400, tag: '手槍', slot: 's', auto: true, rpm: 1000, dmg: 12, head: 1.4, pellets: 1,
     spread: [1.9, 0.9], mv: 0.6, bloom: 0.25, recoil: [0.6, 0.45], mag: 22, reload: 1.6,
     range: [8, 22, 0.45], block: 0.7, zoom: 1.15, move: 1.06,
     desc: '全自動潑灑，近身補槍用',
@@ -108,13 +109,60 @@ export const WEAPONS = {
 
 export const PRIMARIES = Object.keys(WEAPONS).filter((k) => WEAPONS[k].slot === 'p');
 export const SECONDARIES = Object.keys(WEAPONS).filter((k) => WEAPONS[k].slot === 's');
-export const DEFAULT_LOADOUT = { p: 'ar', s: 'pistol' };
+// 投擲物：跟火箭、榴彈共用拋射物系統。kind 決定引信到了之後發生什麼事
+export const THROWABLES = {
+  he: {
+    name: '手榴彈', kind: 'he', dmg: 90,
+    proj: { speed: 20, gravity: 18, bounce: 0.42, fuse: 1.6, radius: 4.5, blockR: 1.7, blockPow: 340, self: 0.7, kick: 7 },
+  },
+  flash: {
+    name: '閃光彈', kind: 'flash', dmg: 0,
+    proj: { speed: 21, gravity: 18, bounce: 0.45, fuse: 1.4, radius: 0, blockR: 0, blockPow: 0, self: 0, kick: 0 },
+  },
+  smoke: {
+    name: '煙霧彈', kind: 'smoke', dmg: 0, dur: 12, cloud: 3.4,
+    proj: { speed: 18, gravity: 18, bounce: 0.3, fuse: 1.5, radius: 0, blockR: 0, blockPow: 0, self: 0, kick: 0 },
+  },
+};
+export const projDef = (id) => WEAPONS[id] || THROWABLES[id];
+export const itemName = (id) => (projDef(id) ? projDef(id).name : '');
+
+// 裝備（買槍畫面的第三區）。max = 一局最多帶幾個
+export const GEAR = {
+  armor: { name: '防彈衣', price: 600, max: 1, glyph: '甲', desc: '開局 50 護甲，吸收一半傷害' },
+  he: { name: '手榴彈', price: 300, max: 1, glyph: '爆', desc: '1.6 秒後爆炸，會彈牆、能炸開方塊' },
+  flash: { name: '閃光彈', price: 200, max: 2, glyph: '閃', desc: '看著它爆炸的人會全白好幾秒（自己也會）' },
+  smoke: { name: '煙霧彈', price: 250, max: 1, glyph: '煙', desc: '放出一團擋視線的煙，維持 12 秒' },
+};
+export const GEAR_IDS = Object.keys(GEAR);
+
+// 一套裝備：p 主武器（可以不買 = null）、s 副武器、其餘是數量
+export const DEFAULT_LOADOUT = { p: 'ar', s: 'pistol', armor: 1, he: 1, flash: 1, smoke: 0 };
 
 export function validLoadout(l) {
-  return {
-    p: l && PRIMARIES.includes(l.p) ? l.p : DEFAULT_LOADOUT.p,
-    s: l && SECONDARIES.includes(l.s) ? l.s : DEFAULT_LOADOUT.s,
-  };
+  const o = { p: null, s: 'pistol' };
+  if (l && PRIMARIES.includes(l.p)) o.p = l.p;
+  if (l && SECONDARIES.includes(l.s)) o.s = l.s;
+  for (const k of GEAR_IDS) o[k] = Math.max(0, Math.min(GEAR[k].max, (l && l[k]) | 0));
+  return o;
+}
+
+export function loadoutCost(l) {
+  let c = (l.p ? WEAPONS[l.p].price : 0) + WEAPONS[l.s].price;
+  for (const k of GEAR_IDS) c += GEAR[k].price * (l[k] || 0);
+  return c;
+}
+
+// 把「想要的裝備」配成「這一局買得起、規則也允許」的一套：
+// 第 1 局是手槍局（不能買主武器）；其餘照 主武器 → 副武器 → 防彈衣 → 投擲物 的順序，買得起就買
+export function fitLoadout(l, money, round) {
+  const w = validLoadout(l), o = { p: null, s: 'pistol' };
+  let left = money;
+  const take = (price) => (price <= left ? ((left -= price), true) : false);
+  if (round > 1 && w.p && take(WEAPONS[w.p].price)) o.p = w.p;
+  if (w.s !== 'pistol' && take(WEAPONS[w.s].price)) o.s = w.s;
+  for (const k of GEAR_IDS) { o[k] = 0; for (let i = 0; i < w[k]; i++) if (take(GEAR[k].price)) o[k]++; }
+  return o;
 }
 
 export function falloff(def, dist) {

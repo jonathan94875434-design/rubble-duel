@@ -1,13 +1,16 @@
 import * as THREE from 'three';
 import { PLAYER, TEAM } from './config.js';
-import { WEAPONS, falloff } from './weapons.js';
+import { WEAPONS, THROWABLES, projDef, falloff } from './weapons.js';
 import { buffMods } from './buffs.js';
 import { lerp, r3 } from './util.js';
 
 const DEG = Math.PI / 180;
 const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _d = new THREE.Vector3(), _n = new THREE.Vector3();
-const PROJ_GEO = new THREE.BoxGeometry(0.14, 0.14, 0.34);
-const PROJ_MAT = { rocket: new THREE.MeshBasicMaterial({ color: 0xffc070 }), gl: new THREE.MeshBasicMaterial({ color: 0x9fe060 }) };
+const PROJ_GEO = new THREE.BoxGeometry(0.14, 0.14, 0.34), NADE_GEO = new THREE.BoxGeometry(0.13, 0.16, 0.13);
+const PROJ_MAT = {
+  rocket: new THREE.MeshBasicMaterial({ color: 0xffc070 }), gl: new THREE.MeshBasicMaterial({ color: 0x9fe060 }),
+  he: new THREE.MeshLambertMaterial({ color: 0x3f5a2c }), flash: new THREE.MeshLambertMaterial({ color: 0xd8dde4 }), smoke: new THREE.MeshLambertMaterial({ color: 0x6f7a86 }),
+};
 
 // 本機玩家的開槍、換彈、切槍，以及所有拋射物（自己的 + 對手的畫面）
 export class Combat {
@@ -18,19 +21,42 @@ export class Combat {
     this.switchEnd = 0; this.switchDur = 350; this.fireQueued = 0; this.lastShotT = 0; this.prevShotT = 0;
     this.projectiles = []; this.pid = 1; this.blkOut = [];
     this.shots = 0; this.hits = 0; this.shotIdx = 0;
+    this.nades = { he: 0, flash: 0, smoke: 0 }; this.throwAt = 0;
   }
 
   get w() { return this.slots[this.cur]; }
 
+  // lo = { p 主武器（可能沒買 = null）, s 副武器, he/flash/smoke 數量 }
   setLoadout(lo, buffs) {
     this.mods = buffMods(buffs);
-    this.slots = [lo.p, lo.s].map((id) => {
+    const mk = (id) => {
+      if (!id) return null;
       const def = WEAPONS[id], mag = Math.round(def.mag * this.mods.mag);
       return { id, def, mag, ammo: mag, reserve: def.reserve === undefined ? Infinity : def.reserve, nextFire: 0, reloadEnd: 0, reloadStart: 0 };
-    });
-    this.cur = 0; this.bloom = 0; this.recP = this.recY = 0; this.ads = 0; this.switchEnd = 0; this.fireQueued = 0;
-    this.g.view.setWeapon(lo.p, this.g.settings.wskin);
+    };
+    this.slots = [mk(lo.p), mk(lo.s)];
+    this.cur = this.slots[0] ? 0 : 1;
+    this.nades = { he: lo.he | 0, flash: lo.flash | 0, smoke: lo.smoke | 0 }; this.throwAt = 0;
+    this.bloom = 0; this.recP = this.recY = 0; this.ads = 0; this.switchEnd = 0; this.fireQueued = 0;
+    this.g.view.setWeapon(this.w.id, this.g.settings.wskin);
     this.clearProjectiles();
+  }
+
+  // 丟投擲物：朝準星方向丟出去，帶一點往上的弧度和自己的移動速度
+  throwNade(kind) {
+    const g = this.g, now = performance.now(), def = THROWABLES[kind];
+    if (!def || this.nades[kind] <= 0 || now < this.throwAt) return false;
+    this.nades[kind]--; this.throwAt = now + 700;
+    if (this.w) this.w.reloadEnd = 0;
+    this.switchDur = 380; this.switchEnd = now + 380; this.ads = 0;   // 丟的時候槍會放下一下
+    const e = g.camera.matrixWorld.elements, fx = -e[8], fy = -e[9], fz = -e[10], pv = g.player.vel, sp = def.proj.speed;
+    const pid = (g.me + 1) * 100000 + this.pid++;
+    const o = [r3(e[12] + fx * 0.45 + e[0] * 0.12), r3(e[13] + fy * 0.45 - 0.1), r3(e[14] + fz * 0.45 + e[2] * 0.12)];
+    const v = [r3(fx * sp + pv.x * 0.5), r3(fy * sp + 3 + Math.max(0, pv.y) * 0.3), r3(fz * sp + pv.z * 0.5)];
+    this.spawnProjectile(kind, pid, o, v, true);
+    g.sendPeer('fire', { w: kind, pid, o, v });
+    g.sfx.throw();
+    return true;
   }
 
   clearProjectiles() {
@@ -165,8 +191,9 @@ export class Combat {
 
   // ───────── 拋射物 ─────────
   spawnProjectile(id, pid, o, v, local) {
-    const def = WEAPONS[id];
-    const mesh = new THREE.Mesh(PROJ_GEO, PROJ_MAT[id] || PROJ_MAT.rocket);
+    const def = projDef(id);
+    if (!def || !def.proj) return;
+    const mesh = new THREE.Mesh(def.kind ? NADE_GEO : PROJ_GEO, PROJ_MAT[id] || PROJ_MAT.rocket);
     mesh.position.set(o[0], o[1], o[2]);
     this.g.scene.add(mesh);
     this.projectiles.push({ id, def, pid, local, pos: new THREE.Vector3(o[0], o[1], o[2]), vel: new THREE.Vector3(v[0], v[1], v[2]), born: performance.now(), mesh, frozen: 0, smoke: 0 });
@@ -188,7 +215,7 @@ export class Combat {
       if (sp > 0.01) {
         _d.copy(p.vel).multiplyScalar(1 / sp);
         const bh = g.world.raycast(p.pos.x, p.pos.y, p.pos.z, _d.x, _d.y, _d.z, len);
-        const ph = p.local ? g.remote.rayHit(p.pos.x, p.pos.y, p.pos.z, _d.x, _d.y, _d.z) : null;
+        const ph = p.local && !p.def.kind ? g.remote.rayHit(p.pos.x, p.pos.y, p.pos.z, _d.x, _d.y, _d.z) : null; // 手榴彈不會砸到人就爆
         if (ph && ph.t <= len && (!bh || ph.t < bh.dist)) {
           p.pos.addScaledVector(_d, ph.t); this.explode(p, true); done = true;
         } else if (bh) {
@@ -208,9 +235,9 @@ export class Combat {
         p.frozen = now; p.mesh.visible = false; continue;
       }
       p.mesh.position.copy(p.pos);
-      if (sp > 0.5) p.mesh.lookAt(_a.copy(p.pos).add(p.vel));
+      if (p.def.kind) { p.mesh.rotation.x += dt * 9; p.mesh.rotation.z += dt * 6; } else if (sp > 0.5) p.mesh.lookAt(_a.copy(p.pos).add(p.vel));
       p.smoke += dt;
-      if (p.smoke > 0.025) { p.smoke = 0; g.fx.smoke(p.pos.x, p.pos.y, p.pos.z, 1, pr.gravity ? 0.07 : 0.13); }
+      if (!p.def.kind && p.smoke > 0.025) { p.smoke = 0; g.fx.smoke(p.pos.x, p.pos.y, p.pos.z, 1, pr.gravity ? 0.07 : 0.13); }
     }
   }
 
@@ -219,9 +246,11 @@ export class Combat {
     const g = this.g, pr = p.def.proj, pos = p.pos;
     const pow = pr.blockPow * this.mods.block;
     const msg = { r: g.round, pid: p.pid, p: [r3(pos.x), r3(pos.y), r3(pos.z)], br: pr.blockR, bp: pow, rad: pr.radius, k: pr.kick };
+    if (p.def.kind && p.def.kind !== 'he') { msg.kind = p.def.kind; msg.dur = p.def.dur; msg.cloud = p.def.cloud; } // 閃光、煙霧：沒有傷害
     this.removeProjectile(p.pid);
     g.sendPeer('expl', msg);
     g.doExplosion(msg);
+    if (msg.kind) return;
     if (g.remote.alive) {
       const d = direct ? 0 : Math.hypot(pos.x - g.remote.pos.x, pos.y - (g.remote.pos.y + 0.9), pos.z - g.remote.pos.z);
       if (d < pr.radius) {

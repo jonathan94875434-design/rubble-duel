@@ -65,6 +65,17 @@ export class Sfx {
   dry() { if (!this.ctx) return; this._tone(900, 700, 0.03, 0.15, 'square'); }
   reload(step) { if (!this.ctx) return; this._noise(0.05, step ? 2600 : 1600, 'bandpass', 0.3, 0, 3); this._tone(step ? 500 : 320, 200, 0.04, 0.15, 'square'); }
   swap() { if (!this.ctx) return; this._noise(0.07, 1200, 'bandpass', 0.2, 0, 2); }
+  throw() { if (!this.ctx) return; this._noise(0.12, 900, 'bandpass', 0.22, 0, 1.2); }
+  // 閃光彈：爆裂聲；被閃到的人還會耳鳴（ring = 秒數）
+  flashbang(dist = 0, pan = 0, ring = 0) {
+    if (!this.ctx) return;
+    const a = Math.max(0.15, 1 / (1 + dist * 0.06));
+    this._noise(0.25, 3200, 'highpass', 0.8 * a, pan); this._tone(1800, 600, 0.12, 0.5 * a, 'square', pan);
+    if (ring > 0) this._tone(4200, 4100, ring, 0.16, 'sine');
+  }
+  hiss(dist = 0, pan = 0) { if (!this.ctx) return; const a = Math.max(0.1, 1 / (1 + dist * 0.08)); this._noise(1.6, 2600, 'bandpass', 0.35 * a, pan, 0.7); }
+  buy() { if (!this.ctx) return; this._tone(880, 1320, 0.06, 0.14, 'triangle'); }
+  deny() { if (!this.ctx) return; this._tone(220, 180, 0.09, 0.16, 'square'); }
   jump() { if (!this.ctx) return; this._noise(0.08, 300, 'lowpass', 0.15, 0); }
   land() { if (!this.ctx) return; this._noise(0.1, 220, 'lowpass', 0.3, 0); }
   step() { if (!this.ctx) return; this._noise(0.05, 260 + Math.random() * 80, 'lowpass', 0.09, 0); }

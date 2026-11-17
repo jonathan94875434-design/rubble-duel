@@ -2,24 +2,40 @@ import { BS } from './config.js';
 
 // 方塊代號（跟 world.js 的 B 一致，這裡重寫一份避免循環引用）
 const AIR = 0, BEDROCK = 1, GROUND = 2, CONCRETE = 3, BRICK = 4, WOOD = 5, METAL = 6, WALL = 7,
-  CONT_R = 8, CONT_B = 9, CONT_Y = 10, SAND = 11, SANDGROUND = 12, PLASTER = 13;
+  CONT_R = 8, CONT_B = 9, CONT_Y = 10, SAND = 11, SANDGROUND = 12, PLASTER = 13, ROCK = 14;
 
-export const G = 3; // 地面上第一格可站立的高度（方塊）
+// 每張地圖的「地面高度」（站立的那一格，單位：方塊）。地面越高，底下能挖的空間越多
+const GP = 3, GL = 9, GY = 3, QLO = 7, QHI = 13;
 const m = (c) => (c + 0.5) * BS;
 
-// 地基 + 外圍牆。x0..x1 / z0..z1 是可活動範圍外那圈牆的位置
-function base(w, ground, x0 = 0, z0 = 0, x1 = w.X - 1, z1 = w.Z - 1) {
+// 地基 + 外圍牆。g = 地面高度；x0..z1 是外圍牆的位置（預設貼著世界邊緣）
+function base(w, ground, g, x0 = 0, z0 = 0, x1 = w.X - 1, z1 = w.Z - 1) {
   w.box(0, 0, 0, w.X - 1, 0, w.Z - 1, BEDROCK);          // 最底層打不壞
-  w.box(0, 1, 0, w.X - 1, G - 1, w.Z - 1, ground);       // 上面兩層可以炸出彈坑
-  const WH = 22;
+  w.box(0, 1, 0, w.X - 1, g - 1, w.Z - 1, ground);       // 上面的土可以炸開
+  const WH = Math.min(w.Y - 3, g + 19);
   w.box(x0, 1, z0, x0 + 1, WH, z1, WALL); w.box(x1 - 1, 1, z0, x1, WH, z1, WALL);
   w.box(x0, 1, z0, x1, WH, z0 + 1, WALL); w.box(x0, 1, z1 - 1, x1, WH, z1, WALL);
 }
 
+// 坡道：沿 z 方向（dz=±1）一階一階往下。寬度 x0..x1，從 zStart 開始；
+// run = 每一階走幾格才降一格（1 = 樓梯 45°、2 ≈ 27°、3 ≈ 18° 緩坡）；從 hTop 格高降到 0
+function rampZ(put, x0, x1, zStart, dz, run, yLo, hTop, type) {
+  for (let s = 0; s < hTop; s++) for (let r = 0; r < run; r++) {
+    const z = zStart + dz * (s * run + r);
+    put(x0, yLo, z, x1, yLo + hTop - 1 - s, z, type);
+  }
+}
+function rampX(put, z0, z1, xStart, dx, run, yLo, hTop, type) {
+  for (let s = 0; s < hTop; s++) for (let r = 0; r < run; r++) {
+    const x = xStart + dx * (s * run + r);
+    put(x, yLo, z0, x, yLo + hTop - 1 - s, z1, type);
+  }
+}
+
 // ═════════ 1. 廢墟廣場：開闊、中央兩層塔、角落高台（繞中心旋轉 180° 對稱）═════════
 function buildPlaza(w) {
-  const S = (...a) => w.boxSym(...a);
-  base(w, GROUND);
+  const S = (...a) => w.boxSym(...a), G = GP;
+  base(w, GROUND, G);
 
   // 中央塔（40..55）
   const c0 = 40, c1 = 55;
@@ -83,8 +99,12 @@ function buildPlaza(w) {
 //   中路兩側是倉庫（一層＋屋頂）和公寓（兩層），公寓二樓有木橋跨過中央橫街
 //   東邊「隧道」有屋頂、轉角多，適合近戰；屋頂上也能走
 function buildLanes(w) {
-  const M = (...a) => w.boxMir(...a);
-  base(w, SANDGROUND);
+  const M = (...a) => w.boxMir(...a), G = GL;
+  base(w, SANDGROUND, G);
+
+  // 地下道：從中路南段走樓梯下去，穿過中央水泥塊底下，再從北段上來（頂板只有一格厚，炸得開）
+  for (let i = 0; i < 5; i++) M(46, G - 1 - i, 30 + i * 2, 49, G - 1, 39, AIR);
+  M(46, G - 5, 40, 49, G - 2, 47, AIR);
 
   // 出生區掩體
   M(40, G, 16, 55, G + 2, 17, CONCRETE);
@@ -145,8 +165,13 @@ function container(w, x0, y0, z0, alongX, type, hollow) {
 }
 
 function buildYard(w) {
-  const S = (...a) => w.boxSym(...a);
-  base(w, GROUND, 12, 12, 83, 83);
+  const S = (...a) => w.boxSym(...a), G = GY;
+  base(w, GROUND, G, 12, 12, 83, 83);
+
+  // 碼頭邊的高起平台（比地面高 1m），兩端用緩坡接地
+  S(14, G, 60, 26, G + 1, 81, CONCRETE);
+  rampX(S, 66, 75, 27, 1, 3, G, 2, CONCRETE);
+  rampZ(S, 14, 21, 59, -1, 3, G, 2, CONCRETE);
 
   // 出生點旁的 L 型貨櫃
   container(w, 24, G, 22, true, CONT_R, true);
@@ -175,51 +200,110 @@ function buildYard(w) {
   S(34, G, 16, 36, G + 1, 18, WOOD);
 }
 
+// ═════════ 4. 礦場：南北兩塊高地、中間是谷底，有緩坡、陡階、木橋、穿山隧道、山裡的地道（以 z 中線鏡像）═════════
+function buildQuarry(w) {
+  const M = (...a) => w.boxMir(...a), LO = QLO, HI = QHI, UP = HI - LO; // 高地比谷底高 6 格 = 3m
+  base(w, ROCK, LO);
+
+  // 南北高地（出生點在上面）
+  M(2, LO, 2, 93, HI - 1, 25, ROCK);
+  // 三條下谷的路：西邊緩坡、中間陡階、東邊中等坡
+  rampZ(M, 6, 15, 26, 1, 3, LO, UP - 1, ROCK);
+  rampZ(M, 46, 51, 26, 1, 1, LO, UP - 1, ROCK);
+  rampZ(M, 80, 89, 26, 1, 2, LO, UP - 1, ROCK);
+
+  // 山裡的地道：從高地上走樓梯下去，在山壁開口通到谷底（有頂、對面看不到你下山）
+  for (let i = 0; i < 6; i++) M(66, HI - 1 - i, 12 + i * 2, 69, Math.min(HI - 1, HI + 2 - i), 13 + i * 2, AIR);
+  M(66, LO, 24, 69, LO + 3, 25, AIR);
+
+  // 中央台地（跟高地一樣高），裡面挖了十字形的礦坑隧道
+  w.box(34, LO, 36, 61, HI - 1, 59, ROCK);
+  w.box(34, LO, 46, 61, LO + 3, 49, AIR);
+  w.box(46, LO, 36, 49, LO + 3, 59, AIR);
+  w.box(55, LO + 4, 46, 58, HI - 1, 49, AIR);            // 台地頂上的豎井，可以直接跳進隧道
+  w.box(44, HI, 44, 51, HI + 5, 51, ROCK);               // 山頂岩柱，擋住南北互看
+  M(36, HI, 40, 39, HI + 2, 41, ROCK);
+  M(52, HI, 38, 54, HI + 1, 40, WOOD);
+  // 木橋：高地 ↔ 中央台地（底下是谷底，橋可以被打斷）
+  M(40, HI - 1, 26, 43, HI - 1, 35, WOOD);
+
+  // 高地上的掩體
+  M(22, HI, 20, 31, HI + 2, 21, CONCRETE); M(58, HI, 20, 63, HI + 2, 21, CONCRETE);
+  M(44, HI, 15, 46, HI + 2, 17, WOOD); M(47, HI, 16, 48, HI + 1, 17, WOOD);
+  M(72, HI, 8, 74, HI + 1, 10, WOOD); M(18, HI, 8, 20, HI + 2, 10, WOOD);
+  M(70, HI, 14, 71, HI + 3, 23, ROCK);                   // 地道入口旁的岩壁
+
+  // 谷底：東邊有一塊半高的平台（比谷底高 1.5m），兩側用坡接上
+  w.box(72, LO, 40, 93, LO + 2, 55, ROCK);
+  rampX(w.box.bind(w), 44, 51, 71, -1, 2, LO, 3, ROCK);
+  M(84, LO + 3, 44, 86, LO + 4, 46, WOOD);
+  // 谷底西邊的石塊與木箱
+  M(8, LO, 44, 11, LO + 2, 46, ROCK); M(20, LO, 40, 22, LO + 1, 42, WOOD);
+  M(26, LO, 44, 27, LO + 4, 47, ROCK);
+  M(64, LO, 38, 66, LO + 1, 40, WOOD);
+}
+
 // 每張地圖：名稱、建造函式、兩個出生點（yaw 面向對手方向）、補給品
 export const MAPS = {
   plaza: {
     name: '廢墟廣場', desc: '開闊場地，中央兩層塔與角落高台',
     build: buildPlaza,
     spawns: [
-      { x: m(13), y: G * BS, z: m(13), yaw: -Math.PI * 0.75 },
-      { x: m(82), y: G * BS, z: m(82), yaw: Math.PI * 0.25 },
+      { x: m(13), y: GP * BS, z: m(13), yaw: -Math.PI * 0.75 },
+      { x: m(82), y: GP * BS, z: m(82), yaw: Math.PI * 0.25 },
     ],
     pickups: [
-      { type: 'hp', amount: 40, x: m(47.5), y: G * BS, z: m(17.5) },
-      { type: 'hp', amount: 40, x: m(47.5), y: G * BS, z: m(77.5) },
-      { type: 'armor', amount: 50, x: m(47.5), y: (G + 7) * BS, z: m(47.5), respawn: 30 },
-      { type: 'hp', amount: 25, x: m(81), y: (G + 8) * BS, z: m(13.5) },
-      { type: 'hp', amount: 25, x: m(14), y: (G + 8) * BS, z: m(81.5) },
+      { type: 'hp', amount: 40, x: m(47.5), y: GP * BS, z: m(17.5) },
+      { type: 'hp', amount: 40, x: m(47.5), y: GP * BS, z: m(77.5) },
+      { type: 'armor', amount: 50, x: m(47.5), y: (GP + 7) * BS, z: m(47.5), respawn: 30 },
+      { type: 'hp', amount: 25, x: m(81), y: (GP + 8) * BS, z: m(13.5) },
+      { type: 'hp', amount: 25, x: m(14), y: (GP + 8) * BS, z: m(81.5) },
     ],
   },
   lanes: {
-    name: '三線街區', desc: '長巷、中路、隧道三條路線',
+    name: '三線街區', desc: '長巷、中路、隧道三條路線，中路底下有地下道',
     build: buildLanes,
     spawns: [
-      { x: m(47.5), y: G * BS, z: m(7), yaw: Math.PI },
-      { x: m(47.5), y: G * BS, z: m(88), yaw: 0 },
+      { x: m(47.5), y: GL * BS, z: m(7), yaw: Math.PI },
+      { x: m(47.5), y: GL * BS, z: m(88), yaw: 0 },
     ],
     pickups: [
-      { type: 'hp', amount: 40, x: m(15), y: G * BS, z: m(47.5) },
-      { type: 'hp', amount: 40, x: m(84.5), y: G * BS, z: m(47.5) },
-      { type: 'armor', amount: 50, x: m(69.5), y: (G + 7) * BS, z: m(47.5), respawn: 30 },
-      { type: 'hp', amount: 25, x: m(30), y: G * BS, z: m(30) },
-      { type: 'hp', amount: 25, x: m(30), y: G * BS, z: m(65) },
+      { type: 'hp', amount: 40, x: m(15), y: GL * BS, z: m(47.5) },
+      { type: 'hp', amount: 40, x: m(84.5), y: GL * BS, z: m(47.5) },
+      { type: 'armor', amount: 50, x: m(69.5), y: (GL + 7) * BS, z: m(47.5), respawn: 30 },
+      { type: 'hp', amount: 25, x: m(30), y: GL * BS, z: m(30) },
+      { type: 'hp', amount: 25, x: m(30), y: GL * BS, z: m(65) },
+      { type: 'hp', amount: 25, x: m(47.5), y: (GL - 5) * BS, z: m(47.5) },   // 地下道正中間
     ],
   },
   yard: {
     name: '貨櫃碼頭', desc: '小而立體，考驗跳箱子的身法',
     build: buildYard,
     spawns: [
-      { x: m(17.5), y: G * BS, z: m(17.5), yaw: -Math.PI * 0.75 },
-      { x: m(77.5), y: G * BS, z: m(77.5), yaw: Math.PI * 0.25 },
+      { x: m(17.5), y: GY * BS, z: m(17.5), yaw: -Math.PI * 0.75 },
+      { x: m(77.5), y: GY * BS, z: m(77.5), yaw: Math.PI * 0.25 },
     ],
     pickups: [
-      { type: 'hp', amount: 40, x: m(47.5), y: G * BS, z: m(22) },
-      { type: 'hp', amount: 40, x: m(47.5), y: G * BS, z: m(73) },
-      { type: 'armor', amount: 50, x: m(47.5), y: (G + 11) * BS, z: m(47.5), respawn: 30 },
-      { type: 'hp', amount: 25, x: m(29.5), y: (G + 1) * BS, z: m(24) },
-      { type: 'hp', amount: 25, x: m(65.5), y: (G + 1) * BS, z: m(71) },
+      { type: 'hp', amount: 40, x: m(47.5), y: GY * BS, z: m(22) },
+      { type: 'hp', amount: 40, x: m(47.5), y: GY * BS, z: m(73) },
+      { type: 'armor', amount: 50, x: m(47.5), y: (GY + 11) * BS, z: m(47.5), respawn: 30 },
+      { type: 'hp', amount: 25, x: m(29.5), y: (GY + 1) * BS, z: m(24) },
+      { type: 'hp', amount: 25, x: m(65.5), y: (GY + 1) * BS, z: m(71) },
+    ],
+  },
+  quarry: {
+    name: '礦場', desc: '高地、谷底、坡道、木橋與穿山隧道，高低差最大',
+    build: buildQuarry,
+    spawns: [
+      { x: m(47.5), y: QHI * BS, z: m(7), yaw: Math.PI },
+      { x: m(47.5), y: QHI * BS, z: m(88), yaw: 0 },
+    ],
+    pickups: [
+      { type: 'hp', amount: 40, x: m(15), y: QLO * BS, z: m(47.5) },
+      { type: 'hp', amount: 40, x: m(82), y: (QLO + 3) * BS, z: m(47.5) },
+      { type: 'armor', amount: 50, x: m(47.5), y: QLO * BS, z: m(47.5), respawn: 30 },   // 礦坑隧道的十字路口
+      { type: 'hp', amount: 25, x: m(41.5), y: QHI * BS, z: m(38.5) },
+      { type: 'hp', amount: 25, x: m(41.5), y: QHI * BS, z: m(56.5) },
     ],
   },
 };

@@ -113,7 +113,7 @@ const open = async (store = {}) => {
   await page.keyboard.down('KeyW'); await sleep(700);
   const sp = await page.$eval('#speed-n', (e) => e.textContent);
   await page.keyboard.up('KeyW');
-  ok('速度表顯示跑速', Math.abs(parseFloat(sp) - 6.4) < 0.3, sp + ' m/s');
+  ok('速度表顯示跑速', Math.abs(parseFloat(sp) - 6.5) < 0.5, sp + ' m/s');
   const dm = await page.evaluate(() => ({ t: __game.gs.set.roundTime, n: __game.gs.p[1].n }));
   ok('木樁模式：對手不動、每局 15 分鐘', dm.t === 900 && dm.n === '木樁', JSON.stringify(dm));
   const b0 = await page.evaluate(() => __game.bot.body.pos.toArray()); await sleep(1200);
@@ -125,8 +125,9 @@ const open = async (store = {}) => {
 // ═══ 3. 機器人尋路：三張地圖，玩家站在各種位置，機器人都要在時限內走到看得見玩家的地方 ═══
 for (const [map, spots] of [
   ['plaza', [['出生點', null], ['中央塔二樓', [24, 5, 24]], ['角落高台上', [40.5, 5.5, 6.75]], ['出生點牆後', [5, 1.5, 9]]]],
-  ['lanes', [['出生點', null], ['隧道深處', [42.5, 1.5, 17]], ['公寓二樓', [32, 5, 15.5]], ['倉庫裡', [15, 1.5, 15.5]], ['長巷貨櫃後', [2.2, 1.5, 24]]]],
-  ['yard', [['出生點', null], ['空貨櫃裡', [14.75, 2, 12.25]], ['中央第一層上', [24, 4, 22.25]], ['角落', [40, 1.5, 8]]]],
+  ['lanes', [['出生點', null], ['隧道深處', [42.5, 4.5, 17]], ['公寓二樓', [32, 8, 15.5]], ['倉庫裡', [15, 4.5, 15.5]], ['長巷貨櫃後', [2.2, 4.5, 24]], ['地下道裡', [24, 2, 24]]]],
+  ['yard', [['出生點', null], ['空貨櫃裡', [14.75, 2, 12.25]], ['中央第一層上', [24, 4, 22.25]], ['角落', [40, 1.5, 8]], ['碼頭高台上', [10, 2.5, 36]]]],
+  ['quarry', [['出生點（高地）', null], ['谷底西側', [5, 3.5, 24]], ['礦坑隧道十字路口', [24, 3.5, 24]], ['東邊半高平台', [41, 5, 24]], ['中央台地上', [20, 6.5, 21]], ['山裡的地道', [33.75, 3.5, 12.4]]]],
 ]) {
   const page = await open({ pmap: map, bot: 'normal' });
   await page.click('#btn-bot'); await page.waitForFunction(() => __game.phase === 'loadout');
@@ -172,7 +173,122 @@ for (const [map, spots] of [
     await page.screenshot({ path: `${OUT}/f3-round${r + 1}.png` });
     if (r < 2) { await page.evaluate(() => { __game.authority.damage(1, 999, 0, 'ar', true); }); await page.waitForFunction(() => __game.phase === 'loadout', { timeout: 9000 }); await sleep(300); }
   }
-  ok('每局輪流換圖，世界與補給品跟著換', maps.join() === 'plaza:plaza:5,lanes:lanes:5,yard:yard:5', maps.join());
+  ok('每局輪流換圖，世界與補給品跟著換', maps.join() === 'plaza:plaza:5,lanes:lanes:6,yard:yard:5', maps.join());
+  await page.close();
+}
+// ═══ 5. 設定（對局外）、自訂按鍵 ═══
+{
+  const page = await open({ pmap: 'plaza', bot: 'dummy' });
+  await page.evaluate(() => localStorage.removeItem('rubble.binds'));
+  await page.click('#btn-gear'); await sleep(200);
+  ok('對局外可以開設定', await page.evaluate(() => !document.getElementById('pause').classList.contains('hidden') && document.getElementById('pause-title').textContent === '設定'));
+  await page.click('.kb[data-a="crouch"]'); await page.keyboard.press('KeyX'); await sleep(150);
+  await page.click('.kb[data-a="he"]'); await page.keyboard.press('KeyW'); await sleep(150);   // 跟「前進」撞鍵 → 應該互換
+  const b1 = await page.evaluate(() => JSON.stringify([__game.binds.crouch, __game.binds.he, __game.binds.fwd]));
+  ok('改鍵成功；撞鍵時兩個動作互換', b1 === '["KeyX","KeyW","KeyG"]', b1);
+  await page.click('.kb[data-a="he"]'); await page.keyboard.press('KeyG'); await sleep(150);   // 換回來
+  await page.screenshot({ path: OUT + '/f4-settings.png' });
+  await page.click('#btn-resume'); await sleep(150);
+  ok('選單上的按鍵提示跟著更新', (await page.$eval('#keys-hint', (e) => e.textContent)).includes('X 蹲下'));
+  await page.click('#btn-bot'); await page.waitForFunction(() => __game.phase === 'loadout');
+  await page.click('#btn-ready'); await page.waitForFunction(() => __game.phase === 'playing', { timeout: 15000 });
+  await page.keyboard.down('KeyX'); await sleep(300);
+  const cx = await page.evaluate(() => __game.player.crouched);
+  await page.keyboard.up('KeyX'); await page.keyboard.down('KeyC'); await sleep(300);
+  const cc = await page.evaluate(() => __game.player.crouched);
+  await page.keyboard.up('KeyC');
+  ok('新按鍵 X 會蹲下，舊按鍵 C 不會', cx === true && cc === false, `X:${cx} C:${cc}`);
+  await page.reload({ waitUntil: 'load' }); await sleep(500);
+  ok('按鍵設定重新整理後還在', (await page.evaluate(() => __game.binds.crouch)) === 'KeyX');
+  await page.evaluate(() => localStorage.removeItem('rubble.binds'));
+  await page.close();
+}
+
+// ═══ 6. 經濟：連敗加碼、自動配裝 ═══
+{
+  const page = await open({ pmap: 'plaza', bot: 'dummy' });
+  await page.evaluate(() => localStorage.removeItem('rubble.wish'));
+  await page.click('#btn-bot'); await page.waitForFunction(() => __game.phase === 'loadout');
+  await page.evaluate(() => { __game.authority.settings.buffMode = 'off'; __game.authority.settings.target = 10; });
+  const incs = [], sels = [];
+  for (let r = 1; r <= 5; r++) {
+    await sleep(300);
+    sels.push(await page.evaluate(() => `${__game.gs.p[0].$}→${__game.sel.p || '無'}`));
+    await page.click('#btn-ready'); await page.waitForFunction(() => __game.phase === 'playing', { timeout: 15000 });
+    await page.evaluate(() => __game.authority.damage(0, 999, 1, 'pistol', false));   // 我輸
+    await page.waitForFunction(() => __game.phase === 'roundEnd', { timeout: 5000 });
+    incs.push(await page.evaluate(() => __game.gs.res.inc.join('/')));
+    await page.waitForFunction(() => __game.phase === 'loadout', { timeout: 9000 });
+  }
+  ok('連敗加碼：3000 → 3500 → 4000 → 4500（上限），贏家固定 2000', incs.join(' ') === '3000/2000 3500/2000 4000/2000 4500/2000 4500/2000', incs.join(' '));
+  ok('自動配裝：手槍局不買主武器，有錢後自動買回步槍', sels[0] === '800→無' && sels[1].endsWith('→ar'), sels.join(' | '));
+  ok('關閉強化後輸家不會有強化選項', (await page.evaluate(() => __game.gs.p[0].ch)) === null);
+  await page.screenshot({ path: OUT + '/f5-buy.png' });
+  await page.close();
+}
+
+// ═══ 7. 手榴彈、閃光彈、煙霧彈 ═══
+{
+  const page = await open({ pmap: 'plaza', bot: 'dummy' });
+  await page.click('#btn-bot'); await page.waitForFunction(() => __game.phase === 'loadout');
+  await page.click('#btn-ready'); await page.waitForFunction(() => __game.phase === 'playing', { timeout: 15000 });
+  await sleep(300);
+  // 手榴彈：放在木樁腳邊，引信到了要扣對手血、炸掉方塊
+  const he = await page.evaluate(async () => {
+    const g = __game, r = g.remote.pos, rev = g.world.rev;
+    g.combat.spawnProjectile('he', 999001, [r.x + 0.8, r.y + 0.3, r.z], [0, 0, 0], true);
+    await new Promise((res) => setTimeout(res, 2100));
+    return { hp: g.gs.p[1].hp, ar: g.gs.p[1].ar, broke: g.world.rev - rev, mine: g.gs.p[0].hp };
+  });
+  ok('手榴彈炸傷對手、炸開方塊，遠處的自己沒事', he.hp < 100 && he.hp > 0 && he.broke > 0 && he.mine === 100, JSON.stringify(he));
+  // 閃光彈：正對著看 → 全白；隔著牆 → 沒事；背對 → 只白一點
+  const fl = await page.evaluate(async () => {
+    const g = __game, p = g.player, out = {};
+    const wait = (ms) => new Promise((res) => setTimeout(res, ms));
+    const op = () => +document.getElementById('flashfx').style.opacity;
+    const go = async (x, z, yaw, fx, fz) => {
+      g.hud.clearFlash(); p.pos.set(x, 1.5, z); p.vel.set(0, 0, 0); p.yaw = yaw; p.pitch = 0; await wait(200);
+      g.combat.spawnProjectile('flash', 999002 + Math.random(), [fx, 2.6, fz], [0, 0, 0], true); await wait(1500);
+      return op();
+    };
+    out.facing = await go(30, 4, -Math.PI / 2, 36, 4);        // 面向 +x，閃光在前方 6m
+    await wait(2600);
+    out.behind = await go(30, 4, Math.PI / 2, 36, 4);         // 背對
+    await wait(1500);
+    out.wall = await go(9, 9, -Math.PI / 2, 16, 9);           // 出生點磚牆（x 12~13m）的另一邊
+    return out;
+  });
+  ok('閃光彈：正對全白、背對較輕、隔牆沒事', fl.facing >= 0.95 && fl.behind > 0.2 && fl.behind < fl.facing && fl.wall === 0, JSON.stringify(fl));
+  // 煙霧彈：煙團出現、擋住視線判定、時間到消失
+  const sm = await page.evaluate(async () => {
+    const g = __game, wait = (ms) => new Promise((res) => setTimeout(res, ms));
+    g.doExplosion({ p: [30, 1.5, 4], kind: 'smoke', cloud: 3.4, dur: 2.5, pid: 7 });
+    await wait(900);
+    const a = { n: g.fx.clouds.length, through: g.fx.smokeBlocked(24, 2.5, 4, 36, 2.5, 4), beside: g.fx.smokeBlocked(24, 2.5, 12, 36, 2.5, 12) };
+    await wait(2000);
+    return { ...a, after: g.fx.clouds.length };
+  });
+  ok('煙霧彈：擋住穿過煙的視線、旁邊不受影響、時間到消失', sm.n === 1 && sm.through === true && sm.beside === false && sm.after === 0, JSON.stringify(sm));
+  await page.close();
+}
+{
+  // 機器人：隔著煙不會開槍；被閃到也不會開槍
+  const page = await open({ pmap: 'plaza', bot: 'hard' });
+  await page.click('#btn-bot'); await page.waitForFunction(() => __game.phase === 'loadout');
+  await page.click('#btn-ready'); await page.waitForFunction(() => __game.phase === 'playing', { timeout: 15000 });
+  const r = await page.evaluate(async () => {
+    const g = __game, b = g.bot, p = g.player, wait = (ms) => new Promise((res) => setTimeout(res, ms));
+    let shots = 0; b.fire = () => { shots++; b.nextShot = performance.now() + 100; };
+    const place = () => { p.pos.set(26, 1.5, 4); p.vel.set(0, 0, 0); b.body.pos.set(40, 1.5, 4); b.body.vel.set(0, 0, 0); b.path = null; b.planAt = performance.now() + 5000; b.holdT = 5; };  // 兩邊站定、相距 14m、中間沒東西
+    place(); await wait(1200); const open = shots;
+    place(); g.doExplosion({ p: [33, 1.5, 4], kind: 'smoke', cloud: 3.4, dur: 4, pid: 9 }); await wait(700);
+    shots = 0; place(); await wait(1200); const smoked = shots;
+    g.fx.clearClouds(); place(); await wait(800); shots = 0;
+    b.body.yaw = Math.PI / 2; b.onFlash(36, 2.5, 4); const blind = b.blindUntil - performance.now();
+    place(); await wait(900); const flashed = shots;
+    return { open, smoked, flashed, blindMs: Math.round(blind) };
+  });
+  ok('機器人：沒遮蔽會開槍、隔著煙不開槍、被閃到不開槍', r.open > 0 && r.smoked === 0 && r.flashed === 0 && r.blindMs > 1500, JSON.stringify(r));
   await page.close();
 }
 console.log('ERRORS:\n' + (errs.join('\n') || '(none)'));

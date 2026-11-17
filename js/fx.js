@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { BS } from './config.js';
 import { BLOCK } from './world.js';
+import { hash3 } from './util.js';
 
 const MAXP = 900;
 const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(), _p = new THREE.Vector3(), _c = new THREE.Color();
@@ -41,12 +42,57 @@ export class FX {
       this.booms.push({ mesh: me, light, life: 0, r: 1 });
     }
     this.bnext = 0;
+
+    // 煙霧彈的煙團：一堆不透明的灰色多面體，雙面都畫（人在煙裡面也看不出去）
+    this.clouds = [];
+    this.puffGeo = new THREE.IcosahedronGeometry(1, 1);
+    this.puffMat = new THREE.MeshLambertMaterial({ color: 0xc4cad1, side: THREE.DoubleSide, flatShading: true });
+  }
+
+  smokeCloud(x, y, z, radius, durMs, seed = 1) {
+    const group = new THREE.Group(); group.position.set(x, y + radius * 0.45, z);
+    const puffs = [];
+    for (let i = 0; i < 15; i++) {
+      const me = new THREE.Mesh(this.puffGeo, this.puffMat);
+      // 用雜湊決定位置，兩邊畫出來的煙才會一模一樣
+      const a = hash3(i, seed, 1) * Math.PI * 2, e = (hash3(i, seed, 2) - 0.35) * 1.6, d = i === 0 ? 0 : radius * (0.35 + 0.3 * hash3(i, seed, 3));
+      me.position.set(Math.cos(a) * Math.cos(e) * d, Math.sin(e) * d * 0.7, Math.sin(a) * Math.cos(e) * d);
+      me.rotation.set(a, e, a * 2);
+      puffs.push({ me, s: i === 0 ? radius * 0.8 : radius * (0.45 + 0.22 * hash3(i, seed, 4)) });
+      group.add(me);
+    }
+    this.scene.add(group);
+    this.clouds.push({ group, puffs, x, y: y + radius * 0.45, z, r: radius, t0: performance.now(), dur: durMs });
+  }
+
+  // 視線有沒有被煙擋住（線段 vs 球）
+  smokeBlocked(ax, ay, az, bx, by, bz) {
+    const now = performance.now();
+    for (const c of this.clouds) {
+      const age = now - c.t0;
+      if (age < 500 || age > c.dur - 1200) continue;
+      const dx = bx - ax, dy = by - ay, dz = bz - az, l2 = dx * dx + dy * dy + dz * dz || 1;
+      const t = Math.max(0, Math.min(1, ((c.x - ax) * dx + (c.y - ay) * dy + (c.z - az) * dz) / l2));
+      const px = ax + dx * t - c.x, py = ay + dy * t - c.y, pz = az + dz * t - c.z;
+      if (px * px + py * py + pz * pz < c.r * c.r * 0.8) return true;
+    }
+    return false;
+  }
+
+  clearClouds() { for (const c of this.clouds) this.scene.remove(c.group); this.clouds.length = 0; }
+
+  // 閃光彈爆開的白光
+  flashBurst(x, y, z) {
+    const b = this.booms[this.bnext]; this.bnext = (this.bnext + 1) % this.booms.length;
+    b.life = 0.28; b.r = 1.6; b.mesh.position.set(x, y, z); b.mesh.visible = true; b.light.position.set(x, y, z);
+    for (let i = 0; i < 14; i++) this.spawn(x, y, z, (Math.random() - 0.5) * 9, Math.random() * 7, (Math.random() - 0.5) * 9, 0.04, 0.25 + Math.random() * 0.2, 3, 3, 3);
   }
 
   clear() {
     for (const p of this.p) p.life = 0;
     for (const t of this.tracers) { t.life = 0; t.mesh.visible = false; }
     for (const b of this.booms) { b.life = 0; b.mesh.visible = false; b.light.intensity = 0; }
+    this.clearClouds();
   }
 
   spawn(x, y, z, vx, vy, vz, size, life, r, g, b, grav = 1) {
@@ -137,6 +183,17 @@ export class FX {
       this.mesh.setMatrixAt(i, _m.compose(_p, _q, _s));
     }
     if (any) this.mesh.instanceMatrix.needsUpdate = true;
+
+    if (this.clouds.length) {
+      const now = performance.now();
+      for (let i = this.clouds.length - 1; i >= 0; i--) {
+        const c = this.clouds[i], age = now - c.t0;
+        if (age >= c.dur) { this.scene.remove(c.group); this.clouds.splice(i, 1); continue; }
+        const grow = 1 - Math.pow(1 - Math.min(1, age / 800), 3), k = grow * Math.min(1, (c.dur - age) / 1500);
+        for (const p of c.puffs) p.me.scale.setScalar(Math.max(0.001, p.s * k));
+        c.group.rotation.y = age * 0.00006;
+      }
+    }
 
     for (const t of this.tracers) {
       if (t.life <= 0) continue;

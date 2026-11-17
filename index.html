@@ -14,6 +14,7 @@
 <!-- 對戰中的抬頭顯示 -->
 <div id="hud" class="hidden">
   <div id="scope"></div>
+  <div id="flashfx"></div>
   <div id="vignette"></div>
   <div id="hurt-arc"><i></i></div>
   <div id="crosshair"><i class="t"></i><i class="b"></i><i class="l"></i><i class="r"></i><i class="dot"></i></div>
@@ -32,6 +33,8 @@
   </div>
 
   <div id="ammo">
+    <div id="nades"></div>
+    <div id="money"></div>
     <div id="wother"></div>
     <div id="wname"></div>
     <div class="cnt"><span id="ammo-n">30</span><span class="sep">/</span><span id="ammo-r">∞</span></div>
@@ -61,18 +64,21 @@
         <select id="sel-bot" title="對手難度"></select>
         <select id="sel-pmap" title="練習地圖"></select>
       </div>
-      <button id="btn-locker" class="btn ghost">造型</button>
+      <div class="botrow"><button id="btn-locker" class="btn ghost">造型</button><button id="btn-settings" class="btn ghost">設定 / 按鍵</button></div>
       <div id="menu-msg" class="msg"></div>
       <div class="keys">
-        <b>WASD</b> 移動　<b>空白鍵</b> 跳（按住連跳）　<b>C</b> 蹲下<br>
-        <b>左鍵</b> 開火　<b>右鍵 / Shift</b> 瞄準　<b>R</b> 換彈<br>
-        <b>1 / 2 / Q / 滾輪</b> 切槍　<b>Esc</b> 設定
+        <div id="keys-hint"></div>
         <details><summary>身法小抄</summary>
           <p><b>急停</b>：跑動時子彈會散，放開方向鍵或點一下反方向鍵，停住再開槍。蹲下更準。</p>
-          <p><b>蹲跳</b>：跳起來後按住 C 把腳收起來，可以上 1.5 公尺高的箱子、鑽窗戶。</p>
-          <p><b>旋轉跳</b>：在空中放開 W，只按 A 或 D，同時把滑鼠往同一邊慢慢轉，速度會越來越快。</p>
-          <p><b>連跳</b>：按住空白鍵，落地瞬間自動再跳，不會被地面摩擦減速；配合旋轉跳可以一路加速。</p>
+          <p><b>蹲跳</b>：跳起來後按住蹲下鍵把腳收起來，可以上 1.5 公尺高的箱子、鑽窗戶。</p>
+          <p><b>旋轉跳</b>：在空中放開前進鍵，只按左或右，同時把滑鼠往同一邊慢慢轉，速度會越來越快。</p>
+          <p><b>連跳</b>：按住跳躍鍵，落地瞬間自動再跳，不會被地面摩擦減速；配合旋轉跳可以一路加速。</p>
           <p><b>靜步</b>：瞄準走或蹲走沒有腳步聲；跑步、跳下來對手聽得到你在哪。</p>
+        </details>
+        <details><summary>經濟規則</summary>
+          <p>每局開打前用錢買裝備，買了就花掉。開場 $800，<b>第 1 局只能買手槍</b>。</p>
+          <p>贏一局 +$2000；<b>輸一局 +$3000</b>，連敗每局再多 $500（最多 $4500）。</p>
+          <p>錢可以存：這局買便宜的，下一局就買得起狙擊槍或火箭筒。</p>
         </details>
       </div>
     </div>
@@ -93,7 +99,7 @@
         <label>獲勝分數<select id="set-target"><option value="3">搶 3</option><option value="5">搶 5</option><option value="7">搶 7</option><option value="10">搶 10</option></select></label>
         <label>每局時間<select id="set-time"><option value="60">60 秒</option><option value="90">90 秒</option><option value="120">120 秒</option><option value="180">180 秒</option></select></label>
         <label>地圖<select id="set-map"></select></label>
-        <label>輸家補償<select id="set-buff"><option value="streak">連敗累積，贏了清空</option><option value="single">只維持下一局</option><option value="permanent">整場保留</option></select></label>
+        <label>輸家補償<select id="set-buff"><option value="streak">強化：連敗累積，贏了清空</option><option value="single">強化：只維持下一局</option><option value="permanent">強化：整場保留</option><option value="off">不給強化（只靠多拿錢）</option></select></label>
       </div>
       <div class="actions"><button id="btn-leave" class="btn ghost">離開</button><button id="btn-start" class="btn primary">開始對戰</button></div>
     </div>
@@ -104,6 +110,7 @@
     <div class="panel loadout">
       <div class="lo-head">
         <div><h2 id="lo-title">第 1 局</h2><div id="lo-score" class="score"></div><div id="lo-map" class="mapname"></div></div>
+        <div id="lo-money" class="money"></div>
         <div id="lo-timer" class="timer">30</div>
       </div>
       <div id="lo-buff" class="hidden">
@@ -113,6 +120,7 @@
       <div class="lo-cols">
         <div class="col wide"><h3>主武器</h3><div id="lo-p" class="wgrid"></div></div>
         <div class="col"><h3>副武器</h3><div id="lo-s" class="wgrid one"></div></div>
+        <div class="col"><h3>裝備</h3><div id="lo-g" class="wgrid one"></div></div>
       </div>
       <div class="lo-foot">
         <div id="lo-mybuffs" class="mybuffs"></div>
@@ -144,15 +152,21 @@
     </div>
   </section>
 
-  <!-- 暫停 / 設定（滑鼠沒被鎖定時顯示） -->
+  <!-- 設定：對戰中按 Esc 會出現，選單右上角的齒輪也能開 -->
+  <button id="btn-gear" class="gear" title="設定">⚙ 設定</button>
   <div id="pause" class="hidden">
     <div class="panel pausebox">
-      <h2>點一下畫面繼續</h2>
-      <label>滑鼠靈敏度 <output id="out-sens"></output><input id="rng-sens" type="range" min="0.2" max="3" step="0.05"></label>
-      <label>視野 FOV <output id="out-fov"></output><input id="rng-fov" type="range" min="65" max="105" step="1"></label>
-      <label>音量 <output id="out-vol"></output><input id="rng-vol" type="range" min="0" max="1" step="0.05"></label>
-      <label class="check"><input id="chk-wheel" type="checkbox"> 滾輪切槍（用 Magic Mouse 容易誤觸可以關掉，改用 1 / 2 / Q）</label>
-      <div class="actions"><button id="btn-quit" class="btn ghost small">離開對戰</button><button id="btn-resume" class="btn primary">繼續</button></div>
+      <h2 id="pause-title">設定</h2>
+      <div class="setgrid">
+        <label>滑鼠靈敏度 <output id="out-sens"></output><input id="rng-sens" type="range" min="0.2" max="3" step="0.05"></label>
+        <label>視野 FOV <output id="out-fov"></output><input id="rng-fov" type="range" min="65" max="105" step="1"></label>
+        <label>音量 <output id="out-vol"></output><input id="rng-vol" type="range" min="0" max="1" step="0.05"></label>
+        <label class="check"><input id="chk-wheel" type="checkbox"> 滾輪切槍（Magic Mouse 容易誤觸可以關）</label>
+      </div>
+      <h3>按鍵（點一下再按你要的鍵；Esc 取消）</h3>
+      <div id="keybinds" class="keybinds"></div>
+      <div class="hint">左鍵開火、右鍵瞄準是固定的。滑鼠中鍵、側鍵也可以綁。不建議綁 Ctrl：在 Windows 上 Ctrl+W 會關掉分頁。</div>
+      <div class="actions"><button id="btn-quit" class="btn ghost small">離開對戰</button><button id="btn-reset-binds" class="btn ghost small">按鍵恢復預設</button><button id="btn-resume" class="btn primary">繼續</button></div>
     </div>
   </div>
   <div id="toast"></div>

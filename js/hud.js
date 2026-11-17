@@ -1,4 +1,5 @@
-import { WEAPONS, PRIMARIES, SECONDARIES, weaponBars } from './weapons.js';
+import { WEAPONS, PRIMARIES, SECONDARIES, GEAR, GEAR_IDS, loadoutCost, weaponBars } from './weapons.js';
+import { BIND_ACTIONS, BIND_LABELS, keyName } from './binds.js';
 import { BUFFS } from './buffs.js';
 import { TEAM_CSS } from './config.js';
 import { MAPS, MAP_IDS } from './maps.js';
@@ -16,6 +17,7 @@ const opts = (list, cur) => list.map(([v, t]) => `<option value="${v}"${v === cu
 export class Hud {
   constructor(g) {
     this.g = g; this.cache = {}; this.bannerT = 0; this.toastT = 0; this.buffKey = ''; this.hurtT = 0;
+    this.capture = null; this.setMode = null; this.flashT = 0;
     this._buildWeapons();
     this._buildLocker();
     this._bind();
@@ -28,14 +30,45 @@ export class Hud {
     const mk = (id) => {
       const d = WEAPONS[id], el = document.createElement('div');
       el.className = 'wcard'; el.dataset.id = id;
-      el.innerHTML = `<div class="nm"><span>${esc(d.name)}</span><span class="tag">${esc(d.tag)}</span></div><div class="ds">${esc(d.desc)}</div>`
+      el.innerHTML = `<div class="nm"><span>${esc(d.name)}</span><span class="price">${d.price ? '$' + d.price : '免費'}</span></div><div class="ds">${esc(d.tag)}｜${esc(d.desc)}</div>`
         + `<div class="bars">${weaponBars(d).map(([n, v]) => `<span>${n}</span><div class="b"><i style="width:${Math.round(v * 100)}%"></i></div>`).join('')}</div>`;
-      el.addEventListener('click', () => this.g.selectWeapon(d.slot, id));
+      el.addEventListener('click', () => this.g.buy(d.slot, id));
       return el;
     };
     for (const id of PRIMARIES) $('lo-p').appendChild(mk(id));
     for (const id of SECONDARIES) $('lo-s').appendChild(mk(id));
+    for (const id of GEAR_IDS) {
+      const d = GEAR[id], el = document.createElement('div');
+      el.className = 'gcard'; el.dataset.id = id;
+      el.innerHTML = `<div class="glyph">${d.glyph}</div><div class="info"><div class="t"><span>${esc(d.name)}${d.max > 1 ? `（最多 ${d.max}）` : ''}</span><span class="price">$${d.price}</span></div><div class="d">${esc(d.desc)}</div></div><div class="cnt"></div>`;
+      el.addEventListener('click', () => this.g.buy(id));
+      $('lo-g').appendChild(el);
+    }
   }
+
+  // ───────── 設定面板與按鍵 ─────────
+  renderBinds() {
+    const b = this.g.binds, k = (a) => keyName(b[a]);
+    $('keybinds').innerHTML = BIND_ACTIONS.map((a) => `<div class="row"><span>${BIND_LABELS[a]}</span><button class="kb${this.capture === a ? ' wait' : ''}" data-a="${a}">${this.capture === a ? '請按一個鍵…' : esc(k(a))}</button></div>`).join('');
+    const key = (t) => `<b>${esc(t)}</b>`;
+    $('keys-hint').innerHTML = `${key(k('fwd') + k('left') + k('back') + k('right'))} 移動　${key(k('jump'))} 跳（按住連跳）　${key(k('crouch'))} 蹲下<br>`
+      + `${key('左鍵')} 開火　${key('右鍵 / ' + k('ads'))} 瞄準　${key(k('reload'))} 換彈<br>`
+      + `${key(k('primary') + ' / ' + k('secondary') + ' / ' + k('swap') + ' / 滾輪')} 切槍<br>`
+      + `${key(k('he'))} 手榴彈　${key(k('flash'))} 閃光彈　${key(k('smoke'))} 煙霧彈　${key('Esc')} 設定`;
+    this.cache.nades = null;
+  }
+  // mode: 'pause' 對戰中（點空白處繼續）／'menu' 對局外
+  _settings(mode) {
+    this.setMode = mode; this.capture = null;
+    $('pause').classList.toggle('hidden', !mode);
+    if (!mode) return;
+    $('pause-title').textContent = mode === 'pause' ? '暫停 — 點空白處或按「繼續」回到遊戲' : '設定';
+    $('btn-resume').textContent = mode === 'pause' ? '繼續' : '完成';
+    $('btn-quit').classList.toggle('hidden', mode !== 'pause');
+    this.renderBinds();
+  }
+  openSettings() { this._settings('menu'); }
+  setPaused(v) { if (v) this._settings('pause'); else if (this.setMode === 'pause') this._settings(null); }
 
   _buildLocker() {
     const g = this.g;
@@ -84,7 +117,30 @@ export class Hud {
     $('btn-rematch').addEventListener('click', () => g.startMatch());
     for (const id of ['btn-leave', 'btn-end-leave', 'btn-quit']) $(id).addEventListener('click', (e) => { e.stopPropagation(); g.leave(); });
     $('btn-ready').addEventListener('click', () => g.toggleReady());
-    $('pause').addEventListener('click', (e) => { if (e.target.id === 'btn-resume' || !e.target.closest('input, button, label')) g.requestLock(); });
+    $('btn-settings').addEventListener('click', () => { g.sfx.ui(); this.openSettings(); });
+    $('btn-gear').addEventListener('click', () => { g.sfx.ui(); this.openSettings(); });
+    $('btn-reset-binds').addEventListener('click', (e) => { e.stopPropagation(); this.capture = null; g.resetBinds(); });
+    $('pause').addEventListener('click', (e) => {
+      const kb = e.target.closest('.kb');
+      if (kb) { this.capture = this.capture === kb.dataset.a ? null : kb.dataset.a; this.renderBinds(); return; }
+      if (this.capture) { this.capture = null; this.renderBinds(); }
+      const done = e.target.id === 'btn-resume' || e.target.id === 'pause';
+      if (this.setMode === 'pause') { if (done || !e.target.closest('input, button, label')) g.requestLock(); }
+      else if (done) this._settings(null);
+    });
+    // 改按鍵：攔在最前面，這次按鍵不會傳給遊戲
+    addEventListener('keydown', (e) => {
+      if (!this.capture) return;
+      e.preventDefault(); e.stopImmediatePropagation();
+      if (e.code !== 'Escape') g.setBind(this.capture, e.code);
+      this.capture = null; this.renderBinds();
+    }, true);
+    addEventListener('mousedown', (e) => {
+      if (!this.capture || e.button === 0 || e.button === 2) return;
+      e.preventDefault(); e.stopImmediatePropagation();
+      g.setBind(this.capture, 'Mouse' + e.button); this.capture = null; this.renderBinds();
+    }, true);
+    this.renderBinds();
     for (const [id, key, out, fmt] of [['rng-sens', 'sens', 'out-sens', (v) => v.toFixed(2)], ['rng-fov', 'fov', 'out-fov', (v) => String(v)], ['rng-vol', 'vol', 'out-vol', (v) => Math.round(v * 100) + '%']]) {
       $(id).value = g.settings[key]; $(out).textContent = fmt(+g.settings[key]);
       $(id).addEventListener('input', (e) => { const v = +e.target.value; $(out).textContent = fmt(v); g.setSetting(key, v); });
@@ -94,9 +150,19 @@ export class Hud {
   show(name) {
     for (const s of SCREENS) $('scr-' + s).classList.toggle('hidden', s !== name);
     this.screen = name;
+    $('btn-gear').classList.toggle('hidden', !name);   // 對局外隨時可以開設定；對戰中用 Esc
+    if (!name && this.setMode === 'menu') this._settings(null);
   }
+
+  // 被閃光彈閃到：整個畫面變白，撐一下再慢慢退
+  flash(k, dur) {
+    const f = $('flashfx');
+    f.style.transition = 'none'; f.style.opacity = String(k);
+    clearTimeout(this.flashT);
+    this.flashT = setTimeout(() => { f.style.transition = `opacity ${(dur * 0.6).toFixed(2)}s ease-in`; f.style.opacity = '0'; }, dur * 400);
+  }
+  clearFlash() { clearTimeout(this.flashT); const f = $('flashfx'); f.style.transition = 'none'; f.style.opacity = '0'; }
   showHud(v) { $('hud').classList.toggle('hidden', !v); }
-  setPaused(v) { $('pause').classList.toggle('hidden', !v); }
   menuMsg(t) { $('menu-msg').textContent = t || ''; }
   menuBusy(b) { for (const id of ['btn-host', 'btn-join', 'btn-bot', 'btn-locker']) $(id).disabled = b; }
   setCode(c) { $('in-code').value = c; }
@@ -168,14 +234,26 @@ export class Hud {
 
   _loadout(gs) {
     const g = this.g, me = gs.p[g.me], opp = gs.p[1 - g.me];
-    this._set('lo-title', `第 ${gs.round} 局 — 選擇武器`);
+    const r1 = gs.round <= 1, sel = g.sel, money = me.$, cost = loadoutCost(sel);
+    this._set('lo-title', r1 ? '第 1 局 — 手槍局（只能買副武器和裝備）' : `第 ${gs.round} 局 — 購買裝備`);
     this._set('lo-map', `地圖：${MAPS[gs.map].name}　${MAPS[gs.map].desc}`);
+    const mk = `${money}:${cost}`;
+    if (this.cache.loMoney !== mk) { this.cache.loMoney = mk; $('lo-money').innerHTML = `<b>$${money}</b><span>本局花費 $${cost}　剩下 $${money - cost}</span>`; }
     const sk = `${me.sc}:${opp.sc}:${gs.set.target}`;
     if (this.cache.loScore !== sk) {
       this.cache.loScore = sk;
       $('lo-score').innerHTML = `<b class="me">${esc(me.n)} ${me.sc}</b> ： <b class="opp">${opp.sc} ${esc(opp.n)}</b>　·　先拿 ${gs.set.target} 分獲勝`;
     }
-    document.querySelectorAll('.wcard').forEach((el) => el.classList.toggle('sel', el.dataset.id === g.sel.p || el.dataset.id === g.sel.s));
+    document.querySelectorAll('.wcard').forEach((el) => {
+      const d = WEAPONS[el.dataset.id], isP = d.slot === 'p', on = isP ? sel.p === el.dataset.id : sel.s === el.dataset.id;
+      const rest = cost - (isP ? (sel.p ? WEAPONS[sel.p].price : 0) : WEAPONS[sel.s].price);   // 這一格以外已經花掉的
+      el.classList.toggle('sel', on); el.classList.toggle('locked', isP && r1); el.classList.toggle('poor', !on && rest + d.price > money);
+    });
+    document.querySelectorAll('.gcard').forEach((el) => {
+      const d = GEAR[el.dataset.id], n = sel[el.dataset.id] || 0;
+      el.classList.toggle('sel', n > 0); el.classList.toggle('poor', n === 0 && cost + d.price > money);
+      el.querySelector('.cnt').textContent = n ? '×' + n : '';
+    });
 
     const key = me.ch ? me.ch.join(',') : '';
     if (key !== this.buffKey) {
@@ -251,6 +329,13 @@ export class Hud {
     const so = d.scoped ? '1' : '0';
     if (this.cache.scope !== so) { this.cache.scope = so; $('scope').style.opacity = so; }
     this._set('netinfo', d.net);
+    const nk = `${d.nades.he},${d.nades.flash},${d.nades.smoke}`;
+    if (this.cache.nades !== nk) {
+      this.cache.nades = nk;
+      const b = this.g.binds;
+      $('nades').innerHTML = [['he', '手榴彈'], ['flash', '閃光'], ['smoke', '煙霧']].filter(([k]) => d.nades[k] > 0).map(([k, t]) => `<span><b>${esc(keyName(b[k]))}</b>${t} ×${d.nades[k]}</span>`).join('');
+    }
+    this._set('money', '$' + d.money);
     this._set('speed-n', d.spd.toFixed(1));
     this._cls('speed', 'fast', d.spd > 7.2); this._cls('speed', 'crouch', !!d.crouch);
   }

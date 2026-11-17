@@ -1,6 +1,6 @@
 import { PLAYER } from './config.js';
 import { Player } from './player.js';
-import { WEAPONS, falloff } from './weapons.js';
+import { WEAPONS, falloff, loadoutCost, validLoadout } from './weapons.js';
 import { buffMods } from './buffs.js';
 import { MAPS } from './maps.js';
 import { BLOCK } from './world.js';
@@ -32,6 +32,7 @@ export class Bot {
     this.noLos = 0; this.holdT = 0;
     this.path = null; this.pi = 0; this.planAt = 0; this.px = 0; this.pz = 0;
     this.chkAt = 0; this.cx = 0; this.cz = 0; this.stuckN = 0; this.breachT = 0;
+    this.blindUntil = 0; this.blocked = null;   // blocked(ax..bz)：視線有沒有被煙擋住（main.js 會接上）
   }
   get L() { return BOT_LEVELS[this.level]; }
   send(type, data) { if (this.link) this.link([type, data]); }
@@ -59,9 +60,17 @@ export class Bot {
     const me = gs.p[1];
     if (gs.phase === 'loadout') {
       if (me.ch) this.send('auth', { t: 'buff', id: me.ch[(Math.random() * me.ch.length) | 0] });
-      const picks = ['ar', 'ar', 'smg', 'shotgun', 'dmr', 'lmg'];
-      this.weapon = picks[(Math.random() * picks.length) | 0];
-      this.send('auth', { t: 'loadout', p: this.weapon, s: 'pistol' });
+      // 買裝備：手槍局只能買副武器；之後從買得起的主武器裡隨機挑，有剩再買防彈衣
+      const money = me.$, pick = (list) => list[(Math.random() * list.length) | 0];
+      const lo = { p: null, s: 'pistol', armor: 0, he: 0, flash: 0, smoke: 0 };
+      if (gs.round > 1) {
+        const can = ['ar', 'ar', 'smg', 'shotgun', 'dmr', 'lmg'].filter((id) => WEAPONS[id].price <= money);
+        if (can.length) lo.p = pick(can);
+      }
+      if (!lo.p) lo.s = pick(['pistol', 'mp', 'revolver'].filter((id) => WEAPONS[id].price <= money));
+      if (money - loadoutCost(validLoadout(lo)) >= 600) lo.armor = 1;
+      this.weapon = lo.p || lo.s;
+      this.send('auth', { t: 'loadout', ...lo });
       setTimeout(() => this.send('auth', { t: 'ready', v: true }), 700);
     } else if (gs.phase === 'countdown') {
       this.round = gs.round;
@@ -71,8 +80,23 @@ export class Bot {
       this.mods = buffMods(me.bf);
       this.body.maxAirJumps = this.mods.airJumps;
       this.ammo = Math.round(WEAPONS[this.weapon].mag * this.mods.mag);
-      this.nextShot = 0; this.noLos = 0; this.holdT = 0; this.path = null; this.planAt = 0; this.stuckN = 0; this.breachT = 0; this.chkAt = 0;
+      this.nextShot = 0; this.blindUntil = 0; this.noLos = 0; this.holdT = 0; this.path = null; this.planAt = 0; this.stuckN = 0; this.breachT = 0; this.chkAt = 0;
     }
+  }
+
+  // 被閃光彈閃到：看得到它、而且面向它才算，期間不會開槍
+  onFlash(x, y, z) {
+    const b = this.body, ex = b.pos.x, ey = b.pos.y + PLAYER.EYE, ez = b.pos.z;
+    let dx = x - ex, dy = y - ey, dz = z - ez;
+    const dist = Math.hypot(dx, dy, dz) || 0.01;
+    if (dist > 34 || !this.gs || !this.gs.p[1].al) return;
+    dx /= dist; dy /= dist; dz /= dist;
+    if ((dist > 0.8 && this.world.raycast(ex, ey, ez, dx, dy, dz, dist - 0.5)) || (this.blocked && this.blocked(ex, ey, ez, x, y, z))) return;
+    const dot = -Math.sin(b.yaw) * dx - Math.cos(b.yaw) * dz;
+    const k = (dot > 0.3 ? 1 : dot > -0.35 ? 0.55 : 0.2) * Math.max(0.2, Math.min(1, 1.2 - dist / 24));
+    const dur = 0.4 + 3 * k;
+    this.blindUntil = performance.now() + dur * 1000;
+    this.send('blind', { d: +dur.toFixed(1) });
   }
 
   // ───────── 尋路 ─────────
@@ -80,7 +104,7 @@ export class Bot {
     const b = this.body;
     this.path = this.nav.path(b.pos.x, b.pos.y, b.pos.z, this.gx, this.gy, this.gz);
     this.pi = this.path && this.path.length > 1 ? 1 : 0;
-    this.planAt = now + 600; this.px = this.gx; this.pz = this.gz;
+    this.planAt = now + (this.path ? 600 : 2000); this.px = this.gx; this.pz = this.gz;   // 找不到路就別一直重算（整張圖搜一遍比較花時間）
   }
 
   // 回傳下一步要往哪走 { wx, wz, jump }；沒有路可走回 null
@@ -110,14 +134,15 @@ export class Bot {
       const dist = Math.hypot(dx, dy, dz) || 1;
       dx /= dist; dy /= dist; dz /= dist;
       const wall = this.world.raycast(ex, ey, ez, dx, dy, dz, dist);
-      const los = !wall;
+      const smoked = !wall && !!this.blocked && this.blocked(ex, ey, ez, this.tx, this.ty + 1, this.tz);
+      const los = !wall && !smoked && now >= this.blindUntil;   // 被煙擋住、或被閃到 → 當作看不到
       this.noLos = los ? 0 : this.noLos + dt;
       if (this.noLos > 0.4) this.reactAt = now + L.react; // 短暫被柱子擋一下不算，不重置反應時間
       this.holdT = Math.max(0, this.holdT - dt); this.breachT = Math.max(0, this.breachT - dt);
 
       // 移動：看得到且夠近 → 左右橫移對槍；否則照尋路走過去
       let wx = 0, wz = 0, jump = false, shootWall = false, facing = null;
-      if (this.holdT > 0 && !los) { shootWall = !wall.oob && BLOCK[wall.type].hp !== Infinity; } // 站定把牆打穿
+      if (this.holdT > 0 && !los) { shootWall = !!wall && !wall.oob && BLOCK[wall.type].hp !== Infinity; } // 站定把牆打穿
       else if (this.holdT > 0) { /* 剛打穿，站定從洞口射 */ }
       else if (los && dist < 24) {
         this.strafeT -= dt;
@@ -130,7 +155,7 @@ export class Bot {
       } else {
         const step = this.breachT > 0 ? null : this._follow(now);
         if (step) { wx = step.wx; wz = step.wz; jump = step.jump; if (!los) facing = Math.atan2(-wx, -wz); }
-        else if (!los && !wall.oob && BLOCK[wall.type].hp !== Infinity) { shootWall = true; this.holdT = 1.2; this.reactAt = 0; } // 沒路 → 把牆打穿
+        else if (wall && !wall.oob && BLOCK[wall.type].hp !== Infinity) { shootWall = true; this.holdT = 1.2; this.reactAt = 0; } // 沒路 → 把牆打穿
         else { wx = dx; wz = dz; }
         // 卡住偵測：每秒看一次有沒有前進
         if (now >= this.chkAt) {
@@ -166,7 +191,9 @@ export class Bot {
     if (--this.ammo <= 0) { this.ammo = Math.round(def.mag * this.mods.mag); this.nextShot = now + def.reload * 1000; }
     else if (def.auto && ++this.burst >= 7) { this.burst = 0; this.nextShot += 350 + Math.random() * 300; }
     const ox = b.pos.x, oy = b.pos.y + PLAYER.EYE, oz = b.pos.z;
-    const err = ((this.L.aimErr + def.spread[0] * 0.5) * Math.PI) / 180;
+    // 準度：難度的基本誤差 + 槍本身的散布 + 邊跑邊打的懲罰（跟玩家一樣，移動中比較不準）
+    const mv = (def.mv === undefined ? 1.6 : def.mv) * Math.min(1, b.speed2d() / PLAYER.SPEED) * 0.7;
+    const err = ((this.L.aimErr + def.spread[0] * 0.5 + mv) * Math.PI) / 180;
     const ends = [], blk = [];
     let total = 0, head = false;
     for (let i = 0; i < def.pellets; i++) {

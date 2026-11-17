@@ -55,14 +55,26 @@ await sleep(400);
 ok('造型同步給對手', (await A.evaluate(() => __game.remote.skin + '/' + __game.remote.wskin)) === 'neon/gold', await A.evaluate(() => JSON.stringify(__game.gs.p[1].lk)));
 await A.click('#btn-start');
 await waitPhase(A, 'loadout'); await waitPhase(B, 'loadout');
-await B.click('.wcard[data-id="shotgun"]'); await A.click('.wcard[data-id="rocket"]');
-await sleep(200);
+// ── 經濟：第 1 局是手槍局 ──
+ok('開場 $800', (await A.evaluate(() => __game.gs.p.map((p) => p.$).join())) === '800,800');
+await A.click('.wcard[data-id="rocket"]'); await sleep(150);
+ok('第 1 局不能買主武器', (await A.evaluate(() => __game.sel.p)) === null);
+// A：只買左輪（先把預設的防彈衣取消）；B：衝鋒手槍 + 閃光彈
+const clearGear = () => { const g = __game; for (const k of ['armor', 'he', 'smoke']) if (g.sel[k]) g.buy(k); for (let i = 0; i < 3 && g.sel.flash; i++) g.buy('flash'); };
+await A.evaluate(clearGear); await A.click('.wcard[data-id="revolver"]');
+await B.evaluate(clearGear); await B.click('.wcard[data-id="mp"]'); await B.evaluate(() => __game.buy('flash'));
+await sleep(300);
+await A.screenshot({ path: OUT + '/n1b-buy-r1.png' });
 await A.click('#btn-ready'); await B.click('#btn-ready');
 await waitPhase(A, 'playing'); await waitPhase(B, 'playing');
 await sleep(600);
-const s1 = await A.evaluate(() => ({ lo: __game.gs.p.map((p) => p.lo.p), me: __game.player.pos.toArray(), rem: __game.remote.pos.toArray(), vis: __game.remote.group.visible, w: __game.combat.w.id }));
+const s1 = await A.evaluate(() => ({ lo: __game.gs.p.map((p) => p.lo.s), money: __game.gs.p.map((p) => p.$), me: __game.player.pos.toArray(), rem: __game.remote.pos.toArray(), vis: __game.remote.group.visible, w: __game.combat.w.id, remW: __game.remote.weapon }));
 const s1b = await B.evaluate(() => ({ me: __game.player.pos.toArray(), rem: __game.remote.pos.toArray(), w: __game.combat.w.id, vs: document.visibilityState }));
-ok('武器選擇同步', s1.lo[0] === 'rocket' && s1.lo[1] === 'shotgun' && s1.w === 'rocket' && s1b.w === 'shotgun', JSON.stringify(s1.lo));
+ok('買的武器同步（含對手手上拿的槍）', s1.lo[0] === 'revolver' && s1.lo[1] === 'mp' && s1.w === 'revolver' && s1b.w === 'mp' && s1.remW === 'mp', JSON.stringify(s1.lo));
+ok('開局結帳扣錢', s1.money.join() === '200,200', s1.money.join());
+// 後面測地形同步要用火箭和霰彈槍：直接塞給他們（不走商店）
+await A.evaluate(() => __game.combat.setLoadout({ p: 'rocket', s: 'pistol' }, []));
+await B.evaluate(() => __game.combat.setLoadout({ p: 'shotgun', s: 'pistol', flash: 1, he: 1 }, []));
 const d = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 ok('A 看到的 B 位置正確', d(s1.rem, s1b.me) < 0.3 && s1.vis, d(s1.rem, s1b.me).toFixed(3));
 ok('B 看到的 A 位置正確', d(s1b.rem, s1.me) < 0.3, d(s1b.rem, s1.me).toFixed(3));
@@ -88,6 +100,25 @@ await B.evaluate(() => { __game.player.pitch = -0.6; __game.mouse.lp = true; });
 await sleep(300); await B.evaluate(() => { __game.mouse.lp = true; }); await sleep(1200);
 ok('霰彈打地板後兩邊地形一致', (await hash(A)) === (await hash(B)), await hash(B));
 
+// ── 投擲物同步 ──
+// B 朝腳邊丟手榴彈再走開：兩邊地形要一致
+const hBefore = await hash(A);
+await B.evaluate(() => { const p = __game.player; p.pitch = -1.2; __game.combat.throwNade('he'); });
+await sleep(400);
+await B.evaluate(() => { const p = __game.player; p.pos.x += 8; p.vel.set(0, 0, 0); });
+await sleep(2200);
+ok('手榴彈炸開地形，兩邊一致', (await hash(A)) !== hBefore && (await hash(A)) === (await hash(B)), await hash(B));
+// B 把閃光彈丟到 A 面前：A 的畫面要變白，B 會看到「閃到」的提示
+await B.evaluate(() => { const g = __game, p = g.player, r = g.remote.pos; const f = [-Math.sin(g.remote.yaw), -Math.cos(g.remote.yaw)]; p.pos.set(r.x + f[0] * 7, r.y, r.z + f[1] * 7); p.vel.set(0, 0, 0); p.yaw = g.remote.yaw + Math.PI; p.pitch = 0.1; g.keys.KeyS = false; });
+await sleep(350);
+await B.evaluate(() => { __game.combat.throwAt = 0; __game.combat.throwNade('flash'); });
+await sleep(1750);
+const fl = await A.evaluate(() => +document.getElementById('flashfx').style.opacity);
+const feedB = await B.evaluate(() => document.getElementById('feed').textContent);
+ok('閃光彈閃到對手（A 畫面變白）', fl > 0.4, 'opacity ' + fl);
+ok('丟的人看到「閃到」提示', feedB.includes('閃到'), feedB);
+await A.screenshot({ path: OUT + '/n2b-flashed.png' });
+
 // B 傳送到 A 面前並瞄準開槍
 const aim = () => { const g = __game, p = g.player, r = g.remote.pos; p.pos.set(r.x + 3, r.y, r.z); p.vel.set(0, 0, 0); const dx = r.x - p.pos.x, dy = r.y + 1.0 - (p.pos.y + 1.62), dz = r.z - p.pos.z, l = Math.hypot(dx, dy, dz); p.yaw = Math.atan2(-dx, -dz); p.pitch = Math.asin(dy / l); };
 await B.evaluate(aim); await sleep(400);
@@ -107,6 +138,12 @@ await waitPhase(A, 'loadout', 9000); await waitPhase(B, 'loadout', 9000);
 await sleep(400);
 const ch = await A.evaluate(() => __game.gs.p[0].ch);
 ok('輸家拿到 3 個強化選項', Array.isArray(ch) && ch.length === 3, JSON.stringify(ch));
+const mon = await A.evaluate(() => ({ m: __game.gs.p.map((p) => p.$), inc: __game.gs.res.inc }));
+ok('發錢：輸家 +3000、贏家 +2000', mon.inc.join() === '3000,2000' && mon.m.join() === '3200,2200', JSON.stringify(mon));
+// A 用輸家的錢買步槍 + 防彈衣
+await A.evaluate(() => { const g = __game; for (const k of ['he', 'smoke']) if (g.sel[k]) g.buy(k); for (let i = 0; i < 3 && g.sel.flash; i++) g.buy('flash'); g.buy('s', 'pistol'); if (g.sel.p !== 'ar') g.buy('p', 'ar'); if (!g.sel.armor) g.buy('armor'); });
+await sleep(300);
+ok('第 2 局可以買主武器', (await A.evaluate(() => __game.sel.p + ':' + __game.sel.armor)) === 'ar:1');
 ok('贏家沒有強化選項', (await B.evaluate(() => __game.gs.p[1].ch)) === null);
 await A.screenshot({ path: OUT + '/n5-loadout-buff.png' });
 ok('沒選強化前不能準備', await A.$eval('#btn-ready', (e) => e.disabled));
@@ -118,14 +155,16 @@ await waitPhase(A, 'playing'); await waitPhase(B, 'playing');
 await sleep(500);
 const h2A = await hash(A), h2B = await hash(B);
 ok('第 2 局地形已重置且一致', h2A === h2B && h2A === h0, `${h2A}`);
-const s2 = await A.evaluate(() => ({ round: __game.round, hp: __game.gs.p.map((p) => [p.hp, p.mhp, p.ar]), bf: __game.gs.p[0].bf, me: __game.player.pos.toArray() }));
+const s2 = await A.evaluate(() => ({ round: __game.round, hp: __game.gs.p.map((p) => [p.hp, p.mhp, p.ar]), bf: __game.gs.p[0].bf, me: __game.player.pos.toArray(), slots: __game.combat.slots.map((x) => x && x.id), money: __game.gs.p[0].$ }));
+ok('第 2 局：A 拿到步槍與 50 護甲、錢扣掉', s2.slots[0] === 'ar' && s2.hp[0][2] === 50 && s2.money === 100, JSON.stringify(s2.slots) + ' $' + s2.money);
 ok('第 2 局出生點互換', d(s2.me, s1b.me) < 1.5, JSON.stringify(s2.me.map((v) => +v.toFixed(1))));
 console.log('round2', JSON.stringify(s2));
 await A.screenshot({ path: OUT + '/n6-round2.png' });
 
 // 讓 B 連贏到比賽結束（搶 3）
 for (let round = 2; round <= 3; round++) {
-  for (let i = 0; i < 8 && (await A.evaluate(() => __game.phase)) === 'playing'; i++) { await B.evaluate(aim); await B.evaluate(() => { __game.mouse.lp = true; }); await sleep(900); }
+  await B.evaluate(() => __game.combat.setLoadout({ p: 'shotgun', s: 'pistol' }, []));
+  for (let i = 0; i < 12 && (await A.evaluate(() => __game.phase)) === 'playing'; i++) { await B.evaluate(aim); await B.evaluate(() => { __game.mouse.lp = true; }); await sleep(900); }
   await waitPhase(A, 'roundEnd', 8000);
   if (round < 3) {
     await waitPhase(A, 'loadout', 9000); await sleep(300);

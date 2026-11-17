@@ -12,7 +12,8 @@ import { Authority } from './authority.js';
 import { Bot } from './bot.js';
 import { validLook } from './skins.js';
 import { Hud } from './hud.js';
-import { WEAPONS, validLoadout } from './weapons.js';
+import { WEAPONS, GEAR, validLoadout, fitLoadout, loadoutCost, itemName, DEFAULT_LOADOUT } from './weapons.js';
+import { DEFAULT_BINDS, loadBinds } from './binds.js';
 import { MAPS } from './maps.js';
 import { clamp, lerp, r3, roomCode, store } from './util.js';
 
@@ -32,7 +33,9 @@ class Game {
       bot: store.get('bot', 'normal'), pmap: store.get('pmap', 'random'),  // 練習模式的難度與地圖
       skin: look.s, wskin: look.w,
     };
-    this.sel = validLoadout(store.get('loadout'));
+    // wish = 你理想中的裝備（會記住）；sel = 這一局實際買的（受金錢與規則限制）
+    this.wish = validLoadout(store.get('wish', DEFAULT_LOADOUT)); this.sel = { ...this.wish };
+    this.binds = loadBinds(store.get('binds'));
     this.phase = 'menu'; this.gs = null; this.me = 0; this.round = 0; this.code = '';
     this.authority = null; this.bot = null; this.locked = false; this.phaseEnd = 0;
     this.keys = {}; this.mouse = { l: false, r: false, lp: false, dx: 0, dy: 0 }; this.reloadPressed = false;
@@ -131,16 +134,11 @@ class Game {
   _bindInput() {
     const c = this.canvas;
     addEventListener('keydown', (e) => {
-      if (e.target && e.target.tagName === 'INPUT') return;
+      if (e.target && e.target.tagName === 'INPUT' && e.target.type !== 'range' && e.target.type !== 'checkbox') return;
       this.keys[e.code] = true;
       if (!this.active()) return;
-      if (!e.repeat) {
-        if (e.code === 'Digit1') this.combat.switchTo(0);
-        else if (e.code === 'Digit2') this.combat.switchTo(1);
-        else if (e.code === 'KeyQ') this.combat.switchTo(1 - this.combat.cur);
-        else if (e.code === 'KeyR') this.reloadPressed = true;
-      }
-      if (['Space', 'Tab', 'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyC'].includes(e.code)) e.preventDefault();
+      if (!e.repeat) this._edge(e.code);
+      if (e.code === 'Tab' || e.code === 'Space' || Object.values(this.binds).includes(e.code)) e.preventDefault();
     });
     addEventListener('keyup', (e) => { this.keys[e.code] = false; });
     addEventListener('blur', () => { this.keys = {}; this.mouse.l = this.mouse.r = false; });
@@ -148,8 +146,9 @@ class Game {
       if (!this.active()) { if (this.inRound()) this.requestLock(); return; }
       if (e.button === 0) { this.mouse.l = true; this.mouse.lp = true; }
       else if (e.button === 2) this.mouse.r = true;
+      else { this.keys['Mouse' + e.button] = true; this._edge('Mouse' + e.button); e.preventDefault(); } // 中鍵、側鍵也能綁
     });
-    addEventListener('mouseup', (e) => { if (e.button === 0) this.mouse.l = false; else if (e.button === 2) this.mouse.r = false; });
+    addEventListener('mouseup', (e) => { if (e.button === 0) this.mouse.l = false; else if (e.button === 2) this.mouse.r = false; else this.keys['Mouse' + e.button] = false; });
     addEventListener('mousemove', (e) => {
       if (!this.locked) return;
       const mx = clamp(e.movementX || 0, -400, 400), my = clamp(e.movementY || 0, -400, 400);
@@ -174,6 +173,24 @@ class Game {
     });
   }
 
+  held(action) { return !!this.keys[this.binds[action]]; }
+  // 按下瞬間觸發的動作（切槍、換彈、丟投擲物）
+  _edge(code) {
+    const b = this.binds, cb = this.combat;
+    if (code === b.primary) cb.switchTo(0);
+    else if (code === b.secondary) cb.switchTo(1);
+    else if (code === b.swap) cb.switchTo(1 - cb.cur);
+    else if (code === b.reload) this.reloadPressed = true;
+    else if (this.phase === 'playing' && this.meAlive()) {
+      if (code === b.he) cb.throwNade('he'); else if (code === b.flash) cb.throwNade('flash'); else if (code === b.smoke) cb.throwNade('smoke');
+    }
+  }
+  setBind(action, code) {
+    for (const a in this.binds) if (a !== action && this.binds[a] === code) this.binds[a] = this.binds[action]; // 撞鍵就互換
+    this.binds[action] = code; store.set('binds', this.binds); this.hud.renderBinds();
+  }
+  resetBinds() { this.binds = { ...DEFAULT_BINDS }; store.set('binds', this.binds); this.hud.renderBinds(); }
+
   active() { return this.inRound() && (this.locked || NOLOCK); }
   inRound() { return ROUND_PHASES.includes(this.phase); }
   meAlive() { return !!(this.gs && this.gs.p[this.me].al); }
@@ -197,7 +214,7 @@ class Game {
     this._dressDoll();
     if (this.authority || this.net.connected) this.auth('look', this.look());
   }
-  _dressDoll() { this.doll.applySkin(this.settings.skin, TEAM[0]); this.doll.setWeapon(this.sel.p, this.settings.wskin); }
+  _dressDoll() { this.doll.applySkin(this.settings.skin, TEAM[0]); this.doll.setWeapon(this.wish.p || this.wish.s, this.settings.wskin); }
   openLocker() { this.lockerOpen = true; this._dressDoll(); this.doll.group.visible = this.pedestal.visible = true; this.hud.show('locker'); }
   closeLocker() { this.lockerOpen = false; this.doll.group.visible = this.pedestal.visible = false; this.hud.show('menu'); }
   myName() { return this.settings.name || (this.net.isHost ? '房主' : '挑戰者'); }
@@ -224,6 +241,7 @@ class Game {
     n.on('fire', (d) => this.onRemoteFire(d));
     n.on('blk', (d) => this.onRemoteBlk(d));
     n.on('expl', (d) => { if (d.r !== this.round) return; this.combat.removeProjectile(d.pid); this.doExplosion(d); });
+    n.on('blind', (d) => { if (this.gs && d && d.d > 0.6) this.hud.feed(`閃到 ${this.gs.p[1 - this.me].n}　${d.d} 秒`); });
   }
 
   _mkAuthority() {
@@ -262,6 +280,7 @@ class Game {
     this.sfx.init(); this.me = 0; this.code = '';
     const level = this.settings.bot;
     this.bot = new Bot(this.world, level);
+    this.bot.blocked = (ax, ay, az, bx, by, bz) => this.fx.smokeBlocked(ax, ay, az, bx, by, bz);   // 煙霧會擋住機器人的視線
     this.net.isHost = true;
     this._mkAuthority();
     this.net.hostBot(this.bot);
@@ -292,10 +311,26 @@ class Game {
   }
   sendPeer(type, data) { this.net.send(type, data); }
 
-  selectWeapon(slot, id) {
-    this.sel[slot] = id; store.set('loadout', this.sel); this.sfx.ui();
+  // ───────── 買裝備 ─────────
+  // kind: 'p' 主武器 / 's' 副武器 / 裝備代號（armor、he、flash、smoke）
+  buy(kind, id) {
+    const gs = this.gs;
+    if (!gs || gs.phase !== 'loadout') return;
+    const money = gs.p[this.me].$, next = { ...this.sel };
+    if (kind === 'p') {
+      if (gs.round <= 1) { this.sfx.deny(); this.hud.toast('第 1 局是手槍局，下一局才能買主武器'); return; }
+      next.p = next.p === id ? null : id;
+    } else if (kind === 's') next.s = id;
+    else if (GEAR[kind]) {
+      next[kind] = next[kind] >= GEAR[kind].max ? 0 : next[kind] + 1;
+      if (this.sel[kind] > 0 && loadoutCost(next) > money) next[kind] = 0;   // 買不起下一個 → 當作取消
+    }
+    else return;
+    if (loadoutCost(next) > money) { this.sfx.deny(); this.hud.toast('錢不夠'); return; }
+    this.sel = next; this.wish = { ...next, p: gs.round <= 1 ? this.wish.p : next.p };   // 手槍局不會把你想要的主武器忘掉
+    store.set('wish', this.wish); this.sfx.buy();
     this.auth('loadout', this.sel);
-    if (this.gs) this.hud.onState(this.gs);
+    this.hud.onState(gs);
   }
   toggleReady() { if (this.gs) { this.sfx.ui(); this.auth('ready', { v: !this.gs.p[this.me].rd }); } }
   pickBuff(id) { this.sfx.pickup(); this.auth('buff', { id }); }
@@ -324,6 +359,7 @@ class Game {
     else if (gs.phase === 'loadout') {
       this.exitLock(); h.showHud(false); h.clearBanner(); h.show('loadout');
       this.mouse.l = this.mouse.r = false;
+      this.sel = fitLoadout(this.wish, gs.p[this.me].$, gs.round);   // 依這一局的錢，自動幫你配一套買得起的
       this.auth('loadout', this.sel);
     } else if (gs.phase === 'countdown') this.startRound(gs);
     else if (gs.phase === 'playing') {
@@ -348,10 +384,10 @@ class Game {
     this.player.maxAirJumps = this.combat.mods.airJumps;
     const os = sp[(1 - this.me + gs.round) % 2];
     this.remote.clearBuffer(); this.remote.pos.set(os.x, os.y, os.z); this.remote.yaw = os.yaw; this.remote.lastPos.copy(this.remote.pos);
-    this.remote.applySkin(opp.lk.s, TEAM[1 - this.me]); this.remote.setWeapon(opp.lo.p, opp.lk.w);
+    this.remote.applySkin(opp.lk.s, TEAM[1 - this.me]); this.remote.setWeapon(opp.lo.p || opp.lo.s, opp.lk.w);
     this.deathT = 0; this.shake = 0; this.landDip = 0; this.roll = 0; this.rStep = 0;
     this.lastCount = -1; this.keys = {}; this.mouse.l = this.mouse.r = false;
-    this.hud.show(null); this.hud.showHud(true); this.hud.clearBanner();
+    this.hud.show(null); this.hud.showHud(true); this.hud.clearBanner(); this.hud.clearFlash();
     this.requestLock();
     // 瀏覽器不給自動鎖滑鼠時（例如剛按過 Esc），顯示「點一下繼續」
     setTimeout(() => { if (this.inRound() && !this.locked && !NOLOCK) this.hud.setPaused(true); }, 300);
@@ -359,17 +395,17 @@ class Game {
 
   onRoundEnd(gs) {
     const r = gs.res || {}, me = this.me, opp = gs.p[1 - me];
-    const wn = r.w && WEAPONS[r.w] ? WEAPONS[r.w].name : '';
+    const wn = itemName(r.w), inc = r.inc ? `　·　獲得 $${r.inc[me]}` : '';
     if (r.victim === 1 - me) {
       const p = this.remote.pos;
       this.fx.hitSpark(p.x, p.y + 1, p.z, TEAM[1 - me], 40);
     }
-    if (r.winner === -1) { this.hud.banner('平手', '時間到，雙方血量相同', 0); return; }
+    if (r.winner === -1) { this.hud.banner('平手', '時間到，雙方血量相同' + inc, 0); return; }
     const sub = r.reason === 'time' ? '時間到，血量較多的一方獲勝'
       : r.reason === 'suicide' ? (r.victim === me ? '你把自己炸死了' : `${opp.n} 把自己炸死了`)
       : r.victim === me ? `${opp.n} 用 ${wn}${r.head ? ' 爆頭' : ''} 擊倒你` : `${wn}${r.head ? ' 爆頭' : ''} 擊倒 ${opp.n}`;
-    if (r.winner === me) { this.hud.banner('拿下這一局', sub, 0); this.sfx.kill(); }
-    else { this.hud.banner('這局輸了', sub + '　·　下一局可以選一個強化', 0); this.sfx.lose(); }
+    if (r.winner === me) { this.hud.banner('拿下這一局', sub + inc, 0); this.sfx.kill(); }
+    else { this.hud.banner('這局輸了', sub + inc, 0); this.sfx.lose(); }
     this.hud.feed(r.winner === me ? `你 擊倒了 ${opp.n}` : `${opp.n} 擊倒了 你`);
   }
 
@@ -416,6 +452,12 @@ class Game {
   // 爆炸：改地形 + 特效 + 把本機玩家炸飛（傷害由開槍方另外回報）
   doExplosion(m) {
     const [x, y, z] = m.p;
+    if (m.kind === 'flash') { this.doFlash(x, y, z); return; }
+    if (m.kind === 'smoke') {
+      this.fx.smokeCloud(x, y, z, m.cloud || 3, (m.dur || 12) * 1000, m.pid);
+      this.sfx.hiss(_v1.set(x, y, z).distanceTo(this.camera.position), this.panOf(x, z));
+      return;
+    }
     const destroyed = this.world.explode(x, y, z, m.br, m.bp);
     const step = Math.max(1, Math.floor(destroyed.length / 45));
     for (let i = 0; i < destroyed.length; i += step) { const d = destroyed[i]; this.fx.debris(d.x, d.y, d.z, d.type, 3, 1.5); }
@@ -432,11 +474,33 @@ class Game {
     }
   }
 
+  // 閃光彈：有看到它（沒被牆或煙擋住）才會被閃；正對著看最慘，背對只白一下
+  doFlash(x, y, z) {
+    const cam = this.camera, c = cam.position;
+    let dx = x - c.x, dy = y - c.y, dz = z - c.z;
+    const dist = Math.hypot(dx, dy, dz) || 0.01;
+    dx /= dist; dy /= dist; dz /= dist;
+    this.fx.flashBurst(x, y, z);
+    let dur = 0;
+    if (this.inRound() && this.meAlive() && dist < 34) {
+      const blocked = (dist > 0.8 && !!this.world.raycast(c.x, c.y, c.z, dx, dy, dz, dist - 0.5)) || this.fx.smokeBlocked(c.x, c.y, c.z, x, y, z);
+      if (!blocked) {
+        const e = cam.matrixWorld.elements, dot = -(e[8] * dx + e[9] * dy + e[10] * dz);
+        const k = (dot > 0.3 ? 1 : dot > -0.35 ? 0.55 : 0.2) * clamp(1.2 - dist / 24, 0.2, 1);
+        dur = 0.4 + 3 * k;
+        this.hud.flash(Math.min(1, 0.4 + k), dur);
+        this.sendPeer('blind', { d: +dur.toFixed(1) });
+      }
+    }
+    this.sfx.flashbang(dist, this.panOf(x, z), dur);
+    if (this.bot) this.bot.onFlash(x, y, z);
+  }
+
   // ───────── 主迴圈 ─────────
   loop() {
     requestAnimationFrame(this.loop);
     const now = performance.now();
-    const dt = Math.min(0.05, (now - this.last) / 1000);
+    const dt = Math.min(0.1, (now - this.last) / 1000);   // 掉到 10fps 以內都還是照真實時間跑，不會變慢動作
     this.last = now;
     const gs = this.gs, inRound = this.inRound(), cam = this.camera, p = this.player, cb = this.combat;
     const meS = gs ? gs.p[this.me] : null, alive = !!(meS && meS.al);
@@ -445,13 +509,13 @@ class Game {
       const act = this.active();
       const canMove = act && alive && this.phase !== 'countdown';
       const k = this.keys, w = cb.w;
-      const adsKey = this.mouse.r || !!k.ShiftLeft || !!k.ShiftRight;   // 右鍵或 Shift 都能瞄準
+      const adsKey = this.mouse.r || this.held('ads');   // 右鍵，或你綁的瞄準鍵（預設左 Shift）
       if (alive) {
         p.update(dt, {
-          f: canMove ? (k.KeyW ? 1 : 0) - (k.KeyS ? 1 : 0) : 0,
-          r: canMove ? (k.KeyD ? 1 : 0) - (k.KeyA ? 1 : 0) : 0,
-          jump: canMove && !!k.Space,
-          crouch: canMove && !!k.KeyC,
+          f: canMove ? (this.held('fwd') ? 1 : 0) - (this.held('back') ? 1 : 0) : 0,
+          r: canMove ? (this.held('right') ? 1 : 0) - (this.held('left') ? 1 : 0) : 0,
+          jump: canMove && this.held('jump'),
+          crouch: canMove && this.held('crouch'),
           speed: (w ? w.def.move : 1) * cb.mods.speed * lerp(1, 0.6, cb.ads),
         });
         if (p.justJumped) this.sfx.jump();
@@ -547,7 +611,7 @@ class Game {
         w, slot: cb.cur, other: cb.slots[1 - cb.cur], reload: cb.reloadProgress(), scoped,
         gap: (Math.tan(cb.spread() * DEG) / Math.tan((cam.fov * DEG) / 2)) * (innerHeight / 2),
         net: this.net.mode === 'bot' ? '練習模式' : `延遲 ${this.net.ping} ms`,
-        spd: alive ? p.speed2d() : 0, crouch: p.crouched,
+        spd: alive ? p.speed2d() : 0, crouch: p.crouched, nades: cb.nades, money: meS.$,
       });
     }
 
