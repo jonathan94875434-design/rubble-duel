@@ -232,7 +232,7 @@ for (const [map, spots] of [
     await page.waitForFunction(() => __game.phase === 'loadout', { timeout: 9000 });
     if (r === 2) { await sleep(300); carried = await page.evaluate(() => JSON.stringify({ sel: __game.sel, host: __game.gs.p[0].lo })); }
   }
-  const empty = '[null,"pistol",0,0,0,0]', none = { p: null, s: 'pistol', armor: 0, he: 0, flash: 0, smoke: 0 };
+  const empty = '[null,"pistol",0,0,0,0,0]', none = { p: null, s: 'pistol', armor: 0, he: 0, flash: 0, smoke: 0, molotov: 0 };
   ok('連敗加碼：3000 → 3500 → 4000 → 4500（上限），贏家固定 2000', incs.join(' ') === '3000/2000 3500/2000 4000/2000 4500/2000 4500/2000', incs.join(' '));
   ok('商店每局都是空的（只有免費手槍），有錢也不會自動買', sels.every((x) => x.endsWith('→' + empty)), '每局開始的錢：' + sels.map((x) => x.split('→')[0]).join(' → '));
   ok('第 2 局買的步槍、防彈衣、閃光彈有拿到並扣錢', bought === 'ar/50/1/$500', bought);

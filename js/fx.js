@@ -28,7 +28,7 @@ void main() { vCol = aCol; vec4 mvPosition = modelViewMatrix * vec4(position, 1.
 }`,
       fragmentShader: `uniform vec3 uLight; varying vec4 vCol;
 #include <fog_pars_fragment>
-void main() { float d = length(gl_PointCoord - .5) * 2.; float a = smoothstep(1., ${additive ? '.0' : '.35'}, d) * vCol.a; if (a < .003) discard;
+void main() { float d = length(gl_PointCoord - .5) * 2.; float a = ${additive ? 'pow(smoothstep(1., 0., d), 1.7)' : 'smoothstep(1., .3, d)'} * vCol.a; if (a < .003) discard;
   gl_FragColor = vec4(vCol.rgb * ${additive ? '1.' : 'uLight'}, a);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
@@ -131,8 +131,8 @@ export class FX {
     for (let i = 0; i < MAXP; i++) this.mesh.setMatrixAt(i, _m);
     this.next = 0;
 
-    this.dust = new Points(scene, 500, false);
-    this.glowP = new Points(scene, 700, true);
+    this.dust = new Points(scene, 700, false);
+    this.glowP = new Points(scene, 1100, true);
     this.holes = new Decals(scene, 220, holeTex());
     this.scorch = new Decals(scene, 14, scorchTex());
     this.sprays = [];
@@ -165,7 +165,7 @@ export class FX {
     // 煙霧彈的煙團：一堆不透明的灰色多面體，雙面都畫（人在煙裡面也看不出去）
     this.clouds = [];
     this.puffGeo = new THREE.IcosahedronGeometry(1, 2);
-    this.puffMat = skyLit(new THREE.MeshLambertMaterial({ color: 0xb9c0c8, side: THREE.DoubleSide }), world);
+    this.puffMat = skyLit(new THREE.MeshLambertMaterial({ color: 0xd2d6da, emissive: 0x2c2f33, side: THREE.DoubleSide }), world);
 
     // 燃燒瓶的火
     this.fires = [];
@@ -375,6 +375,7 @@ export class FX {
 
   // 噴漆：tex = 圖案；貼在 (x,y,z) 的牆面上，up = 圖案的「上」朝哪（貼在地上時用玩家面向）
   spray(tex, x, y, z, nx, ny, nz, yaw, cell) {
+    if (!(nx || ny || nz) || ![x, y, z, nx, ny, nz, yaw].every((v) => Number.isFinite(v))) return;
     const g = new THREE.PlaneGeometry(0.95, 0.95);
     const me = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 }));
     // 貼片的三個軸：N 朝外、U 是圖案的上方（牆上 = 世界的上；地上／天花板 = 玩家面向的方向）、R = U × N
@@ -429,12 +430,13 @@ export class FX {
       const grow = 1 - Math.pow(1 - Math.min(1, age / 800), 3), k = grow * Math.min(1, (c.dur - age) / 1500);
       for (let j = 0; j < c.puffs.length; j++) { const p = c.puffs[j]; p.me.scale.setScalar(Math.max(0.001, p.s * k * (1 + 0.05 * Math.sin(age * 0.0012 + j)))); }
       c.group.rotation.y = age * 0.00006;
-      c.wisp += dt;                                                             // 邊緣飄一些半透明的煙，輪廓才不會太硬
-      if (c.wisp > 0.12 && k > 0.5) {
-        c.wisp = 0;
-        const a = Math.random() * 6.283, e = Math.random() * 1.2 - 0.2, s = 0.62 * this._lit(c.x, c.y + c.r, c.z);
-        this.dust.spawn(c.x + Math.cos(a) * Math.cos(e) * c.r * 0.9, c.y + Math.sin(e) * c.r * 0.7, c.z + Math.sin(a) * Math.cos(e) * c.r * 0.9, Math.cos(a) * 0.25, 0.15, Math.sin(a) * 0.25, 1.2, 2.4, 2.2, s, s * 1.03, s * 1.06, 0.4, -0.02, 0.4);
+      c.wisp += dt;                                                             // 外面包一層半透明的軟煙，輪廓才不會像一顆石頭
+      while (c.wisp > 0.045 && k > 0.25) {
+        c.wisp -= 0.045;
+        const a = Math.random() * 6.283, e = Math.random() * 1.5 - 0.35, s = (0.6 + Math.random() * 0.12) * this._lit(c.x, c.y + c.r, c.z), rr = c.r * k * (0.62 + Math.random() * 0.2);
+        this.dust.spawn(c.x + Math.cos(a) * Math.cos(e) * rr, c.y + Math.sin(e) * rr * 0.75, c.z + Math.sin(a) * Math.cos(e) * rr, Math.cos(a) * 0.2, 0.12, Math.sin(a) * 0.2, c.r * 0.75, c.r * 1.15, 2.0 + Math.random() * 0.8, s, s * 1.02, s * 1.05, 0.5, -0.02, 0.3);
       }
+      if (c.wisp > 0.2) c.wisp = 0;
     }
 
     // 火焰：每個火苗一直冒發光的點，偶爾冒煙和火星
@@ -444,13 +446,14 @@ export class FX {
       const f = this.fires[i], age = now - f.t0;
       if (age >= f.dur) { this.fires.splice(i, 1); continue; }
       const k = Math.min(1, age / 300) * Math.min(1, (f.dur - age) / 900);
-      f.acc += dt * 90 * k;
+      f.acc += dt * 300 * k;
       while (f.acc >= 1 && f.pts.length) {
         f.acc--;
-        const p = f.pts[(Math.random() * f.pts.length) | 0], ox = (Math.random() - 0.5) * 0.5, oz = (Math.random() - 0.5) * 0.5, r = Math.random();
-        if (r < 0.82) this.glowP.spawn(p.x + ox, p.y + 0.08, p.z + oz, (Math.random() - 0.5) * 0.4, 1.3 + Math.random() * 1.4, (Math.random() - 0.5) * 0.4, 0.5 + Math.random() * 0.25, 0.08, 0.35 + Math.random() * 0.3, 4.2, 1.5 + Math.random() * 0.9, 0.25, 0.55 * k, -0.6, 0.6);
-        else if (r < 0.93) { const s = 0.12 * this._lit(p.x, p.y + 1.5, p.z); this.dust.spawn(p.x + ox, p.y + 0.9, p.z + oz, (Math.random() - 0.5) * 0.4, 1.4 + Math.random(), (Math.random() - 0.5) * 0.4, 0.4, 1.4, 1.2 + Math.random(), s, s, s, 0.4 * k, -0.2, 0.5); }
-        else this.glowP.spawn(p.x + ox, p.y + 0.3, p.z + oz, (Math.random() - 0.5) * 1.6, 2 + Math.random() * 2.5, (Math.random() - 0.5) * 1.6, 0.05, 0.015, 0.6 + Math.random() * 0.6, 9, 4.5, 1, 1, 3, 0.5);
+        const p = f.pts[(Math.random() * f.pts.length) | 0], ox = (Math.random() - 0.5) * 0.55, oz = (Math.random() - 0.5) * 0.55, r = Math.random();
+        if (r < 0.62) this.glowP.spawn(p.x + ox, p.y + 0.1, p.z + oz, (Math.random() - 0.5) * 0.5, 0.9 + Math.random() * 1.2, (Math.random() - 0.5) * 0.5, 0.42 + Math.random() * 0.3, 0.07, 0.4 + Math.random() * 0.4, 4.6, 1.5 + Math.random() * 0.9, 0.22, 0.34 * k, -2.2, 0.9);   // 火舌
+        else if (r < 0.86) this.glowP.spawn(p.x + ox * 0.6, p.y + 0.06, p.z + oz * 0.6, 0, 0.5 + Math.random() * 0.6, 0, 0.26, 0.05, 0.22 + Math.random() * 0.18, 7, 5, 1.8, 0.4 * k, -1.2, 1);              // 貼地那一層比較白熱
+        else if (r < 0.95) { const s = 0.1 * this._lit(p.x, p.y + 1.5, p.z); this.dust.spawn(p.x + ox, p.y + 1.0, p.z + oz, (Math.random() - 0.5) * 0.4, 1.4 + Math.random(), (Math.random() - 0.5) * 0.4, 0.4, 1.5, 1.3 + Math.random(), s, s, s, 0.38 * k, -0.2, 0.5); }
+        else this.glowP.spawn(p.x + ox, p.y + 0.3, p.z + oz, (Math.random() - 0.5) * 1.6, 2 + Math.random() * 2.5, (Math.random() - 0.5) * 1.6, 0.05, 0.015, 0.6 + Math.random() * 0.6, 9, 4.5, 1, 1, 3, 0.5);   // 火星
       }
       if (i < fl.length) { fl[i].position.set(f.x, f.y + 0.7, f.z); fl[i].intensity = k * (15 + 5 * Math.sin(this.time * 17 + i) + 4 * Math.sin(this.time * 31)); }
     }

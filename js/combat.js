@@ -31,7 +31,8 @@ export class Combat {
 
   get w() { return this.slots[this.cur]; }
 
-  // lo = { p 主武器（可能沒買 = null）, s 副武器, he/flash/smoke/molotov 數量 }。第三格固定是刀
+  // lo = { p 主武器（可能沒買 = null）, s 副武器, he/flash/smoke/molotov 數量 }。第三格固定是刀。
+  // 場上飛到一半的拋射物和還在燒的火不會被清掉（熱身中重生、換裝備時它們要繼續存在）；開新的一局由 main.js 另外清
   setLoadout(lo, buffs) {
     this.mods = buffMods(buffs);
     const mk = (id) => {
@@ -45,7 +46,6 @@ export class Combat {
     this.throwAt = 0;
     this.bloom = 0; this.recP = this.recY = 0; this.ads = 0; this.switchEnd = 0; this.fireQueued = 0;
     this.g.view.setWeapon(this.w.id, this.g.settings.wskin);
-    this.clearProjectiles();
   }
 
   // 丟投擲物：朝準星方向丟出去，帶一點往上的弧度和自己的移動速度

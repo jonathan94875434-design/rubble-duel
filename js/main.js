@@ -341,7 +341,7 @@ class Game {
     n.on('st', (d) => { this.remote.push(d); if (WEAPONS[d[5]] && d[5] !== this.remote.weapon) { this.remote.setWeapon(d[5], this.remote.wskin); this.remote._lit(); } });
     n.on('fire', (d) => this.onRemoteFire(d));
     n.on('blk', (d) => this.onRemoteBlk(d));
-    n.on('expl', (d) => { if (d.r !== this.round) return; this.combat.removeProjectile(d.pid); this.doExplosion(d); });
+    n.on('expl', (d) => { const m = this._cleanExpl(d); if (!m || m.r !== this.round) return; this.combat.removeProjectile(m.pid); this.doExplosion(m); });
     n.on('blind', (d) => { if (this.gs && d && d.d > 0.6) this.hud.feed(`閃到 ${this.gs.p[1 - this.me].n}　${d.d} 秒`); });
     n.on('spray', (d) => { if (d && d.r === this.round && SPRAYS[d.id] && Array.isArray(d.p) && Array.isArray(d.n)) this.fx.spray(sprayTex(d.id), +d.p[0], +d.p[1], +d.p[2], +d.n[0], +d.n[1], +d.n[2], +d.y || 0, d.c | 0); });
     n.on('emote', (d) => { if (d && EMOTES[d.id] && this.remote.emote) this.remote.emote(d.id); });
@@ -351,6 +351,13 @@ class Game {
       try { registerCustom(await decodeMap(d.code), d.code); this.hud.refreshMaps(); } catch { return; }
       if (this.pendingGs) { const g = this.pendingGs; this.pendingGs = null; this.onGs(g); }
     });
+  }
+  // 對手送來的爆炸／煙／火：座標要是正常的數字，範圍和威力夾在遊戲裡真的會出現的大小以內（不然一個封包就能把整張圖炸平或卡死畫面）
+  _cleanExpl(d) {
+    if (!d || !Array.isArray(d.p) || d.p.length !== 3 || !d.p.every((v) => Number.isFinite(v))) return null;
+    const num = (v, hi) => (Number.isFinite(+v) ? clamp(+v, 0, hi) : 0);
+    const kind = ['flash', 'smoke', 'molotov'].includes(d.kind) ? d.kind : undefined;
+    return { r: d.r, pid: d.pid | 0, p: [d.p[0], d.p[1], d.p[2]], kind, br: num(d.br, 3), bp: num(d.bp, 1500), rad: num(d.rad, 7), k: num(d.k, 16), cloud: num(d.cloud, 4.5) || undefined, dur: num(d.dur, 15) || undefined, own: d.own === 0 || d.own === 1 ? d.own : -1 };
   }
   _sendMap(id) { const m = MAPS[id]; if (m && m.custom && this.net.isHost && this.net.connected) this.net.send('map', { id, code: m.code }); }
 
@@ -401,7 +408,7 @@ class Game {
     this.authority.setName(1, level === 'dummy' ? '木樁' : '練習機器人');
     // 木樁模式是給你練身法、練槍的：每局 15 分鐘，對手不動也不開槍
     const m = map || this.settings.pmap;
-    this.authority.setSettings({ map: MAPS[m] ? m : 'random', roundTime: level === 'dummy' ? 900 : 120 });
+    this.authority.setSettings({ map: MAPS[m] || m === 'rotate' ? m : 'random', roundTime: level === 'dummy' ? 900 : 120 });
     this.authority.startMatch();
   }
 
@@ -552,7 +559,7 @@ class Game {
   startRound(gs) {
     const warm = gs.phase === 'warmup';
     this.round = gs.round;
-    this.setMap(gs.map); this._setPickups(gs.map); this.fx.clear(); this.sfx.stopLoops();
+    this.setMap(gs.map); this._setPickups(gs.map); this.fx.clear(); this.sfx.stopLoops(); this.combat.clearProjectiles();
     const meS = gs.p[this.me], opp = gs.p[1 - this.me], sp = MAPS[gs.map].spawns;
     this.player.spawn(sp[(this.me + gs.round) % 2]);
     this.combat.setLoadout(warm ? this.wsel : meS.lo, warm ? [] : meS.bf);
@@ -568,6 +575,8 @@ class Game {
     this.lastCount = -1; this.keys = {}; this.mouse.l = this.mouse.r = false;
     this.hud.show(null); this.hud.showHud(true); this.hud.clearBanner(); this.hud.clearFlash(); this.hud.report(null);
     this.sfx.ambient(this.envDef ? this.envDef.ambient : null);
+    // 先把這一局會用到的槍聲算好，第一槍才不會頓一下
+    if (this.sfx.preload) this.sfx.preload([meS.lo.p, meS.lo.s, opp.lo.p, opp.lo.s, this.wsel.p, this.wsel.s].filter((id) => WEAPONS[id]).map((id) => WEAPONS[id].snd));
     this.requestLock();
     // 瀏覽器不給自動鎖滑鼠時（例如剛按過 Esc），顯示「點一下繼續」
     setTimeout(() => { if (this.inRound() && !this.locked && !NOLOCK && !this.buyOpen) this.hud.setPaused(true); }, 300);
@@ -642,6 +651,9 @@ class Game {
 
   onRemoteFire(d) {
     if (!d || !this.inRound()) return;
+    const vec3 = (a) => Array.isArray(a) && a.length === 3 && a.every((v) => Number.isFinite(v) && Math.abs(v) < 500);
+    if (d.v !== undefined && (!vec3(d.v) || !vec3(d.o) || this.combat.projectiles.length > 40)) return;
+    if (d.e !== undefined && (!Array.isArray(d.e) || d.e.length > 90 || !d.e.every((v) => Number.isFinite(v)))) return;
     const rp = this.remote.pos, dist = rp.distanceTo(this.camera.position), now = performance.now();
     if (d.w === 'knife') { if (this.remote.meleeAnim) this.remote.meleeAnim(); if (dist < 12) this.sfx.knifeSwing(); return; }
     const def = WEAPONS[d.w];
@@ -670,10 +682,12 @@ class Game {
   }
 
   onRemoteBlk(d) {
-    if (d.r !== this.round || !d.h) return;
+    if (!d || d.r !== this.round || !Array.isArray(d.h)) return;
     let broke = null;
-    for (let i = 0; i + 1 < d.h.length; i += 2) {
-      const res = this.world.damageIdx(d.h[i], d.h[i + 1]);
+    for (let i = 0, n = Math.min(d.h.length, 1600); i + 1 < n; i += 2) {
+      const ci = d.h[i], dmg = d.h[i + 1];
+      if (!Number.isInteger(ci) || !(dmg > 0)) continue;       // 壞掉的數字不處理（NaN 會讓方塊永遠打不壞）
+      const res = this.world.damageIdx(ci, Math.min(dmg, 5000));
       if (!res) continue;
       if (res.destroyed) { this.fx.debris(res.x, res.y, res.z, res.type); broke = res; }
       else this.fx.impact((res.x + 0.5) * BS, (res.y + 0.5) * BS, (res.z + 0.5) * BS, 0, 0.4, 0, res.type, 2);

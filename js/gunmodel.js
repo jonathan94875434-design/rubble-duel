@@ -62,11 +62,11 @@ const mats = new Map();
 function M(key, o, Cls = THREE.MeshStandardMaterial) { let m = mats.get(key); if (!m) { m = new Cls(o); m.name = key; mats.set(key, m); } return m; }
 const pbr = (key, color, metalness, roughness, x) => M(key, { color, metalness, roughness, roughnessMap: noiseTex(), ...x });
 const S = {
-  get steel() { return pbr('steel', 0x50545b, 0.9, 0.5); },            // 一般鋼件
-  get dark() { return pbr('dark', 0x202226, 0.85, 0.56); },            // 發黑處理的槍管、機件
+  get steel() { return pbr('steel', 0x858a93, 0.8, 0.45); },            // 一般鋼件
+  get dark() { return pbr('dark', 0x565a62, 0.55, 0.46); },            // 發黑處理的槍管、機件
   get chrome() { return pbr('chrome', 0xbfc3c9, 1, 0.24); },           // 拋光槍機
-  get poly() { return pbr('poly', 0x212327, 0, 0.78); },               // 聚合物
-  get rubber() { return pbr('rubber', 0x131315, 0, 1); },
+  get poly() { return pbr('poly', 0x4b4e55, 0, 0.56); },               // 聚合物
+  get rubber() { return pbr('rubber', 0x2c2d31, 0, 0.85); },
   get brass() { return pbr('brass', 0xc9a04a, 1, 0.32); },
   get olive() { return pbr('olive', 0x4c5a34, 0.25, 0.66); },          // 彈藥漆
   get red() { return pbr('red', 0xb3261e, 0, 0.55); },
@@ -88,12 +88,14 @@ const FIN = {
   sand: [0.1, 0.74, 0.7], snow: [0.05, 0.62, 0.8], carbon: [0.55, 0.34, 1.7, 'weave'], crimson: [0.75, 0.36, 0.26],
   gold: [1, 0.24, 0.72], neon: [0.6, 0.4, 0.62], toxic: [0.3, 0.56, 0.62],
 };
+// 太黑的原廠色提亮到「深灰」：純黑的槍在陰影裡只剩一塊剪影，看不出造型
+const lift = (hex) => { const c = new THREE.Color(hex), m = Math.max(c.r, c.g, c.b); if (m < 0.085) c.multiplyScalar(0.085 / Math.max(m, 1e-3)); return c; };
 // 這把槍這個塗裝要用的材質：body 機匣、furn 護木／托／握把、glow 發光條（沒有 = null）
 function look(def, wskin) {
   const sk = WSKINS[wskin] || {}, c = sk.color, glow = sk.glow ? glowM(sk.glow) : null;
   if (c === null || c === undefined) {
     const b = def.body, f = def.furn;
-    return { body: pbr(`p:${b}`, b[0], b[1], b[2]), furn: f[1] === 'wood' ? wood(f[0]) : pbr(`p:${f}`, f[0], f[1], f[2]), glow };
+    return { body: pbr(`p:${b}`, lift(b[0]), Math.min(b[1], 0.62), b[2]), furn: f[1] === 'wood' ? wood(f[0]) : pbr(`p:${f}`, lift(f[0]), f[1], f[2]), glow };
   }
   const f = FIN[wskin] || [0.3, 0.55, 0.7], map = f[3] ? weaveTex() : null;
   return {

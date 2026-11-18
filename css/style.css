@@ -317,7 +317,7 @@ input[type=color] { width: 100%; height: 30px; padding: 0; border: 1px solid var
 #ammo .cnt { font-weight: 900; line-height: 1; white-space: nowrap; }
 #ammo-n { font-size: 54px; } #ammo-n.low { color: var(--bad); }
 #ammo .sep { font-size: 22px; color: var(--dim); margin: 0 4px; } #ammo-r { font-size: 22px; color: var(--dim); }
-#ammo.melee .sep { display: none; }
+#ammo.melee .cnt { visibility: hidden; }
 #wname { font-size: 13px; font-weight: 800; letter-spacing: 0.04em; }
 #reloadbar { width: 220px; height: 4px; background: rgba(0, 0, 0, 0.5); border-radius: 2px; overflow: hidden; opacity: 0; }
 #reloadbar i { display: block; height: 100%; width: 0; background: var(--acc); }

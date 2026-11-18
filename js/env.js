@@ -62,9 +62,9 @@ void main() {
   vec3 col = mix(uHor, uZen, pow(h, .5));
   col += uSunCol * (pow(sd, 6.) * .18 + pow(sd, 48.) * .5);                     // 太陽周圍的光暈
   col += uSunCol * smoothstep(.99955, .9998, sd) * 40. * uDisc;                 // 太陽本體：很亮，後製的光暈會抓到
-  if (uStars > 0. && d.y > 0.) {
-    vec2 sp = floor(d.xz / (d.y + .3) * 90.);
-    col += vec3(.9, .95, 1.) * step(.9965, h21(sp)) * uStars * smoothstep(0., .25, d.y) * (.4 + .6 * h21(sp + 3.));
+  if (uStars > 0. && d.y > 0.) {                                                // 星星：每一小格裡最多一顆，畫成很小的圓點
+    vec2 sp = d.xz / (d.y + .3) * 160., cell = floor(sp), g = fract(sp) - .5 - (vec2(h21(cell + 5.), h21(cell + 9.)) - .5) * .6;
+    col += vec3(.9, .95, 1.) * step(.972, h21(cell)) * smoothstep(.16, .02, length(g)) * uStars * smoothstep(0., .25, d.y) * (.5 + 2.5 * h21(cell + 3.));
   }
   if (d.y > 0.) {                                                               // 雲：把視線投到一個平面上取雜訊
     vec2 p = d.xz / (d.y + .1) * 1.1 + uTime * vec2(.004, .0015);

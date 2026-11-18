@@ -18,6 +18,7 @@ export class Voice {
     if (!peer || peer === this.peer) return;
     this.peer = peer;
     peer.on('call', (call) => {
+      if (call.peer !== this.net.remoteId()) { try { call.close(); } catch { /* 忽略 */ } return; }   // 只接對手打來的，猜到房號的路人不能把聲音塞進來
       if (this.inc) { try { this.inc.close(); } catch { /* 忽略 */ } }
       this.inc = call;
       call.answer();                                   // 只收不送；我的聲音走我自己打出去的那一通

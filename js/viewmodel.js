@@ -175,6 +175,8 @@ export class ViewModel {
     this.hemi = new THREE.HemisphereLight(0xd6e8ff, 0x7a6f60, 1.1);
     this.sun = new THREE.DirectionalLight(0xfff1dc, 2.4);
     this.scene.add(this.hemi, this.sun);
+    // 補光：從鏡頭左後上方打過來的一盞柔光。站在陰影或室內時太陽照不到，沒有它整把槍會黑成剪影
+    this.fill = new THREE.DirectionalLight(0xffffff, 0.9); this.fill.position.set(-0.7, 0.9, 1.3); this.scene.add(this.fill);
     this.env = { sunDir: V(0.5, 0.78, 0.38).normalize(), sunColor: new THREE.Color(0xfff1dc), sunIntensity: 2.4, sky: new THREE.Color(0xd6e8ff), ground: new THREE.Color(0x7a6f60), ambient: 1.1, envMap: null };
     this.envTex = mkCanvasTex(64, 32, () => {}); if (this.envTex) { this.envTex.mapping = THREE.EquirectangularReflectionMapping; this._paintEnv(); }
     this.scene.environment = this.envTex;
@@ -258,7 +260,8 @@ export class ViewModel {
     const sk = SKINS[skinId] || SKINS.recruit || {};
     this.mSleeve.color.set(sk.body === null || sk.body === undefined ? teamColor : sk.body);
     this.mGlove.color.set(sk.trim === undefined ? 0x23262d : sk.trim);
-    this.mPad.color.copy(this.mGlove.color).multiplyScalar(0.5);
+    { const c = this.mGlove.color, m = Math.max(c.r, c.g, c.b); if (m < 0.06) c.addScalar(0.06 - m); }   // 太黑的手套提亮一點，不然只剩輪廓
+    this.mPad.color.copy(this.mGlove.color).multiplyScalar(0.6);
     for (const a of [this.armR, this.armL]) a.children[2].visible = !!sk.glow;
     if (sk.glow) this.mBand.emissive.set(sk.glow);
   }
@@ -425,6 +428,9 @@ export class ViewModel {
     this.sun.position.copy(E.sunDir).applyQuaternion(_q).multiplyScalar(5); this.sun.intensity = E.sunIntensity * lit;
     this.hemi.position.set(0, 1, 0).applyQuaternion(_q);
     this.scene.environmentIntensity = lerp(0.6, 1, lit);
+    const skyV = s.sky === undefined ? 1 : clamp(s.sky);              // 頭上看得到多少天空（室內 → 0）
+    this.hemi.intensity = E.ambient * (0.9 + 0.7 * skyV);
+    this.fill.color.copy(E.sky).lerp(_c.set(0xffffff), 0.45); this.fill.intensity = E.ambient * (1.0 + 0.9 * skyV);
 
     this.rig.visible = !(s.scoped && (s.ads || 0) > 0.8);
   }

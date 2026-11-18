@@ -323,9 +323,21 @@ const b64 = {
   enc(u8) { let s = ''; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); },
   dec(str) { const s = atob(str.replace(/-/g, '+').replace(/_/g, '/')); const u = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return u; },
 };
-async function pipe(u8, stream) {
-  const out = new Response(new Blob([u8]).stream().pipeThrough(stream));
-  return new Uint8Array(await out.arrayBuffer());
+// 把資料餵進壓縮／解壓縮串流。cap = 輸出最多幾個位元組（解壓時用：一小段代碼解出幾百 MB 的「壓縮炸彈」會被擋下來）
+async function pipe(u8, stream, cap = Infinity) {
+  const rd = new Blob([u8]).stream().pipeThrough(stream).getReader(), parts = [];
+  let n = 0;
+  for (;;) {
+    const { done, value } = await rd.read();
+    if (done) break;
+    n += value.length;
+    if (n > cap) { rd.cancel().catch(() => {}); throw new Error('地圖資料太大'); }
+    parts.push(value);
+  }
+  const out = new Uint8Array(n);
+  let o = 0;
+  for (const p of parts) { out.set(p, o); o += p.length; }
+  return out;
 }
 // 連續相同的方塊記成（數量, 種類），數量用可變長度整數
 function rle(types) {
@@ -362,17 +374,22 @@ export async function encodeMap(def) {
 export async function decodeMap(code) {
   code = String(code || '').trim();
   if (!code.startsWith('RBL1.')) throw new Error('這不是地圖代碼');
-  const raw = await pipe(b64.dec(code.slice(5)), new DecompressionStream('deflate-raw'));
+  if (code.length > 400000) throw new Error('地圖代碼太長');
+  const raw = await pipe(b64.dec(code.slice(5)), new DecompressionStream('deflate-raw'), 2e6);
+  if (raw.length < 8) throw new Error('地圖資料不完整');
   const hl = new DataView(raw.buffer).getUint32(0);
+  if (hl > raw.length - 4 || hl > 20000) throw new Error('地圖資料不完整');
   const h = JSON.parse(new TextDecoder().decode(raw.subarray(4, 4 + hl)));
   if (h.v !== 1 || !Array.isArray(h.spawns) || h.spawns.length !== 2) throw new Error('地圖資料不完整');
   const n = WORLD.X * WORLD.Y * WORLD.Z, types = unrle(raw.subarray(4 + hl), n);
   for (let i = 0; i < n; i++) if (types[i] > DIRT) types[i] = CONCRETE;     // 不認得的方塊（新版本做的圖）先當水泥
   const num = (v, d = 0) => (Number.isFinite(+v) ? +v : d);
+  // 位置一律夾在地圖裡面（出生點在牆外的話人會卡死）
+  const W = WORLD.X * BS, H = WORLD.Y * BS, D = WORLD.Z * BS, inX = (v) => Math.max(1.3, Math.min(W - 1.3, num(v, 4))), inY = (v) => Math.max(0.5, Math.min(H - 2, num(v, 2))), inZ = (v) => Math.max(1.3, Math.min(D - 1.3, num(v, 4)));
   return {
     name: String(h.name || '自製地圖').slice(0, 20), env: String(h.env || 'golden'), g: Math.max(1, Math.min(WORLD.Y - 6, num(h.g, 4) | 0)),
-    spawns: h.spawns.map((s) => ({ x: num(s.x, 4), y: num(s.y, 4), z: num(s.z, 4), yaw: num(s.yaw) })),
-    pickups: (Array.isArray(h.pickups) ? h.pickups : []).slice(0, 12).map((p) => ({ type: p.type === 'armor' ? 'armor' : 'hp', amount: Math.max(10, Math.min(50, num(p.amount, 25))), x: num(p.x), y: num(p.y), z: num(p.z), ...(p.type === 'armor' ? { respawn: 30 } : {}) })),
+    spawns: h.spawns.map((s) => ({ x: inX(s && s.x), y: inY(s && s.y), z: inZ(s && s.z), yaw: num(s && s.yaw) })),
+    pickups: (Array.isArray(h.pickups) ? h.pickups : []).filter((p) => p && typeof p === 'object').slice(0, 12).map((p) => ({ type: p.type === 'armor' ? 'armor' : 'hp', amount: Math.max(10, Math.min(50, num(p.amount, 25))), x: inX(p.x), y: inY(p.y), z: inZ(p.z), ...(p.type === 'armor' ? { respawn: 30 } : {}) })),
     types,
   };
 }

@@ -6,7 +6,11 @@
     "features": "node features.mjs shots",
     "practice": "node practice.mjs shots",
     "duel": "node duel.mjs shots",
-    "duel:peer": "node duel.mjs shots peer"
+    "duel:peer": "node duel.mjs shots peer",
+    "new": "node newfeat.mjs shots",
+    "warm": "node warm.mjs shots",
+    "warm:peer": "node warm.mjs shots peer",
+    "audio": "node audio-check.mjs"
   },
   "devDependencies": {
     "puppeteer-core": "23.10.4"
