@@ -109,11 +109,12 @@ export const WEAPONS = {
   },
 };
 
-// 刀：每個人都有，不用買。左鍵快砍、瞄準鍵（右鍵／Shift）重刺；從背後重刺直接帶走。拿刀跑得最快
+// 刀：每個人都有，不用買。砍到就死（dmg 設成裁判允許的單次上限，護甲和強化都擋不住）。
+// 左鍵快砍；瞄準鍵（右鍵／Shift）突刺，搆得比較遠（heavyReach）但收刀慢。拿刀跑得最快。blockDmg = 砍方塊的傷害
 export const KNIFE = {
-  name: '戰術刀', price: 0, tag: '近戰', slot: 'k', melee: true, auto: true, rpm: 150, dmg: 45, heavy: 90, back: 200, reach: 1.9, heavyRpm: 66,
+  name: '戰術刀', price: 0, tag: '近戰', slot: 'k', melee: true, auto: true, rpm: 150, dmg: 400, heavy: 400, back: 400, reach: 1.8, heavyReach: 2.2, heavyRpm: 66, blockDmg: 30,
   head: 1, pellets: 1, spread: [0, 0], mv: 0, bloom: 0, recoil: [0, 0], mag: 1, reload: 0, range: [99, 99, 1], block: 0.6, pen: 0, zoom: 1, move: 1.18,
-  desc: '左鍵快砍、瞄準鍵重刺，背刺必殺；拿刀跑最快',
+  desc: '砍到就一刀斃命；左鍵快砍、瞄準鍵突刺（搆得比較遠）；拿刀跑最快',
   snd: { kind: 'knife', f: 0, dur: 0, thump: 0, gain: 0 },
 };
 WEAPONS.knife = KNIFE;

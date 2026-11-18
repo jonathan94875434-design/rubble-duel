@@ -334,13 +334,19 @@ export class Hud {
     void h.offsetWidth; h.classList.add('show');
   }
 
-  // angle：攻擊來源相對於準星的方向（弧度，順時針）；null = 自己炸到自己
-  hurt(angle) {
+  // 受傷：畫面邊緣閃一下紅
+  hurt() {
     const v = $('vignette'); v.style.opacity = '0.55';
     clearTimeout(this.hurtT);
-    const arc = $('hurt-arc');
-    if (angle !== null) { arc.style.transform = `rotate(${angle}rad)`; arc.style.opacity = '1'; }
-    this.hurtT = setTimeout(() => { v.style.opacity = '0'; arc.style.opacity = '0'; }, 280);
+    this.hurtT = setTimeout(() => { v.style.opacity = '0'; }, 280);
+  }
+  // 受傷方向：準星外圍一段紅色弧線指向打你的人。angle = 相對於準星的方向（弧度，0 = 正前方、順時針為正）；alpha 0 = 收起來
+  hurtDir(angle, alpha) {
+    const a = alpha > 0.01 ? alpha.toFixed(2) : '0';
+    if (this.cache.hurtA === a && a === '0') return;
+    this.cache.hurtA = a;
+    const arc = $('hurt-arc'); arc.style.opacity = a;
+    if (a !== '0') arc.style.transform = `rotate(${angle.toFixed(3)}rad)`;
   }
 
   feed(text) {

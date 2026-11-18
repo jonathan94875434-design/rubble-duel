@@ -140,12 +140,13 @@ export class Combat {
     if (this.blkOut.length) { g.sendPeer('blk', { r: g.round, h: this.blkOut }); this.blkOut = []; }
   }
 
-  // ───────── 刀 ─────────
+  // ───────── 刀（砍到就死）─────────
   melee(w, now, heavy) {
     const def = w.def, g = this.g, e = g.camera.matrixWorld.elements;
     const rx = e[0], ry = e[1], rz = e[2], ux = e[4], uy = e[5], uz = e[6], fx = -e[8], fy = -e[9], fz = -e[10];
     const ox = e[12], oy = e[13], oz = e[14];
     w.nextFire = now + 60000 / (heavy ? def.heavyRpm : def.rpm); this.lastShotT = now;
+    const reach = heavy ? def.heavyReach || def.reach : def.reach;
     if (g.view.melee) g.view.melee(heavy);
     g.sfx.knifeSwing();
     g.sendPeer('fire', { w: 'knife', hv: heavy ? 1 : 0 });
@@ -154,26 +155,26 @@ export class Combat {
       let dx = fx + rx * sx + ux * sy, dy = fy + ry * sx + uy * sy, dz = fz + rz * sx + uz * sy;
       const l = Math.hypot(dx, dy, dz); dx /= l; dy /= l; dz /= l;
       const ph = g.remote.rayHit(ox, oy, oz, dx, dy, dz);
-      if (!ph || ph.t > def.reach || (best && ph.t >= best.t)) continue;
+      if (!ph || ph.t > reach || (best && ph.t >= best.t)) continue;
       if (g.world.raycast(ox, oy, oz, dx, dy, dz, ph.t)) continue;     // 中間隔著牆
       best = { t: ph.t, dx, dy, dz };
     }
     if (best) {
       // 背刺：對手的面向跟我差不多同方向 = 我在他背後
       const ry2 = g.remote.yaw, fl = Math.hypot(fx, fz) || 1, back = (-Math.sin(ry2) * fx - Math.cos(ry2) * fz) / fl > 0.45;
-      const dmg = (heavy ? (back ? def.back : def.heavy) : def.dmg * (back ? 2 : 1)) * this.mods.dmg;
+      const dmg = (heavy ? (back ? def.back : def.heavy) : def.dmg) * this.mods.dmg;
       g.fx.hitSpark(ox + best.dx * best.t, oy + best.dy * best.t, oz + best.dz * best.t, 0, 9);
       g.auth('hit', { r: g.round, d: dmg, h: false, w: 'knife', bk: back ? 1 : 0 });
       g.hud.hitmarker(back); g.sfx.knifeHit(true); g.remote.hitFlash();
       g.shake = Math.min(1, g.shake + 0.25);
       return;
     }
-    const bh = g.world.raycast(ox, oy, oz, fx, fy, fz, def.reach);
+    const bh = g.world.raycast(ox, oy, oz, fx, fy, fz, reach);
     if (!bh) return;
     _b.set(ox + fx * bh.dist, oy + fy * bh.dist, oz + fz * bh.dist);
     g.sfx.knifeHit(false);
     if (bh.oob) return;
-    const dmg = Math.round((heavy ? def.heavy : def.dmg) * def.block * this.mods.block);
+    const dmg = Math.round((def.blockDmg || 30) * (heavy ? 2 : 1) * this.mods.block);
     const res = g.world.damage(bh.x, bh.y, bh.z, dmg);
     this.blkOut.push(g.world.idx(bh.x, bh.y, bh.z), dmg);
     if (res && res.destroyed) { g.fx.debris(bh.x, bh.y, bh.z, res.type); g.sfx.blockBreak(bh.dist); }

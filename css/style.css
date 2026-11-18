@@ -261,11 +261,15 @@ input[type=color] { width: 100%; height: 30px; padding: 0; border: 1px solid var
 #hitmarker.head { filter: drop-shadow(0 0 3px #ff3b30); background: linear-gradient(45deg, transparent 44%, #ff4a3d 44%, #ff4a3d 56%, transparent 56%), linear-gradient(-45deg, transparent 44%, #ff4a3d 44%, #ff4a3d 56%, transparent 56%); }
 @keyframes hm { 0% { opacity: 1; transform: scale(1.35); } 100% { opacity: 0; transform: scale(1); } }
 #vignette { position: absolute; inset: 0; box-shadow: inset 0 0 180px 40px rgba(255, 30, 20, 0.85); opacity: 0; transition: opacity 0.35s; }
-#hurt-arc { position: absolute; left: 50%; top: 50%; width: 0; height: 0; opacity: 0; transition: opacity 0.5s; }
-#hurt-arc i { position: absolute; left: -70px; top: -150px; width: 140px; height: 40px; border-top: 6px solid rgba(255, 60, 45, 0.95); border-radius: 50% 50% 0 0 / 100% 100% 0 0; }
+/* 受傷方向：準星外圍的紅色弧線，整個容器會轉向打你的人 */
+#hurt-arc { position: absolute; left: 50%; top: 50%; width: 0; height: 0; opacity: 0; }
+#hurt-arc svg { position: absolute; left: -200px; top: -200px; width: 400px; height: 400px; overflow: visible; fill: none; }
+#hurt-arc .arc { stroke: #ff3b2f; stroke-width: 9; stroke-linecap: round; }
+#hurt-arc .glow { stroke: rgba(255, 40, 30, 0.45); stroke-width: 26; stroke-linecap: round; filter: blur(6px); }
+#hurt-arc .tip { fill: #ff3b2f; }
 #scope { position: absolute; inset: 0; opacity: 0; background:
   linear-gradient(#000, #000) center / 100% 1px no-repeat, linear-gradient(#000, #000) center / 1px 100% no-repeat,
-  radial-gradient(circle at center, transparent 0, transparent 37vh, #000 37.4vh); }
+  radial-gradient(circle at center, transparent 0, transparent 46vh, #000 46.4vh); }
 #flashfx { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; }
 
 /* 上方比分條 */

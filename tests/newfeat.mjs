@@ -75,23 +75,25 @@ await page.click('#btn-bot'); await start();
     G.combat.setLoadout({ p: 'ar', s: 'pistol' }, []);
     o.slots = G.combat.slots.map((s) => s && s.id).join(',');
     G.combat.switchTo(2); o.cur = G.combat.w.id; o.move = G.combat.w.def.move;
-    await T.place(10.55, -Math.PI / 2 + Math.PI);          // 對手面向我
+    await T.place(13.5, Math.PI / 2);                      // 太遠：砍不到
     G.combat.switchEnd = 0;
-    let hp0 = G.gs.p[1].hp; G.combat.melee(G.combat.w, performance.now(), false); await T.sleep(350); o.slash = hp0 - G.gs.p[1].hp;
-    await T.place(13.5, Math.PI / 2); hp0 = G.gs.p[1].hp; G.combat.melee(G.combat.w, performance.now(), true); await T.sleep(300); o.far = hp0 - G.gs.p[1].hp;   // 太遠砍不到
+    let hp0 = G.gs.p[1].hp; G.combat.melee(G.combat.w, performance.now(), true); await T.sleep(300); o.far = hp0 - G.gs.p[1].hp;
     G.combat.switchLast(); o.last = G.combat.w.id; G.combat.switchTo(2);
-    await T.place(10.55, -Math.PI / 2);                    // 對手背對我 → 重刺必殺
+    await T.place(11.6, Math.PI / 2);                      // 2.35 公尺：快砍搆不到、突刺搆得到
+    G.authority.players[1].armor = 50; G.authority.dirty = true; await T.sleep(150);
     G.combat.switchEnd = 0; G.combat.w.nextFire = 0;
-    G.combat.melee(G.combat.w, performance.now(), true); await T.sleep(500);
+    hp0 = G.gs.p[1].hp; G.combat.melee(G.combat.w, performance.now(), false); await T.sleep(300); o.slash = hp0 - G.gs.p[1].hp;
+    G.combat.w.nextFire = 0;
+    G.combat.melee(G.combat.w, performance.now(), true); await T.sleep(500);     // 突刺：滿血加護甲也是一刀
     o.phase = G.phase; o.res = G.gs.res; o.report = !document.getElementById('report').classList.contains('hidden') && document.getElementById('report').textContent;
     o.feed = document.getElementById('feed').textContent; o.banner = document.querySelector('#banner .sub').textContent;
     o.dead = !!G.remote.dead; o.vis = G.remote.group.visible;
     return o;
   });
   ok('武器欄有三格：主槍、副槍、刀；拿刀跑比較快', r.slots === 'ar,pistol,knife' && r.cur === 'knife' && r.move > 1.1, `${r.slots} ${r.move}`);
-  ok('刀：快砍 45、太遠砍不到、Q 切回上一把', r.slash === 45 && r.far === 0 && r.last === 'ar', `${r.slash} ${r.far} ${r.last}`);
-  ok('刀：背刺重擊一刀帶走，結果記成刀＋背刺', r.phase === 'roundEnd' && r.res && r.res.w === 'knife' && r.res.bk === true && r.res.winner === 0, JSON.stringify(r.res));
-  ok('回合結束有傷害報告和擊倒訊息', !!r.report && r.report.includes('傷害報告') && r.report.includes('發命中') && r.banner.includes('背刺'), `${r.report} | ${r.banner}`);
+  ok('刀：太遠砍不到、突刺搆得比快砍遠、Q 切回上一把', r.slash === 0 && r.far === 0 && r.last === 'ar', `${r.slash} ${r.far} ${r.last}`);
+  ok('刀：砍到就一刀斃命（滿血加護甲也一樣）', r.phase === 'roundEnd' && r.res && r.res.w === 'knife' && r.res.winner === 0, JSON.stringify(r.res));
+  ok('回合結束有傷害報告和擊倒訊息', !!r.report && r.report.includes('傷害報告') && r.report.includes('發命中') && r.banner.includes('戰術刀'), `${r.report} | ${r.banner}`);
   ok('對手倒下後屍體留在場上', r.dead && r.vis);
   await page.screenshot({ path: OUT + '/x1-knife-report.png' });
 }
@@ -106,6 +108,17 @@ await start();
     await T.sleep(400);
     o.spotted = performance.now() - G.mini.seen.t < 1500;      // 面對面、沒有遮蔽 → 小地圖上看得到
     const d = G.mini.ctx.getImageData(94, 94, 1, 1).data; o.miniPx = d[3];
+    // 被打中：弧線指向對手。對手在正前方 → 0°；我往左轉 90° → 對手變成在右邊（+90°）；火燒的傷害不指方向
+    const arc = document.getElementById('hurt-arc'), deg = () => Math.round((parseFloat((arc.style.transform.match(/rotate\(([-\d.]+)rad/) || [0, 'NaN'])[1]) * 180) / Math.PI);
+    G.authority.damage(0, 5, 1, 'ar', false); await T.sleep(200);
+    o.dirFront = +arc.style.opacity > 0.8 ? deg() : 'hidden';
+    G.player.yaw += Math.PI / 2; await T.sleep(150);
+    o.dirRight = +arc.style.opacity > 0.5 ? deg() : 'hidden';
+    G.player.yaw -= Math.PI / 2; await T.sleep(1700);
+    o.dirGone = arc.style.opacity;
+    G.authority.damage(0, 5, 1, 'molotov', false); await T.sleep(200);
+    o.dirFire = arc.style.opacity;
+    G.authority.players[0].hp = 100;
     // 真的丟一個燃燒瓶：碰到東西就破、地上起火
     G.combat.nades.molotov = 1; G.player.pitch = -0.5;
     await T.sleep(100);
@@ -134,6 +147,7 @@ await start();
     return o;
   });
   ok('小地圖有畫面，面對面時對手會出現', r.miniPx === 255 && r.spotted && r.alive, JSON.stringify(r));
+  ok('被打中會指出敵人的方向，轉頭時跟著轉，過一下自己消失；火燒不指方向', r.dirFront === 0 && r.dirRight === 90 && r.dirGone === '0' && r.dirFire === '0', `${r.dirFront} ${r.dirRight} ${r.dirGone} ${r.dirFire}`);
   ok('燃燒瓶：落地起火、火是我的', r.threw && r.fires === '1/1' && r.mine === true, r.fires);
   ok('站在火裡會一直扣血（對手和自己都會）', r.burn >= 28 && r.burn <= 80 && r.self >= 9, `${r.burn} ${r.self}`);
   ok('火會把木頭燒掉', r.wood === 0, String(r.wood));

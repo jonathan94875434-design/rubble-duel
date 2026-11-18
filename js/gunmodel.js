@@ -47,14 +47,14 @@ const weaveTex = () => tex('weave', 32, 32, [80, 80], (c) => {
   for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) { c.fillStyle = ((x + y) & 3) < 2 ? '#ffffff' : '#6c6c6c'; c.fillRect(x * 8, y * 8, 8, 8); }
 }, true);
 // 瞄準鏡的分劃：中間透明，外圈一道黑邊
-const reticleTex = () => tex('reticle', 256, 256, [1, 1], (c, w) => {
-  const g = c.createRadialGradient(w / 2, w / 2, w * 0.36, w / 2, w / 2, w * 0.5);
-  g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(0.75, 'rgba(0,0,0,0.85)'); g.addColorStop(1, 'rgba(0,0,0,1)');
+const reticleTex = () => tex('reticle', 512, 512, [1, 1], (c, w) => {
+  const g = c.createRadialGradient(w / 2, w / 2, w * 0.45, w / 2, w / 2, w * 0.5);
+  g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(0.8, 'rgba(0,0,0,0.6)'); g.addColorStop(1, 'rgba(0,0,0,0.95)');
   c.fillStyle = g; c.fillRect(0, 0, w, w);
-  c.fillStyle = 'rgba(8,8,8,0.95)';
-  c.fillRect(0, w / 2 - 0.75, w * 0.44, 1.5); c.fillRect(w * 0.56, w / 2 - 0.75, w * 0.44, 1.5); c.fillRect(w / 2 - 0.75, w * 0.56, 1.5, w * 0.44); c.fillRect(w / 2 - 0.75, 0, 1.5, w * 0.36);
-  c.fillRect(0, w / 2 - 2.5, w * 0.3, 5); c.fillRect(w * 0.7, w / 2 - 2.5, w * 0.3, 5); c.fillRect(w / 2 - 2.5, w * 0.7, 5, w * 0.3);
-  c.fillStyle = 'rgba(255,40,30,0.95)'; c.beginPath(); c.arc(w / 2, w / 2, 2.2, 0, TAU); c.fill();
+  c.fillStyle = 'rgba(8,8,8,0.95)';                    // 細十字線（中心留空）＋外圈三段稍粗的線
+  c.fillRect(0, w / 2 - 0.5, w * 0.46, 1); c.fillRect(w * 0.54, w / 2 - 0.5, w * 0.46, 1); c.fillRect(w / 2 - 0.5, w * 0.54, 1, w * 0.46); c.fillRect(w / 2 - 0.5, 0, 1, w * 0.46);
+  c.fillRect(0, w / 2 - 1.25, w * 0.22, 2.5); c.fillRect(w * 0.78, w / 2 - 1.25, w * 0.22, 2.5); c.fillRect(w / 2 - 1.25, w * 0.78, 2.5, w * 0.22);
+  c.fillStyle = 'rgba(255,40,30,0.95)'; c.beginPath(); c.arc(w / 2, w / 2, 1.4, 0, TAU); c.fill();
 }, true);
 
 // ───────── 材質（依名字快取，所有槍共用）─────────
@@ -233,12 +233,13 @@ function guard(k, m, zr = -0.05, zf = -0.108, yb = -0.03, yt = 0.004, w = 0.012)
 }
 // 機械瞄具：後面是覘孔環、前面是準星柱＋護翼，頂端都在 sy
 function irons(k, m, yb, sy, zr, zf) {
-  k.box(m, 0.02, 0.007, 0.018, 0, yb + 0.0035, zr);
-  for (const s of [-1, 1]) k.box(m, 0.0036, sy - yb - 0.004, 0.005, s * 0.0092, (yb + sy - 0.004) / 2 + 0.002, zr);
-  k.ring(m, 0.0074, 0.0019, 0, sy, zr, { rs: 4, ts: 14 });
-  k.box(m, 0.02, 0.007, 0.018, 0, yb + 0.0035, zf);
-  k.box(m, 0.0022, sy - yb - 0.005, 0.0028, 0, (yb + 0.005 + sy) / 2, zf);
-  for (const s of [-1, 1]) k.box(m, 0.0028, sy - yb + 0.003, 0.012, s * 0.0092, (yb + sy + 0.003) / 2 + 0.003, zf, 0, 0, -s * 0.1);
+  // 瞄準時這些零件就在眼前，做得越細越不擋視線：覘孔環只留一圈細線，準星是一根細柱
+  k.box(m, 0.016, 0.005, 0.014, 0, yb + 0.0025, zr);
+  for (const s of [-1, 1]) k.box(m, 0.0016, sy - yb - 0.008, 0.004, s * 0.0092, (yb + sy - 0.008) / 2 + 0.001, zr);
+  k.ring(m, 0.0092, 0.0007, 0, sy, zr, { rs: 4, ts: 20 });
+  k.box(m, 0.016, 0.005, 0.014, 0, yb + 0.0025, zf);
+  k.box(m, 0.0011, sy - yb - 0.005, 0.002, 0, (yb + 0.005 + sy) / 2, zf);
+  for (const s of [-1, 1]) k.box(m, 0.0012, sy - yb + 0.002, 0.008, s * 0.0105, (yb + sy + 0.002) / 2 + 0.002, zf, 0, 0, -s * 0.1);
 }
 // 手槍的缺口照門＋片狀準星（帶白點）
 function notch(k, m, sy, zr, zf, base) {
@@ -257,7 +258,8 @@ function m4stock(k, L, y, z0) {
 // 瞄準鏡：鏡筒（車削，兩端內凹）＋調節鈕＋鏡環。接目鏡的鏡片另外做成 lens（平常）／aim（瞄準時看得穿）兩個零件
 function scope(k, y, zr, len, rt, re, ro, mountY, seeThrough) {
   const zf = zr - len, oc = len * 0.22, bell = len * 0.27, zt = zr - len * 0.47;
-  k.lathe(S.dark, [[zr - 0.012, re - 0.003], [zr, re - 0.003], [zr, re], [zr - 0.014, re + 0.0012], [zr - 0.02, re], [zr - oc * 0.62, re], [zr - oc, rt + 0.0015], [zr - oc - 0.004, rt],
+  // 接目鏡這一端：筒壁薄、鏡片幾乎貼齊筒口。瞄準時眼睛就在它後面，筒壁厚或鏡片縮在裡面都會變成一大圈黑邊
+  k.lathe(S.dark, [[zr - 0.002, re - 0.001], [zr, re - 0.001], [zr, re], [zr - 0.014, re + 0.0003], [zr - 0.02, re], [zr - oc * 0.62, re], [zr - oc, rt + 0.0015], [zr - oc - 0.004, rt],
     [zf + bell, rt], [zf + bell * 0.6, ro], [zf, ro], [zf, ro - 0.003], [zf + 0.014, ro - 0.003]], 0, y, { seg: 14 });
   k.disc(S.glass, ro - 0.003, 0, y, zf + 0.014, -1, 14);
   k.box(S.dark, rt * 2 + 0.006, rt * 2 + 0.006, 0.03, 0, y, zt);                                         // 調節鈕座
@@ -267,8 +269,8 @@ function scope(k, y, zr, len, rt, re, ro, mountY, seeThrough) {
     k.cyl(S.steel, rt + 0.0045, 0.014, 0, y, z, { seg: 12 });
     k.box(S.steel, 0.014, y - rt - mountY + 0.004, 0.014, 0, (y - rt + mountY) / 2, z).box(S.steel, 0.024, 0.008, 0.018, 0, mountY + 0.004, z);
   }
-  k.part('lens').disc(S.glass, re - 0.003, 0, y, zr - 0.012, 1, 14);
-  if (seeThrough) k.part('aim').disc(S.mask, re - 0.003, 0, y, zr - 0.012, 1, 20).disc(S.reticle, re - 0.003, 0, y, zr - 0.0116, 1, 20);
+  k.part('lens').disc(S.glass, re - 0.001, 0, y, zr - 0.002, 1, 20);
+  if (seeThrough) k.part('aim').disc(S.mask, re - 0.001, 0, y, zr - 0.002, 1, 24).disc(S.reticle, re - 0.001, 0, y, zr - 0.0016, 1, 24);
   k.part();
 }
 // 槍管（實心）＋槍口的黑洞
@@ -441,14 +443,14 @@ GUNS.lmg = { kind: 'rifle', body: [0x505356, 0.8, 0.58], furn: [0x26282c, 0, 0.8
   k.prof(S.dark, [[-0.302, 0.064], [-0.302, 0.074], [-0.496, 0.074], [-0.496, 0.064]], 0.036, 0, { b: 0.004 });                                                   // 散熱罩
   for (let i = 0; i < 5; i++) k.box(S.hole, 0.02, 0.001, 0.022, 0, 0.0742, -0.325 - i * 0.037).box(S.hole, 0.0504, 0.008, 0.022, 0, 0.024, -0.325 - i * 0.037);
   k.box(S.dark, 0.006, 0.03, 0.006, 0.012, 0.086, -0.315, 0, 0, -0.5).box(S.dark, 0.006, 0.03, 0.006, 0.012, 0.086, -0.375, 0, 0, -0.5).cyl(L.furn, 0.008, 0.074, 0.024, 0.096, -0.345, { seg: 8 });   // 提把（倒向右邊）
-  k.box(S.dark, 0.024, 0.03, 0.02, 0, 0.066, -0.56).box(S.dark, 0.0024, 0.047, 0.003, 0, 0.1015, -0.56);                                                           // 導氣箍＋準星
-  for (const s of [-1, 1]) k.box(S.dark, 0.003, 0.05, 0.014, s * 0.0095, 0.105, -0.56, 0, 0, -s * 0.08);
+  k.box(S.dark, 0.024, 0.03, 0.02, 0, 0.066, -0.56).box(S.dark, 0.0012, 0.047, 0.002, 0, 0.1015, -0.56);                                                           // 導氣箍＋準星
+  for (const s of [-1, 1]) k.box(S.dark, 0.0013, 0.05, 0.009, s * 0.0108, 0.105, -0.56, 0, 0, -s * 0.08);
   for (const s of [-1, 1]) k.cyl(S.steel, 0.0048, 0.21, s * 0.031, 0.02, -0.44, { seg: 6 }).box(S.steel, 0.012, 0.006, 0.02, s * 0.031, 0.02, -0.33);               // 腳架（往後收）
   k.box(S.steel, 0.07, 0.014, 0.016, 0, 0.022, -0.548);
   // 後覘孔（裝在上蓋後端）
-  k.box(S.dark, 0.022, 0.008, 0.03, 0, 0.108, 0.006);
-  for (const s of [-1, 1]) k.box(S.dark, 0.004, 0.014, 0.005, s * 0.0092, 0.115, 0.004);
-  k.ring(S.dark, 0.0074, 0.002, 0, 0.125, 0.004, { rs: 4, ts: 14 });
+  k.box(S.dark, 0.018, 0.006, 0.024, 0, 0.107, 0.006);
+  for (const s of [-1, 1]) k.box(S.dark, 0.0016, 0.008, 0.004, s * 0.0092, 0.112, 0.004);
+  k.ring(S.dark, 0.0092, 0.0007, 0, 0.125, 0.004, { rs: 4, ts: 20 });
   // 固定托
   k.prof(L.furn, [[0.05, 0.078], [0.29, 0.078], [0.298, 0.07], [0.298, -0.046], [0.284, -0.052], [0.24, -0.03], [0.15, 0.008], [0.05, 0.016]], 0.036, 0, { b: 0.006, holes: [[[0.11, 0.062], [0.264, 0.062], [0.264, -0.012], [0.16, 0.03], [0.11, 0.036]]] });
   k.box(S.rubber, 0.034, 0.12, 0.008, 0, 0.014, 0.301).prof(S.steel, [[0.292, 0.078], [0.3, 0.078], [0.31, 0.1], [0.302, 0.1]], 0.03, 0, { b: 0.002 });
@@ -481,7 +483,7 @@ GUNS.rocket = { kind: 'launcher', body: [0x5b6b3c, 0.45, 0.6], furn: [0x8a5a34, 
   guard(k, S.dark, -0.05, -0.1);
   k.prof(L.furn, [[0.17, 0.052], [0.128, 0.052], [0.132, -0.04], [0.176, -0.046]], 0.03, 0, { b: 0.008 });
   // 瞄具：前準星（帶護圈）＋後照門板
-  k.box(S.dark, 0.014, 0.012, 0.03, 0, T + 0.041, -0.3).box(S.dark, 0.0024, 0.03, 0.003, 0, T + 0.061, -0.3).ring(S.dark, 0.011, 0.0016, 0, T + 0.067, -0.3, { rs: 3, ts: 12 });
+  k.box(S.dark, 0.014, 0.012, 0.03, 0, T + 0.041, -0.3).box(S.dark, 0.0024, 0.03, 0.003, 0, T + 0.061, -0.3).ring(S.dark, 0.012, 0.0008, 0, T + 0.067, -0.3, { rs: 3, ts: 18 });
   k.box(S.dark, 0.014, 0.012, 0.03, 0, T + 0.041, -0.05);
   for (const s of [-1, 1]) k.box(S.dark, 0.007, 0.03, 0.003, s * 0.0058, T + 0.061, -0.05);
   k.box(S.dark, 0.0186, 0.018, 0.003, 0, T + 0.055, -0.05);

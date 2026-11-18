@@ -134,7 +134,7 @@ export class Authority {
       A.dmg += dealt; A.rDmg += dealt; A.rHits++; if (head) A.rHead++;
       if (A.buffs.includes('leech') && A.alive) A.hp = Math.min(A.maxHp, A.hp + dealt * 0.25);
     }
-    this.out(target, 'ev', { t: 'hurt', d: Math.round(toHp), self: attacker === target, h: head });
+    this.out(target, 'ev', { t: 'hurt', d: Math.round(toHp), self: attacker === target, h: head, w: weapon });
     if (T.hp <= 0) {
       T.hp = 0; T.alive = false;
       const suicide = attacker === target;

@@ -69,7 +69,7 @@ class Game {
     this.landDip = 0; this.roll = 0; this.rStep = 0; this.lockerOpen = false; this.oppLook = '';
     this.buyOpen = false; this.kc = false; this.kcAt = 0; this.kcDeath = 0; this.emote = null; this.sprayAt = 0;
     this.spotAt = 0; this.lit = 1; this.pendingGs = null; this.rs0 = 0; this.rh0 = 0; this.fpsAcc = 0; this.fpsN = 0; this.fpsV = 0; this.miniAt = 0;
-    this.fxLight = new THREE.Color(1, 1, 1); this.envDef = null;
+    this.fxLight = new THREE.Color(1, 1, 1); this.envDef = null; this.hurtSrc = null;
 
     this._initRender();
     this.world = new World(this.scene);
@@ -439,7 +439,7 @@ class Game {
     this.bot = null; this.warmBot = false; this.gs = null; this.phase = 'menu'; this.round = 0; this.oppLook = ''; this.pendingGs = null;
     this.lockerOpen = false; this.doll.group.visible = this.pedestal.visible = false; this.buyOpen = false;
     this.remote.alive = false; this.remote.group.visible = false; this.ghost.group.visible = false;
-    this._endKillcam(); this.emote = null; this.editor.close();
+    this._endKillcam(); this.emote = null; this.editor.close(); this.hurtSrc = null; this.hud.hurtDir(0, 0);
     this.exitLock(); this.hud.showHud(false); this.hud.clearBanner(); this.hud.report(null); this.hud.show('menu'); this.hud.menuMsg('');
     this.combat.clearProjectiles(); this.fx.clear(); this.sfx.stopLoops(); this.sfx.ambient(null);
     for (const m of this.pickMeshes) m.visible = false;
@@ -570,7 +570,7 @@ class Game {
     if (this.remote.revive) this.remote.revive();
     this.remote.applySkin(opp.lk.s, TEAM[1 - this.me]); this.remote.setWeapon(opp.lo.p || opp.lo.s, opp.lk.w); this.remote._lit();
     this.ghost.group.visible = false; this.emote = null; this.kc = false; this.kcAt = 0;
-    this.replay.clear(); this.mini.reset(); this.rs0 = this.combat.shots; this.rh0 = this.combat.hits;
+    this.replay.clear(); this.mini.reset(); this.rs0 = this.combat.shots; this.rh0 = this.combat.hits; this.hurtSrc = null; this.hud.hurtDir(0, 0);
     this.deathT = 0; this.shake = 0; this.landDip = 0; this.roll = 0; this.rStep = 0;
     this.lastCount = -1; this.keys = {}; this.mouse.l = this.mouse.r = false;
     this.hud.show(null); this.hud.showHud(true); this.hud.clearBanner(); this.hud.clearFlash(); this.hud.report(null);
@@ -628,12 +628,11 @@ class Game {
   onEv(e) {
     if (e.t === 'hurt') {
       this.sfx.hurt(); this.shake = Math.min(1.2, this.shake + 0.35);
-      if (e.self) this.hud.hurt(null);
-      else {
-        const p = this.player, dx = this.remote.pos.x - p.pos.x, dz = this.remote.pos.z - p.pos.z;
-        const s = Math.sin(p.yaw), c = Math.cos(p.yaw);
-        this.hud.hurt(Math.atan2(dx * c - dz * s, -dx * s - dz * c));
-      }
+      this.hud.hurt();
+      // 被槍或刀打中：記下對手當時的位置，畫面上會有一段紅色弧線指著那個方向（轉頭時它會跟著轉）。
+      // 爆炸和火不指方向（傷害不是從對手站的地方來的）
+      const wd = WEAPONS[e.w];
+      if (!e.self && wd && !wd.proj) this.hurtSrc = { x: this.remote.pos.x, z: this.remote.pos.z, t: performance.now() };
     } else if (e.t === 'pick' && e.by === this.me) this.sfx.pickup();
     else if (e.t === 'respawn') this.respawn();
     else if (e.t === 'wkill' && this.gs) {
@@ -947,6 +946,15 @@ class Game {
           const rp = this.remote.pos, e = cam.matrixWorld.elements, c = cam.position;
           let dx = rp.x - c.x, dy = rp.y + 1.1 - c.y, dz = rp.z - c.z; const d = Math.hypot(dx, dy, dz) || 1; dx /= d; dy /= d; dz /= d;
           if (d < 80 && -(e[8] * dx + e[9] * dy + e[10] * dz) > 0.45 && !this.world.raycast(c.x, c.y, c.z, dx, dy, dz, d) && !this.fx.smokeBlocked(c.x, c.y, c.z, rp.x, rp.y + 1.1, rp.z)) this.mini.spot(now, rp.x, rp.z);
+        }
+      }
+      // 受傷方向指示：1.6 秒內慢慢淡掉，角度每一幀照目前的視角重算
+      if (this.hurtSrc) {
+        const h = this.hurtSrc, age = now - h.t;
+        if (age > 1600 || !alive || this.kc) { this.hurtSrc = null; this.hud.hurtDir(0, 0); }
+        else {
+          const dx = h.x - p.pos.x, dz = h.z - p.pos.z, s = Math.sin(p.yaw), c = Math.cos(p.yaw), k = age / 1600;
+          this.hud.hurtDir(Math.atan2(dx * c - dz * s, -dx * s - dz * c), 1 - k * k * k);
         }
       }
       // 火焰的聲音：離最近的一團火越近越大聲
