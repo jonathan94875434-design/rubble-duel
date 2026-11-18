@@ -448,8 +448,51 @@ function voiceBuf(d, on) {
   return d.fin(x, 0.9, 0.01);
 }
 
+// ═══ Roguelike：技能與抽卡 ═══
+const SKILL = {
+  // 瞬移：往下掃的咻一聲，尾巴一個亮音
+  blink(d) { const x = d.z(0.4); d.add(x, d.mul(d.bp(d.noise(0.28), 3000, 1.4), (t) => bell(t, 0.28, 0.7)), 0.55); d.add(x, d.dec(d.sine(0.3, 2600, 260, 0.045), 0.09, 0.003), 0.7); d.add(x, d.tone(0.2, 1320, 1980, 0.05, [[1, 1], [2, 0.25]]), 0.3, 0.15); return d.fin(x, 0.85, 0.01); },
+  // 鉤索：鋼索射出去的「嘶—鏘」
+  grapple(d) { const x = d.z(0.5); d.add(x, d.mul(d.hp(d.noise(0.22), 3500), (t) => bell(t, 0.22, 0.5)), 0.5); d.add(x, d.ring(0.3, [[1850, 0.05, 1], [2900, 0.035, 0.6], [4300, 0.02, 0.4]]), 0.6, 0.18); d.add(x, d.dec(d.sine(0.25, 500, 1400, 0.1), 0.1, 0.01), 0.3); return d.fin(x, 0.85, 0.01); },
+  // 噴射背包：一口氣噴出去的轟聲
+  jet(d) { const x = d.z(0.75); d.add(x, d.mul(d.sat(d.bp(d.noise(0.7), 420, 0.5), 2.5), (t) => Math.min(1, t / 0.02) * Math.exp(-t / 0.22)), 0.9); d.add(x, d.mul(d.hp(d.noise(0.6), 2400), (t) => Math.exp(-t / 0.15)), 0.35); d.add(x, d.dec(d.sine(0.4, 160, 60, 0.1), 0.14, 0.004), 0.6); return d.fin(x, 0.9, 0.02); },
+  // 鋼牆：重物砸進地面
+  wall(d) { const x = d.z(0.6); d.add(x, d.dec(d.sine(0.4, 120, 45, 0.06), 0.12, 0.002), 0.9); d.add(x, d.ring(0.5, [[410, 0.12, 1], [690, 0.09, 0.6], [1130, 0.06, 0.4], [1870, 0.04, 0.25]]), 0.55); d.add(x, d.dec(d.lp(d.noise(0.2), 1500), 0.04, 0.001), 0.5); return d.fin(d.sat(x, 1.5), 0.9, 0.01); },
+  // 腎上腺素：針筒的嘶聲 + 兩下心跳
+  stim(d) { const x = d.z(0.7); d.add(x, d.mul(d.hp(d.noise(0.2), 5000), (t) => bell(t, 0.2, 0.6)), 0.35); d.add(x, d.tone(0.45, 330, 660, 0.14, [[1, 1], [2, 0.3]], 0.02), 0.55, 0.12); for (const at of [0.2, 0.36]) d.add(x, d.dec(d.sine(0.12, 90, 50, 0.03), 0.04, 0.002), 0.6, at); return d.fin(x, 0.85, 0.02); },
+  // 透視脈衝：聲納
+  scan(d) { const x = d.z(1.0); d.add(x, d.tone(0.8, 1480, 1480, 0.22, [[1, 1], [2, 0.12]], 0.003), 0.7); d.add(x, d.tone(0.6, 1480, 1480, 0.16, [[1, 1]], 0.003), 0.25, 0.3); d.add(x, d.dec(d.bp(d.noise(0.05), 1500, 3), 0.01), 0.3); return d.fin(x, 0.8, 0.02); },
+  // 光學迷彩：往上飄走的閃爍聲
+  cloak(d) { const x = d.z(0.7); d.add(x, d.mul(d.bp(d.noise(0.6), 5200, 2.5), (t) => bell(t, 0.6, 1.2) * (0.6 + 0.4 * Math.sin(TAU * 31 * t))), 0.5); d.add(x, d.mul(d.sine(0.6, 600, 2400, 0.25), (t) => bell(t, 0.6, 1.5)), 0.35); return d.fin(x, 0.75, 0.02); },
+  // 能量護罩：嗡——撐開
+  dome(d) { const x = d.z(0.9); d.add(x, d.mul(d.tone(0.8, 110, 220, 9, [[1, 1], [2, 0.5], [3, 0.35], [5, 0.2]], 0.03), (t) => bell(t, 0.8, 0.6)), 0.7); d.add(x, d.mul(d.bp(d.noise(0.5), 1800, 1.2), (t) => bell(t, 0.5, 0.8)), 0.25); d.add(x, d.tone(0.4, 880, 1320, 0.1, [[1, 1], [2, 0.2]]), 0.3, 0.3); return d.fin(x, 0.85, 0.02); },
+  // 時間凝結：整個世界往下沉的滑音，秒針越走越慢
+  chrono(d) { const x = d.z(1.3); d.add(x, d.mul(d.tone(1.2, 880, 110, 9, [[1, 1], [2, 0.4], [3, 0.2]], 0.01), (t) => Math.exp(-t / 0.6)), 0.7); d.add(x, d.mul(d.lp(d.noise(1.1), 900), (t) => Math.exp(-t / 0.5)), 0.4); let at = 0.05; for (let i = 0; i < 4; i++) { d.add(x, d.ring(0.2, [[2100, 0.03, 1], [3300, 0.02, 0.5]]), 0.3 * (1 - i * 0.2), at); at += 0.16 * (1 + i * 0.45); } return d.fin(x, 0.85, 0.03); },
+  // 軌道砲鎖定：越來越急的警報
+  mark(d) { const x = d.z(1.7); let at = 0, gap = 0.34; while (at < 1.55) { d.add(x, d.mul(d.tone(0.09, 1560, 1560, 9, [[1, 1], [2, 0.3], [3, 0.3]], 0.003), (t) => (t > 0.07 ? Math.max(0, 1 - (t - 0.07) / 0.02) : 1)), 0.6, at); at += gap; gap = Math.max(0.07, gap * 0.8); } d.add(x, d.mul(d.sine(1.6, 200, 1400, 0.9), (t) => (t / 1.6) ** 2), 0.3); return d.fin(x, 0.8, 0.01); },
+  // 軌道砲打下來：雷射劈下來 + 低頻重擊
+  beam(d) { const x = d.z(1.6); d.add(x, d.dec(d.sat(d.sine(1.0, 2400, 90, 0.05), 3), 0.25, 0.002), 0.8); d.add(x, d.dec(d.sat(d.lp(d.noise(1.4), 900), 3), 0.4, 0.004), 0.9); d.add(x, d.dec(d.sine(1.2, 70, 32, 0.25), 0.4, 0.004), 1.0); d.add(x, d.mul(d.hp(d.noise(0.5), 4000), (t) => Math.exp(-t / 0.08)), 0.5); return d.fin(d.sat(x, 1.8), 0.95, 0.03); },
+  // 黑洞張開：往下掉的低吼
+  hole(d) { const x = d.z(1.2); d.add(x, d.mul(d.sat(d.sine(1.1, 320, 38, 0.3), 2.5), (t) => bell(t, 1.1, 0.5)), 0.9); d.add(x, d.mul(d.bp(d.noise(1.0), 300, 0.7), (t) => bell(t, 1.0, 0.8)), 0.5); d.add(x, d.mul(d.sine(0.5, 3000, 600, 0.12), (t) => Math.exp(-t / 0.12)), 0.25); return d.fin(x, 0.9, 0.03); },
+  // 不死鳥：火焰炸開 + 往上的和弦
+  phoenix(d) { const x = d.z(1.5); d.add(x, d.mul(d.sat(d.bp(d.noise(1.0), 600, 0.5), 2.5), (t) => Math.min(1, t / 0.03) * Math.exp(-t / 0.35)), 0.8); for (const [f, at] of [[392, 0.05], [523.25, 0.15], [659.25, 0.25], [1046.5, 0.38]]) d.add(x, d.tone(0.9, f, f, 0.3, [[1, 1], [2, 0.4], [3, 0.2]], 0.01), 0.4, at); d.add(x, d.dec(d.sine(0.5, 150, 50, 0.1), 0.2, 0.004), 0.7); return d.fin(x, 0.9, 0.03); },
+};
+// 選卡：稀有度越高，音越多、越亮
+function cardBuf(d, r) {
+  const notes = r === 'l' ? [523.25, 659.25, 783.99, 1046.5, 1318.5] : r === 'r' ? [523.25, 659.25, 783.99] : [587.33, 880], last = notes[notes.length - 1];
+  const x = d.z(notes.length * 0.07 + 0.8);
+  notes.forEach((f, i) => { d.add(x, d.tone(0.6, f, f, 0.16, [[1, 1], [2, 0.3], [3, 0.12]], 0.004), 0.6, i * 0.07); });
+  d.add(x, d.ring(0.5, [[last * 2, 0.12, 1], [last * 3, 0.07, 0.5]]), r === 'c' ? 0.12 : 0.3, (notes.length - 1) * 0.07);
+  return d.fin(x, 0.85, 0.02);
+}
+
 // ═══ 循環音（火焰等）═══
 const LOOPS = {
+  // 黑洞：很低的隆隆聲
+  void(d) {
+    const T = 3.6, ch = () => { const x = d.z(T), a = d.lfo(0.7), b = d.lfo(2.3); d.add(x, d.mul(d.sat(d.lp(d.noise(T), 90), 3), (t) => 0.7 + 0.3 * a(t), 64), 0.9); d.add(x, d.mul(d.bp(d.noise(T), 240, 2), (t) => 0.5 + 0.5 * b(t), 64), 0.35); d.add(x, d.mul(d.sine(T, 55, 55), (t) => 0.8 + 0.2 * a(t), 64), 0.5); return d.loopify(x, 0.4); };
+    return d.fin([ch(), ch()], 0.85, 0);
+  },
   fire(d) {
     const T = 4.4, ch = () => {
       const x = d.z(T), a = d.lfo(1.1), b = d.lfo(2.7);
@@ -744,6 +787,12 @@ export class Sfx {
   emote() { this._one('emote', emoteBuf, { g: 0.2 }); }
   respawn() { this._one('respawn', respawnBuf, { g: 0.28, ui: true }); }
   roundStart() { this._one('round', roundBuf, { g: 0.38, ui: true }); }
+  // Roguelike 的技能音效（kind 見 SKILL）。自己放的不用給距離；對手放的會依距離變小、變悶
+  skill(kind, dist = 0, pan = 0) {
+    if (!this.ctx || !SKILL[kind]) return;
+    this._play(this._b('skill:' + kind, SKILL[kind]), { g: 0.5 * att(dist, 0.05, 0.12), pan, rate: rr(0.97, 1.03), send: 0.2, lp: dist > 8 ? 1500 + 14000 * Math.exp(-dist / 18) : 0 });
+  }
+  card(r) { const k = r === 'l' || r === 'r' ? r : 'c'; this._one('card:' + k, (d) => cardBuf(d, k), { g: 0.24, ui: true }); }
   // 按住說話：on = 按下（上揚的喀聲）、放開（下降＋雜訊）
   voiceBlip(on) { this._one(on ? 'voice:1' : 'voice:0', (d) => voiceBuf(d, on), { g: 0.14, ui: true }); }
   buy() { this._one('buy', buyBuf, { g: 0.18, ui: true }); }

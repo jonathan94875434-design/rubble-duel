@@ -62,5 +62,15 @@ export const ECON = {
   DRAW: 2500,
 };
 
+// Roguelike 模式：每局開打前選一張異能卡（cards.js）。輸的人多一張可以選、也比較容易抽到稀有卡
+export const ROGUE = {
+  N: 3,              // 一次給幾張選
+  LOSER_N: 4,        // 上一局輸的人給幾張
+  LOSER_LUCK: 1.6,   // 上一局輸的人抽到稀有／傳說的機率倍率
+  REROLL: 400,       // 重抽一次要多少錢
+  REROLLS: 2,        // 每局最多重抽幾次
+  TIME: 45,          // 選卡＋買裝備的時間（比一般模式長，因為要看卡）
+};
+
 export const TEAM = [0xff7a3c, 0x3cc8ff];      // 房主橘、訪客藍
 export const TEAM_CSS = ['#ff7a3c', '#3cc8ff'];

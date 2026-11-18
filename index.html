@@ -16,6 +16,7 @@
   <div id="scope"></div>
   <div id="flashfx"></div>
   <div id="vignette"></div>
+  <div id="tintfx"></div>
   <div id="hurt-arc"><svg viewBox="-200 -200 400 400" aria-hidden="true"><path class="glow" d="M -103 -147 A 180 180 0 0 1 103 -147"/><path class="arc" d="M -103 -147 A 180 180 0 0 1 103 -147"/><path class="tip" d="M 0 -214 L 17 -192 L -17 -192 Z"/></svg></div>
   <div id="crosshair"><i class="t"></i><i class="b"></i><i class="l"></i><i class="r"></i><i class="dot"></i><i class="ring"></i></div>
   <div id="hitmarker"></div>
@@ -50,6 +51,9 @@
     <div id="reloadbar"><i></i></div>
   </div>
 
+  <div id="oppbuild"></div>
+  <div id="status"></div>
+  <div id="skills"></div>
   <div id="speed"><b id="speed-n">0.0</b><span>m/s</span></div>
   <div id="banner"><div class="big"></div><div class="sub"></div></div>
   <div id="report" class="hidden"></div>
@@ -74,6 +78,7 @@
         <select id="sel-bot" title="對手難度"></select>
         <select id="sel-pmap" title="練習地圖"></select>
       </div>
+      <label class="check"><input id="chk-prog" type="checkbox"> 練習用 Roguelike 模式（每局選一張異能卡）</label>
       <div class="grid2">
         <button id="btn-locker" class="btn ghost">造型 / 噴漆</button>
         <button id="btn-stats" class="btn ghost">戰績</button>
@@ -90,6 +95,11 @@
           <p><b>連跳</b>：按住跳躍鍵，落地瞬間自動再跳，不會被地面摩擦減速，可以一路保持動力。</p>
           <p><b>靜步</b>：瞄準走或蹲走沒有腳步聲；跑步、跳下來對手聽得到你在哪。</p>
           <p><b>刀</b>：砍到就一刀斃命。左鍵快砍，瞄準鍵突刺（搆得比較遠、收刀慢）。拿刀的移動速度最快。</p>
+        </details>
+        <details><summary>Roguelike 模式</summary>
+          <p>房主在大廳把「模式」改成 Roguelike。每一局開打前，雙方各從 3 張<b>異能卡</b>裡選 1 張，整場累積；<b>上一局輸的人有 4 張可以選</b>，也比較容易抽到稀有卡。</p>
+          <p><b>被動</b>拿了就一直有效；<b>主動技能</b>最多帶兩個，用技能鍵施放（預設 E 和 4，可以改）。兩格都滿了再拿新技能，要挑一個換掉。</p>
+          <p>你選好之前看不到對手這一局拿了什麼；選完才公開，接著買裝備——看對手的組合決定這一局怎麼打。不滿意可以花 $400 重抽，每局最多 2 次。</p>
         </details>
         <details><summary>經濟與戰鬥規則</summary>
           <p>每局開打前用錢買裝備，買了就花掉；<b>商店每局都重置</b>，不會沿用上一局買的。開場 $800，<b>第 1 局只能買手槍</b>。</p>
@@ -113,6 +123,7 @@
         <div class="pl p1"><i></i><span id="lb-p1"></span></div>
       </div>
       <div class="settings">
+        <label class="wide">模式<select id="set-mode"><option value="classic">一般對戰</option><option value="rogue">Roguelike — 每局選一張異能卡，整場累積</option></select></label>
         <label>獲勝分數<select id="set-target"><option value="3">搶 3</option><option value="5">搶 5</option><option value="7">搶 7</option><option value="10">搶 10</option></select></label>
         <label>每局時間<select id="set-time"><option value="60">60 秒</option><option value="90">90 秒</option><option value="120">120 秒</option><option value="180">180 秒</option></select></label>
         <label>地圖<select id="set-map"></select></label>
@@ -131,9 +142,10 @@
         <div id="lo-timer" class="timer">30</div>
       </div>
       <div id="lo-buff" class="hidden">
-        <h3>上一局落敗補償 — 選一個強化</h3>
+        <div class="dr-head"><h3 id="lo-buff-title">選一個強化</h3><span id="lo-buff-sub" class="dr-sub"></span><button id="btn-reroll" class="btn small hidden"></button></div>
         <div id="lo-buff-cards" class="buffcards"></div>
       </div>
+      <div id="lo-builds" class="hidden"><div id="lo-build-me"></div><div id="lo-build-opp"></div></div>
       <div class="lo-cols">
         <div class="col wide"><h3>主武器</h3><div id="lo-p" class="wgrid"></div></div>
         <div class="col"><h3>副武器</h3><div id="lo-s" class="wgrid one"></div></div>

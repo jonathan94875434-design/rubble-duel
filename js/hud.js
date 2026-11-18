@@ -1,7 +1,7 @@
 import { WEAPONS, PRIMARIES, SECONDARIES, GEAR, GEAR_IDS, NADE_IDS, loadoutCost, weaponBars, itemName } from './weapons.js';
 import { BIND_ACTIONS, BIND_LABELS, keyName } from './binds.js';
-import { BUFFS } from './buffs.js';
-import { TEAM_CSS } from './config.js';
+import { CARDS, RARITY, cardName } from './cards.js';
+import { TEAM_CSS, ROGUE } from './config.js';
 import { MAPS, MAP_IDS, customIds, deleteMap } from './maps.js';
 import { BOT_LEVELS } from './bot.js';
 import { SKINS, SKIN_IDS, WSKINS, WSKIN_IDS } from './skins.js';
@@ -93,9 +93,10 @@ export class Hud {
       + `${key('左鍵')} 開火　${key('右鍵 / ' + k('ads'))} 瞄準　${key(k('reload'))} 換彈<br>`
       + `${key(k('primary') + ' / ' + k('secondary') + ' / ' + k('knife'))} 主槍／副槍／刀　${key(k('swap'))} 切回上一把<br>`
       + `${key(k('he'))} 手榴彈　${key(k('flash'))} 閃光　${key(k('smoke'))} 煙霧　${key(k('molotov'))} 燃燒瓶<br>`
-      + `${key(k('spray'))} 噴漆　${key(k('emote'))} 表情　${key(k('talk'))} 語音　${key('Esc')} 設定`;
+      + `${key(k('spray'))} 噴漆　${key(k('emote'))} 表情　${key(k('talk'))} 語音　${key('Esc')} 設定<br>`
+      + `${key(k('skill1') + ' / ' + k('skill2'))} 技能（Roguelike 模式）`;
     $('lk-spraykey').textContent = k('spray'); $('lk-emotekey').textContent = k('emote');
-    this.cache.nades = null; this.cache.slots = null;
+    this.cache.nades = null; this.cache.slots = null; this.cache.skIds = null; this.buffKey = null; this.cache.builds = null;
   }
   // mode: 'pause' 對戰中（點空白處繼續）／'menu' 對局外
   _settings(mode) {
@@ -212,6 +213,9 @@ export class Hud {
     $('sel-bot').innerHTML = opts(Object.keys(BOT_LEVELS).map((k) => [k, '對手：' + BOT_LEVELS[k].name]), g.settings.bot);
     $('sel-bot').addEventListener('change', (e) => g.setSetting('bot', e.target.value));
     $('sel-pmap').addEventListener('change', (e) => g.setSetting('pmap', e.target.value));
+    $('chk-prog').checked = !!g.settings.prog;
+    $('chk-prog').addEventListener('change', (e) => g.setSetting('prog', e.target.checked));
+    $('btn-reroll').addEventListener('click', () => g.reroll());
     $('btn-locker').addEventListener('click', () => { g.sfx.ui(); g.openLocker(); });
     $('btn-locker-back').addEventListener('click', () => { g.sfx.ui(); g.closeLocker(); });
     $('btn-stats').addEventListener('click', () => { g.sfx.ui(); this.show('stats'); this.renderStats(); });
@@ -223,7 +227,7 @@ export class Hud {
       try { await navigator.clipboard.writeText(g.inviteLink()); this.toast('邀請連結已複製，貼給朋友吧'); }
       catch { this.toast('複製失敗，請手動告訴朋友房號'); }
     });
-    for (const [id, key] of [['set-target', 'target'], ['set-time', 'roundTime'], ['set-buff', 'buffMode'], ['set-map', 'map']]) {
+    for (const [id, key] of [['set-target', 'target'], ['set-time', 'roundTime'], ['set-buff', 'buffMode'], ['set-map', 'map'], ['set-mode', 'mode']]) {
       $(id).addEventListener('change', (e) => g.changeSettings({ [key]: e.target.value }));
     }
     $('btn-start').addEventListener('click', () => g.startMatch());
@@ -357,7 +361,7 @@ export class Hud {
   // 擊倒訊息：誰 [用什麼] 擊倒誰，附帶爆頭／穿牆／背刺的小圖示
   killfeed(k) {
     const d = document.createElement('div'); d.className = 'kf' + (k.mine ? ' mine' : ' theirs');
-    const ic = this.icons && this.icons[k.w], wn = itemName(k.w);
+    const ic = this.icons && this.icons[k.w], wn = itemName(k.w) || cardName(k.w);
     d.innerHTML = (k.killer ? `<b>${esc(k.killer)}</b>` : '') + (ic ? `<img src="${ic}" alt="">` : `<span class="w">${esc(wn || '自爆')}</span>`)
       + (k.bk ? `<i title="背刺">${ICON.back}</i>` : '') + (k.wb ? `<i title="穿牆">${ICON.wall}</i>` : '') + (k.head ? `<i class="hs" title="爆頭">${ICON.head}</i>` : '') + `<b>${esc(k.victim)}</b>`;
     $('feed').appendChild(d);
@@ -398,7 +402,7 @@ export class Hud {
     ];
     $('st-tiles').innerHTML = tiles.map(([t, v, sub]) => `<div class="tile"><span>${t}</span><b>${v}</b><i>${sub}</i></div>`).join('');
     const ws = Object.entries(s.w).sort((a, b) => b[1] - a[1]).slice(0, 5), top = ws.length ? ws[0][1] : 1;
-    $('st-weapons').innerHTML = ws.length ? ws.map(([id, n]) => `<div class="wbar"><span>${esc(itemName(id) || id)}</span><div class="b"><i style="width:${Math.round((n / top) * 100)}%"></i></div><b>${n}</b></div>`).join('') : '<div class="hint">還沒有紀錄</div>';
+    $('st-weapons').innerHTML = ws.length ? ws.map(([id, n]) => `<div class="wbar"><span>${esc(itemName(id) || cardName(id) || id)}</span><div class="b"><i style="width:${Math.round((n / top) * 100)}%"></i></div><b>${n}</b></div>`).join('') : '<div class="hint">還沒有紀錄</div>';
     $('st-recent').innerHTML = s.recent.length ? s.recent.map((m) => `<div class="rec ${m.win ? 'win' : 'lose'}"><b>${m.win ? '勝' : '敗'}</b><span>${m.my} : ${m.their}</span><span>${esc(m.opp)}</span><i>${esc(m.map || '')}　${new Date(m.t).toLocaleDateString('zh-TW', { month: 'numeric', day: 'numeric' })}</i></div>`).join('') : '<div class="hint">還沒有打完的比賽</div>';
   }
 
@@ -411,6 +415,12 @@ export class Hud {
     this._set('sc-me', warm ? '–' : String(P[me].sc)); this._set('sc-opp', warm ? '–' : String(P[opp].sc));
     this._set('roundno', warm ? `熱身 · ${MAPS[gs.map].name}` : `第 ${gs.round} 局 · 搶 ${gs.set.target} · ${MAPS[gs.map].name}`);
 
+    // 對戰中：對手帶了哪些異能（記分板下面一排小圖示）
+    const rg = gs.set.mode === 'rogue' && !warm, ob = rg ? [...(P[opp].sk || []).filter(Boolean), ...P[opp].bf].join(',') : '';
+    if (this.cache.oppBuild !== ob) {
+      this.cache.oppBuild = ob;
+      $('oppbuild').innerHTML = ob ? '<span>對手</span>' + ob.split(',').map((id) => (CARDS[id] ? `<div class="glyph r-${CARDS[id].r}${CARDS[id].k === 'a' ? ' act' : ''}" title="${esc(CARDS[id].name)}">${CARDS[id].glyph}</div>` : '')).join('') : '';
+    }
     if (gs.phase === 'lobby') {
       this._set('lb-code', g.code || '-----');
       this._set('lb-p0', P[0].n); this._set('lb-p1', gs.here[1] ? P[1].n : '等待對手加入…');
@@ -421,10 +431,11 @@ export class Hud {
             ? '注意：現在是本機網址（localhost），朋友的電腦打不開這個連結。要先把遊戲放上網路，再從那個網址建立房間。'
             : '按「複製邀請連結」傳給朋友，對方打開連結、按加入就會進來。等的時候可以先按「熱身」跟機器人打，朋友一進來會自動回到這裡。')
         : '已連線，等房主按開始。');
-      for (const [id, key] of [['set-target', 'target'], ['set-time', 'roundTime'], ['set-buff', 'buffMode'], ['set-map', 'map']]) {
+      for (const [id, key] of [['set-target', 'target'], ['set-time', 'roundTime'], ['set-buff', 'buffMode'], ['set-map', 'map'], ['set-mode', 'mode']]) {
         const el = $(id); el.disabled = !g.net.isHost;
         if (document.activeElement !== el) el.value = String(gs.set[key]);
       }
+      $('set-buff').parentElement.classList.toggle('hidden', gs.set.mode === 'rogue');   // Roguelike 的輸家補償是「多一張卡可以選」，這個選項用不到
       $('btn-start').classList.toggle('hidden', !g.net.isHost);
       $('btn-start').disabled = !gs.here[1];
       $('btn-warm').classList.toggle('hidden', !g.net.isHost);
@@ -459,31 +470,66 @@ export class Hud {
       el.querySelector('.cnt').textContent = n ? '×' + n : '';
     });
 
-    const key = !warm && me.ch ? me.ch.join(',') : '';
+    const rogue = !warm && gs.set.mode === 'rogue', mySk = me.sk || [null, null];
+    const key = !warm && me.ch ? me.ch.join(',') + '|' + mySk.join(',') + '|' + rogue : '';
     if (key !== this.buffKey) {
       this.buffKey = key;
       const box = $('lo-buff-cards'); box.innerHTML = '';
       $('lo-buff').classList.toggle('hidden', !key);
-      for (const id of (key ? me.ch : [])) {
-        const b = BUFFS[id], el = document.createElement('div');
-        el.className = 'buffcard';
-        el.innerHTML = `<div class="glyph">${b.glyph}</div><div><div class="t">${esc(b.name)}</div><div class="d">${esc(b.desc)}</div></div>`;
-        el.addEventListener('click', () => g.pickBuff(id));
+      (key ? me.ch : []).forEach((id, i) => {
+        const c = CARDS[id]; if (!c) return;
+        const el = document.createElement('div'), act = c.k === 'a', full = act && !mySk.includes(null);
+        el.className = `buffcard card r-${c.r}${act ? ' act' : ''}`; el.dataset.id = id; el.style.setProperty('--i', i);
+        el.innerHTML = `<div class="rar">${RARITY[c.r].name}・${act ? '主動技能' : '被動'}</div><div class="glyph">${c.glyph}</div><div class="t">${esc(c.name)}</div><div class="d">${esc(c.desc)}</div>`
+          + (act ? `<div class="meta">${c.uses ? `每局 ${c.uses} 次` : `冷卻 ${c.cd} 秒`}${c.lock ? `・開打 ${c.lock} 秒後才能用` : ''}</div>` : '')
+          + (full ? `<div class="rep"><span>技能格滿了，要換掉哪一個？</span>${[0, 1].map((n) => `<button class="btn small" data-slot="${n}">${esc(this.key(n ? 'skill2' : 'skill1'))}　${esc(CARDS[mySk[n]].name)}</button>`).join('')}</div>` : '');
+        el.addEventListener('click', (e) => {
+          const b = e.target.closest('[data-slot]');
+          if (b) g.pickBuff(id, +b.dataset.slot);
+          else if (full) { box.querySelectorAll('.card.ask').forEach((o) => o !== el && o.classList.remove('ask')); el.classList.toggle('ask'); }
+          else g.pickBuff(id);
+        });
         box.appendChild(el);
+      });
+    }
+    if (key) {
+      this._set('lo-buff-title', rogue ? `第 ${gs.round} 局 — 選一張異能卡` : '上一局落敗補償 — 選一個強化');
+      this._set('lo-buff-sub', !rogue ? '' : me.lu ? '上一局落敗：多一張可以選，手氣也比較好。你選好之前看不到對手拿了什麼' : '你選好之前看不到對手這一局拿了什麼');
+      const left = ROGUE.REROLLS - (me.rr || 0), rb = $('btn-reroll');
+      rb.classList.toggle('hidden', !rogue);
+      rb.disabled = left <= 0 || money - cost < ROGUE.REROLL;
+      this._set('btn-reroll', left > 0 ? `重抽 $${ROGUE.REROLL}（剩 ${left} 次）` : '重抽用完了');
+    }
+    // 雙方目前的異能（Roguelike）。對手這一局新拿的那張，要等我也選好才公開
+    $('lo-builds').classList.toggle('hidden', !rogue);
+    if (rogue) {
+      const all = (p) => [...(p.sk || []).filter(Boolean), ...p.bf];
+      if (this.draftRound !== gs.round) { this.draftRound = gs.round; this.oppBase = all(opp); }
+      const hidden = !!me.ch, shown = hidden ? this.oppBase : all(opp), bk2 = all(me).join(',') + '/' + shown.join(',') + '/' + hidden + '/' + !!opp.ch;
+      if (this.cache.builds !== bk2) {
+        this.cache.builds = bk2;
+        const chip = (id, p, fresh) => {
+          const c = CARDS[id]; if (!c) return '';
+          const si = c.k === 'a' && p === me ? (p.sk || []).indexOf(id) : -1;
+          return `<span class="chip r-${c.r}${c.k === 'a' ? ' act' : ''}${fresh ? ' new' : ''}" title="${esc(c.desc)}"><span class="glyph">${c.glyph}</span>${si >= 0 ? `<kbd>${esc(this.key(si ? 'skill2' : 'skill1'))}</kbd>` : ''}${esc(c.name)}</span>`;
+        };
+        $('lo-build-me').innerHTML = `<b>你的異能</b>` + (all(me).map((id) => chip(id, me)).join('') || '<i>還沒有</i>');
+        $('lo-build-opp').innerHTML = `<b>${esc(opp.n)}</b>` + (shown.map((id) => chip(id, opp, !hidden && !this.oppBase.includes(id))).join('') || '<i>還沒有</i>')
+          + (hidden ? `<i>${opp.ch ? '（還在選）' : '（已選好，等你選完才公開）'}</i>` : '');
       }
     }
-    const bk = warm ? '' : me.bf.join(',');
+    const bk = warm || rogue ? '' : me.bf.join(',');
     if (this.cache.myBuffs !== bk) {
       this.cache.myBuffs = bk;
       $('lo-mybuffs').innerHTML = bk
-        ? '本局強化：' + me.bf.map((id) => `<span class="chip"><span class="glyph">${BUFFS[id].glyph}</span>${esc(BUFFS[id].name)}</span>`).join('')
+        ? '本局強化：' + me.bf.map((id) => `<span class="chip"><span class="glyph">${CARDS[id].glyph}</span>${esc(CARDS[id].name)}</span>`).join('')
         : '';
     }
-    const os = warm ? '' : opp.ch ? `${opp.n} 正在挑強化…` : opp.rd ? `${opp.n} 已準備 ✓` : `${opp.n} 選槍中…`;
+    const os = warm ? '' : opp.ch ? `${opp.n} 正在挑${rogue ? '異能卡' : '強化'}…` : opp.rd ? `${opp.n} 已準備 ✓` : `${opp.n} 選槍中…`;
     this._set('lo-opp', os); this._cls('lo-opp', 'ok', !warm && !!opp.rd);
     const rb = $('btn-ready');
     rb.disabled = !warm && !!me.ch;
-    this._set('btn-ready', warm ? `拿好了，繼續（${this.key('buy')}）` : me.ch ? '先選一個強化' : me.rd ? '已準備 ✓（再按取消）' : '準備');
+    this._set('btn-ready', warm ? `拿好了，繼續（${this.key('buy')}）` : me.ch ? (rogue ? '先選一張異能卡' : '先選一個強化') : me.rd ? '已準備 ✓（再按取消）' : '準備');
     this._cls('btn-ready', 'on', !warm && !!me.rd);
   }
 
@@ -510,11 +556,31 @@ export class Hud {
     const hw = Math.round((hp / mhp) * 100), aw = Math.round((d.armor / 50) * 100);
     if (this.cache.hw !== hw) { this.cache.hw = hw; $('bar-hp').style.width = hw + '%'; $('bar-hp').closest('.vrow').classList.toggle('low', hp <= 35); }
     if (this.cache.aw !== aw) { this.cache.aw = aw; $('bar-armor').style.width = Math.min(100, aw) + '%'; $('bar-armor').closest('.vrow').classList.toggle('none', d.armor <= 0); }
-    const bk = d.buffs.join(',');
+    const rogue = !!(g.gs && g.gs.set.mode === 'rogue'), bk = d.buffs.join(',') + rogue;
     if (this.cache.hudBuffs !== bk) {
       this.cache.hudBuffs = bk;
-      $('buffs').innerHTML = d.buffs.map((id) => `<div class="glyph" title="${esc(BUFFS[id].name)}">${BUFFS[id].glyph}</div>`).join('');
+      $('buffs').innerHTML = d.buffs.map((id) => (CARDS[id] ? `<div class="glyph${rogue ? ' r-' + CARDS[id].r : ''}" title="${esc(CARDS[id].name)}">${CARDS[id].glyph}</div>` : '')).join('');
     }
+    // 技能格：按鍵、冷卻倒數、剩幾次
+    const sk = d.sk, ids = sk.slots.map((x) => (x ? x.id : '')).join(',') + '|' + this.key('skill1') + this.key('skill2');
+    if (this.cache.skIds !== ids) {
+      this.cache.skIds = ids; this.cache.sk0 = this.cache.sk1 = null;
+      $('skills').innerHTML = sk.slots.map((x, i) => (x ? `<div class="sk r-${CARDS[x.id].r}" id="sk${i}" title="${esc(CARDS[x.id].name)}"><b>${esc(this.key(i ? 'skill2' : 'skill1'))}</b><span>${CARDS[x.id].glyph}</span><u></u><i></i><em>${esc(CARDS[x.id].name)}</em></div>` : '')).join('');
+    }
+    sk.slots.forEach((x, i) => {
+      if (!x) return;
+      const out = x.uses === 0, k = `${Math.ceil(x.left * 10)}|${x.uses}|${x.on}`;
+      if (this.cache['sk' + i] === k) return;
+      this.cache['sk' + i] = k;
+      const el = $('sk' + i);
+      el.classList.toggle('cd', x.left > 0 || out); el.classList.toggle('on', x.on);
+      el.querySelector('u').style.height = out ? '100%' : Math.round(Math.min(1, x.left / x.cd) * 100) + '%';
+      el.querySelector('i').textContent = out ? '用完' : x.left > 0 ? (x.left >= 10 ? String(Math.ceil(x.left)) : x.left.toFixed(1)) : x.uses > 0 ? '×' + x.uses : '';
+    });
+    const stk = sk.status.map((x) => x[0] + x[1]).join('|');
+    if (this.cache.status !== stk) { this.cache.status = stk; $('status').innerHTML = sk.status.map(([c, t]) => `<span class="${c}">${esc(t)}</span>`).join(''); }
+    const tk = d.alive ? sk.tint : '';
+    if (this.cache.tint !== tk) { this.cache.tint = tk; $('tintfx').className = tk; }
 
     if (d.w) {
       const melee = !!d.w.def.melee;

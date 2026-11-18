@@ -58,7 +58,7 @@ export class Player {
     else if (!this._box(x, y, z, P.H)) { this.crouched = false; this.h = P.H; }
   }
 
-  // inp: { f, r: -1..1, jump, crouch: bool, speed: 倍率 }
+  // inp: { f, r: -1..1, jump, crouch: bool, speed: 倍率, grav: 重力倍率（不給 = 1） }
   update(dt, inp) {
     this.justJumped = false; this.justLanded = false;
     this.acc += Math.min(dt, 0.1);
@@ -115,7 +115,7 @@ export class Player {
       if (sp < maxS) { const k = Math.min(maxS, sp + P.AIR_ACCEL * dt) / sp; v.x *= k; v.z *= k; }
     }
 
-    v.y -= P.GRAVITY * dt;
+    v.y -= P.GRAVITY * (inp.grav || 1) * dt;
     if (v.y < -40) v.y = -40;
 
     this.unstick();

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { BS, NET, TEAM, TEAM_CSS, PLAYER } from './config.js';
+import { BS, NET, TEAM, TEAM_CSS, PLAYER, ROGUE } from './config.js';
 import { World, BLOCK } from './world.js';
 import { Player } from './player.js';
 import * as RP from './remote.js';
@@ -26,6 +26,8 @@ import { Stats } from './stats.js';
 import { SPRAYS, sprayTex } from './sprays.js';
 import { Voice } from './voice.js';
 import { Editor, PALETTE, SYM } from './editor.js';
+import { Skills } from './skills.js';
+import { CARDS, cardName } from './cards.js';
 
 const RemotePlayer = RP.RemotePlayer;
 // 表情動作的清單（角色模型那邊有定義就用它的）
@@ -40,7 +42,7 @@ const _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v2s = new THREE.Vec
 const ROUND_PHASES = ['countdown', 'playing', 'roundEnd', 'warmup'];
 const WARM_LOADOUT = { p: 'ar', s: 'pistol', armor: 1, he: 1, flash: 1, smoke: 1, molotov: 1 };
 // 音效模組還沒有的新聲音先當作沒事（舊版 audio.js 也能跑）
-const SFX_OPTIONAL = ['setEnv', 'ambient', 'stopLoops', 'loop', 'impact', 'whiz', 'knifeSwing', 'knifeHit', 'molotov', 'shell', 'spray', 'emote', 'respawn', 'roundStart', 'voiceBlip', 'duck'];
+const SFX_OPTIONAL = ['setEnv', 'ambient', 'stopLoops', 'loop', 'impact', 'whiz', 'knifeSwing', 'knifeHit', 'molotov', 'shell', 'spray', 'emote', 'respawn', 'roundStart', 'voiceBlip', 'duck', 'skill', 'card'];
 
 class Game {
   constructor() {
@@ -50,6 +52,7 @@ class Game {
       name: store.get('name', ''), sens: store.get('sens', 1), fov: store.get('fov', 82), vol: store.get('vol', 0.6),
       wheel: store.get('wheel', true),          // 滾輪切槍（Magic Mouse 容易誤觸，可以關）
       bot: store.get('bot', 'normal'), pmap: store.get('pmap', 'random'),  // 練習模式的難度與地圖
+      prog: store.get('prog', false),           // 練習時也用 Roguelike 模式
       skin: look.s, wskin: look.w,
       quality: store.get('quality', 'auto'),    // 畫質：auto / low / medium / high
       xh: { ...DEFAULT_XHAIR, ...(store.get('xh', null) || {}) },   // 準星
@@ -69,7 +72,7 @@ class Game {
     this.landDip = 0; this.roll = 0; this.rStep = 0; this.lockerOpen = false; this.oppLook = '';
     this.buyOpen = false; this.kc = false; this.kcAt = 0; this.kcDeath = 0; this.emote = null; this.sprayAt = 0;
     this.spotAt = 0; this.lit = 1; this.pendingGs = null; this.rs0 = 0; this.rh0 = 0; this.fpsAcc = 0; this.fpsN = 0; this.fpsV = 0; this.miniAt = 0;
-    this.fxLight = new THREE.Color(1, 1, 1); this.envDef = null; this.hurtSrc = null;
+    this.fxLight = new THREE.Color(1, 1, 1); this.envDef = null; this.hurtSrc = null; this.miniSndAt = 0;
 
     this._initRender();
     this.world = new World(this.scene);
@@ -85,6 +88,7 @@ class Game {
     this.pedestal = new THREE.Mesh(new THREE.CylinderGeometry(0.95, 1.05, 0.14, 28), new THREE.MeshStandardMaterial({ color: 0x23272f, roughness: 0.6, metalness: 0.3 }));
     this.pedestal.position.set(24, 14.93, 24); this.pedestal.visible = false; this.pedestal.receiveShadow = true; this.scene.add(this.pedestal);
     this.combat = new Combat(this);
+    this.skills = new Skills(this);
     this.net = new Net();
     this.replay = new Replay();
     this.stats = new Stats();
@@ -224,7 +228,7 @@ class Game {
       if (!this.locked) return;
       const mx = clamp(e.movementX || 0, -400, 400), my = clamp(e.movementY || 0, -400, 400);
       if (this.phase === 'editor') { const k = 0.0022 * this.settings.sens; this.editor.yaw -= mx * k; this.editor.pitch = clamp(this.editor.pitch - my * k, -1.54, 1.54); return; }
-      const k = (0.0022 * this.settings.sens) / this.zoom();
+      const k = (0.0022 * this.settings.sens * this.skills.lookMul()) / this.zoom();   // 被時間凝結時轉頭也變慢
       this.player.yaw -= mx * k;
       this.player.pitch = clamp(this.player.pitch - my * k, -1.54, 1.54);
       this.mouse.dx += mx; this.mouse.dy += my;
@@ -264,7 +268,9 @@ class Game {
     else if (code === b.buy) { if (this.phase === 'warmup') this.openBuy(); }
     else if ((this.phase === 'playing' || this.phase === 'warmup') && this.meAlive()) {
       const nade = NADE_IDS.find((k) => b[k] === code);
-      if (nade) cb.throwNade(nade);
+      if (code === b.skill1) this.skills.use(0);
+      else if (code === b.skill2) this.skills.use(1);
+      else if (nade) cb.throwNade(nade);
       else if (code === b.spray) this.doSpray();
       else if (code === b.emote) this.doEmote();
     } else if (this.phase === 'roundEnd' && this.meAlive() && code === b.emote) this.doEmote();
@@ -279,6 +285,7 @@ class Game {
   inRound() { return ROUND_PHASES.includes(this.phase); }
   meAlive() { return !!(this.gs && this.gs.p[this.me].al); }
   zoom() { const w = this.combat.w; return w ? lerp(1, w.def.zoom, this.combat.ads) : 1; }
+  oppHas(id) { const o = this.gs && this.gs.p[1 - this.me]; return !!(o && o.bf && o.bf.includes(id)); }
   // 戰績記在哪一邊：跟機器人打算練習
   mode() { return this.net.mode === 'bot' || this.warmBot ? 'practice' : 'duel'; }
 
@@ -345,6 +352,7 @@ class Game {
     n.on('blind', (d) => { if (this.gs && d && d.d > 0.6) this.hud.feed(`閃到 ${this.gs.p[1 - this.me].n}　${d.d} 秒`); });
     n.on('spray', (d) => { if (d && d.r === this.round && SPRAYS[d.id] && Array.isArray(d.p) && Array.isArray(d.n)) this.fx.spray(sprayTex(d.id), +d.p[0], +d.p[1], +d.p[2], +d.n[0], +d.n[1], +d.n[2], +d.y || 0, d.c | 0); });
     n.on('emote', (d) => { if (d && EMOTES[d.id] && this.remote.emote) this.remote.emote(d.id); });
+    n.on('sk', (d) => this.skills.onNet(d));   // 對手施放了技能
     // 房主選了自製地圖：把地圖資料傳過來，登記好之後才處理用到它的狀態
     n.on('map', async (d) => {
       if (n.isHost || !d || typeof d.code !== 'string' || d.code.length > 400000) return;
@@ -356,8 +364,10 @@ class Game {
   _cleanExpl(d) {
     if (!d || !Array.isArray(d.p) || d.p.length !== 3 || !d.p.every((v) => Number.isFinite(v))) return null;
     const num = (v, hi) => (Number.isFinite(+v) ? clamp(+v, 0, hi) : 0);
-    const kind = ['flash', 'smoke', 'molotov'].includes(d.kind) ? d.kind : undefined;
-    return { r: d.r, pid: d.pid | 0, p: [d.p[0], d.p[1], d.p[2]], kind, br: num(d.br, 3), bp: num(d.bp, 1500), rad: num(d.rad, 7), k: num(d.k, 16), cloud: num(d.cloud, 4.5) || undefined, dur: num(d.dur, 15) || undefined, own: d.own === 0 || d.own === 1 ? d.own : -1 };
+    // kind 'dig' = 只挖地形、沒有爆炸特效；fxk = 技能的爆炸要用哪一種特效
+    const kind = ['flash', 'smoke', 'molotov', 'dig'].includes(d.kind) ? d.kind : undefined;
+    const fxk = ['mini', 'shock', 'orbital', 'void'].includes(d.fxk) ? d.fxk : undefined;
+    return { r: d.r, pid: d.pid | 0, p: [d.p[0], d.p[1], d.p[2]], kind, fxk, br: num(d.br, 3), bp: num(d.bp, 1500), rad: num(d.rad, 7), k: num(d.k, 16), cloud: num(d.cloud, 4.5) || undefined, dur: num(d.dur, 15) || undefined, own: d.own === 0 || d.own === 1 ? d.own : -1 };
   }
   _sendMap(id) { const m = MAPS[id]; if (m && m.custom && this.net.isHost && this.net.connected) this.net.send('map', { id, code: m.code }); }
 
@@ -401,15 +411,21 @@ class Game {
     this.sfx.init(); this.me = 0; this.code = '';
     const level = this.settings.bot;
     this.bot = new Bot(this.world, level);
-    this.bot.blocked = (ax, ay, az, bx, by, bz) => this.fx.smokeBlocked(ax, ay, az, bx, by, bz);   // 煙霧會擋住機器人的視線
+    this._wireBot();
     this.net.isHost = true;
     this._mkAuthority();
     this.net.hostBot(this.bot);
     this.authority.setName(1, level === 'dummy' ? '木樁' : '練習機器人');
     // 木樁模式是給你練身法、練槍的：每局 15 分鐘，對手不動也不開槍
     const m = map || this.settings.pmap;
-    this.authority.setSettings({ map: MAPS[m] || m === 'rotate' ? m : 'random', roundTime: level === 'dummy' ? 900 : 120 });
+    this.authority.setSettings({ map: MAPS[m] || m === 'rotate' ? m : 'random', roundTime: level === 'dummy' ? 900 : 120, mode: this.settings.prog ? 'rogue' : 'classic' });
     this.authority.startMatch();
+  }
+
+  // 機器人需要問遊戲的事：視線有沒有被煙擋住、子彈會不會被能量護罩擋下
+  _wireBot() {
+    this.bot.blocked = (ax, ay, az, bx, by, bz) => this.fx.smokeBlocked(ax, ay, az, bx, by, bz);
+    this.bot.shield = (ox, oy, oz, dx, dy, dz) => this.skills.shieldDist(ox, oy, oz, dx, dy, dz);
   }
 
   // 熱身：沒有回合、無限重生。房間裡只有自己時，先叫一個機器人陪練，朋友一進來就結束
@@ -418,7 +434,7 @@ class Game {
     if (!this.gs.here[1]) {
       const lv = this.settings.bot === 'dummy' ? 'normal' : this.settings.bot;
       this.bot = new Bot(this.world, lv);
-      this.bot.blocked = (ax, ay, az, bx, by, bz) => this.fx.smokeBlocked(ax, ay, az, bx, by, bz);
+      this._wireBot();
       this.warmBot = true;
       this.net.attachBot(this.bot);
       this.authority.setName(1, '陪練機器人'); this.authority.setPresent(1, true);
@@ -441,7 +457,7 @@ class Game {
     this.remote.alive = false; this.remote.group.visible = false; this.ghost.group.visible = false;
     this._endKillcam(); this.emote = null; this.editor.close(); this.hurtSrc = null; this.hud.hurtDir(0, 0);
     this.exitLock(); this.hud.showHud(false); this.hud.clearBanner(); this.hud.report(null); this.hud.show('menu'); this.hud.menuMsg('');
-    this.combat.clearProjectiles(); this.fx.clear(); this.sfx.stopLoops(); this.sfx.ambient(null);
+    this.combat.clearProjectiles(); this.fx.clear(); this.skills.clear(); this.sfx.stopLoops(); this.sfx.ambient(null);
     for (const m of this.pickMeshes) m.visible = false;
     if (!MAPS[this.world.mapId]) this.setMap('plaza');
   }
@@ -490,7 +506,15 @@ class Game {
     if (this.phase === 'warmup') { this.closeBuy(); return; }
     this.sfx.ui(); this.auth('ready', { v: !this.gs.p[this.me].rd });
   }
-  pickBuff(id) { this.sfx.pickup(); this.auth('buff', { id }); }
+  // 選卡（一般模式的輸家強化也走這裡）。slot：兩格技能都滿了的時候，要換掉哪一格
+  pickBuff(id, slot = 0) { const c = CARDS[id]; if (c) this.sfx.card(c.r); else this.sfx.pickup(); this.auth('buff', { id, slot }); }
+  // Roguelike：花錢把這一局的卡重抽一次
+  reroll() {
+    const gs = this.gs, me = gs && gs.p[this.me];
+    if (!me || gs.phase !== 'loadout' || !me.ch || me.rr >= ROGUE.REROLLS) return;
+    if (me.$ - loadoutCost(this.sel) < ROGUE.REROLL) { this.sfx.deny(); this.hud.toast('錢不夠重抽（可以先取消幾樣裝備）'); return; }
+    this.sfx.buy(); this.auth('reroll', {});
+  }
   // 熱身中的商店
   openBuy() { if (this.phase !== 'warmup' || this.buyOpen) return; this.buyOpen = true; this.mouse.l = this.mouse.r = false; this.exitLock(); this.hud.show('loadout'); this.hud.onState(this.gs); }
   closeBuy() {
@@ -530,7 +554,7 @@ class Game {
     if (gs.phase !== 'warmup') this.buyOpen = false;
     if (gs.phase === 'lobby') {
       this.exitLock(); h.showHud(false); h.clearBanner(); h.show('lobby'); this.emote = null; this.ghost.group.visible = false;
-      this.sfx.stopLoops(); this.sfx.ambient(null);
+      this.sfx.stopLoops(); this.sfx.ambient(null); this.skills.clear();
       if (from === 'warmup' || from === 'roundEnd' || from === 'playing' || from === 'countdown') { this.combat.clearProjectiles(); this.fx.clear(); }
     }
     else if (gs.phase === 'loadout') {
@@ -538,18 +562,18 @@ class Game {
       this.mouse.l = this.mouse.r = false;
       this.sel = validLoadout(null);   // 商店重置：每局都要自己重新買
       this.auth('loadout', this.sel);
-      this.sfx.stopLoops();
+      this.sfx.stopLoops(); this.skills.clear();
     } else if (gs.phase === 'countdown') this.startRound(gs);
     else if (gs.phase === 'warmup') { this.startRound(gs); h.banner('熱身', `不計分、無限重生　按 ${h.key('buy')} 換裝備`, 2600); this.auth('loadout', this.wsel); }
     else if (gs.phase === 'playing') {
       if (this.round !== gs.round) this.startRound(gs); // 保險：沒收到倒數階段也要先把這一局建好
-      h.banner('開戰！', '', 800); this.sfx.beep(true); this.sfx.roundStart();
+      h.banner('開戰！', '', 800); this.sfx.beep(true); this.sfx.roundStart(); this.skills.go(performance.now());
     } else if (gs.phase === 'roundEnd') {
       if (this.round !== gs.round) this.startRound(gs);
       this.onRoundEnd(gs);
     }
     else if (gs.phase === 'matchEnd') {
-      this.exitLock(); h.showHud(false); h.clearBanner(); h.show('end'); this.sfx.stopLoops();
+      this.exitLock(); h.showHud(false); h.clearBanner(); h.show('end'); this.sfx.stopLoops(); this.skills.clear();
       if (gs.mw === this.me) this.sfx.win(); else this.sfx.lose();
       const me = gs.p[this.me], opp = gs.p[1 - this.me];
       this.stats.match(this.mode(), { win: gs.mw === this.me, my: me.sc, their: opp.sc, opp: opp.n, map: MAPS[gs.map].name });
@@ -563,6 +587,7 @@ class Game {
     const meS = gs.p[this.me], opp = gs.p[1 - this.me], sp = MAPS[gs.map].spawns;
     this.player.spawn(sp[(this.me + gs.round) % 2]);
     this.combat.setLoadout(warm ? this.wsel : meS.lo, warm ? [] : meS.bf);
+    this.skills.setup(warm ? null : meS.sk);
     this.player.maxAirJumps = this.combat.mods.airJumps;
     if (this.view.setLook) this.view.setLook(this.settings.skin, TEAM[this.me]);
     const os = sp[(1 - this.me + gs.round) % 2];
@@ -594,7 +619,7 @@ class Game {
 
   // 擊倒訊息的文字（一般局和熱身共用）
   _killText(r, meWon) {
-    const opp = this.gs.p[1 - this.me], wn = itemName(r.w);
+    const opp = this.gs.p[1 - this.me], wn = itemName(r.w) || cardName(r.w);
     const how = `${wn}${r.bk ? ' 背刺' : ''}${r.head ? ' 爆頭' : ''}${r.wb ? ' 穿牆' : ''}`;
     return r.reason === 'suicide' ? (r.victim === this.me ? '你把自己弄死了' : `${opp.n} 把自己弄死了`) : meWon ? `${how} 擊倒 ${opp.n}` : `${opp.n} 用 ${how} 擊倒你`;
   }
@@ -634,6 +659,7 @@ class Game {
       const wd = WEAPONS[e.w];
       if (!e.self && wd && !wd.proj) this.hurtSrc = { x: this.remote.pos.x, z: this.remote.pos.z, t: performance.now() };
     } else if (e.t === 'pick' && e.by === this.me) this.sfx.pickup();
+    else if (e.t === 'phoenix') this.skills.phoenix(e.who);
     else if (e.t === 'respawn') this.respawn();
     else if (e.t === 'wkill' && this.gs) {
       const g = this.gs, mine = e.victim !== this.me;
@@ -653,6 +679,7 @@ class Game {
     const vec3 = (a) => Array.isArray(a) && a.length === 3 && a.every((v) => Number.isFinite(v) && Math.abs(v) < 500);
     if (d.v !== undefined && (!vec3(d.v) || !vec3(d.o) || this.combat.projectiles.length > 40)) return;
     if (d.e !== undefined && (!Array.isArray(d.e) || d.e.length > 90 || !d.e.every((v) => Number.isFinite(v)))) return;
+    if (d.e2 !== undefined && (!Array.isArray(d.e2) || d.e2.length > 180 || !d.e2.every((v) => Number.isFinite(v)))) return;
     const rp = this.remote.pos, dist = rp.distanceTo(this.camera.position), now = performance.now();
     if (d.w === 'knife') { if (this.remote.meleeAnim) this.remote.meleeAnim(); if (dist < 12) this.sfx.knifeSwing(); return; }
     const def = WEAPONS[d.w];
@@ -661,7 +688,7 @@ class Game {
       return;
     }
     this.sfx.shot(def.snd, Math.max(1, dist), this.panOf(rp.x, rp.z));
-    this.mini.ping(now, rp.x, rp.z);                      // 開槍會在小地圖上暴露位置
+    if (!this.oppHas('ghost')) this.mini.ping(now, rp.x, rp.z);   // 開槍會在小地圖上暴露位置（對手有「無聲步」就不會）
     this.replay.event(now + NET.INTERP_MS, 'fire', { w: d.w, e: d.e });
     if (this.remote.fireKick) this.remote.fireKick();
     if (d.v) { this.combat.spawnProjectile(d.w, d.pid, d.o, d.v, false); return; }
@@ -678,6 +705,8 @@ class Game {
       if (t > 0.05 && Math.hypot(m.x + ax * t - c.x, m.y + ay * t - c.y, m.z + az * t - c.z) < 1.3) near = true;
     }
     if (near && this.meAlive()) this.sfx.whiz(this.panOf(rp.x, rp.z));
+    // 跳彈反彈之後的那一段
+    if (d.e2) for (let i = 0; i + 5 < d.e2.length; i += 6) this.fx.tracer(_v1.set(d.e2[i], d.e2[i + 1], d.e2[i + 2]), _v2.set(d.e2[i + 3], d.e2[i + 4], d.e2[i + 5]), 0x9fe8ff);
   }
 
   onRemoteBlk(d) {
@@ -717,10 +746,25 @@ class Game {
     const destroyed = this.world.explode(x, y, z, m.br, m.bp);
     const step = Math.max(1, Math.floor(destroyed.length / 45));
     for (let i = 0; i < destroyed.length; i += step) { const d = destroyed[i]; this.fx.debris(d.x, d.y, d.z, d.type, 3, 1.5); }
-    this.fx.explosion(x, y, z, m.rad);
-    this.sfx.explosion(dist, pan, m.rad / 4.5);
+    if (m.kind === 'dig') return;                           // 只挖地形（黑洞啃方塊、軌道砲往下鑽）：沒有爆炸特效，也不會把人炸飛
+    if (m.fxk === 'mini') {                                  // 爆裂彈：一小團火光
+      const f = this.fx, rn = () => Math.random() - 0.5;
+      f.glowP.spawn(x, y, z, 0, 0, 0, 0.9, 0.2, 0.12, 8, 4.5, 1.2, 1);
+      for (let i = 0; i < 5; i++) f.glowP.spawn(x, y, z, rn() * 9, rn() * 7 + 2, rn() * 9, 0.07, 0.02, 0.22 + Math.random() * 0.15, 10, 6, 2, 1, 14);
+      f.smoke(x, y, z, 1, 0.2);
+      const now = performance.now();
+      if (now - this.miniSndAt > 90) { this.miniSndAt = now; this.sfx.explosion(dist + 7, pan, 0.4); }
+      return;
+    }
+    const shock = m.fxk === 'shock';
+    if (shock) {                                            // 震地衝擊波：貼地往外擴的藍白光圈 + 一圈灰
+      this.skills.nova(x, y - 0.95, z, 0xa8dcff, m.rad, 0.45);
+      this.fx.light(x, y, z, 0x9fd0ff, 140, 0.3, 22);
+      for (let i = 0; i < 22; i++) { const a = (i / 22) * 6.283, s = 0.5 + Math.random() * 0.15; this.fx.dust.spawn(x, y - 0.75, z, Math.cos(a) * 9, 0.5, Math.sin(a) * 9, 0.45, 1.7, 0.7 + Math.random() * 0.4, s, s, s * 1.05, 0.5, 0, 2.6); }
+    } else this.fx.explosion(x, y, z, m.rad);
+    this.sfx.explosion(dist, pan, m.fxk === 'orbital' ? 2.6 : m.rad / 4.5);
     this.shake = Math.min(1.5, this.shake + Math.max(0, 1.2 - dist / 14));
-    if (this.inRound() && this.meAlive()) {
+    if (this.inRound() && this.meAlive() && !(shock && m.own === this.me)) {   // 自己放的衝擊波不會震到自己
       const p = this.player, dx = p.pos.x - x, dy = p.pos.y + 0.9 - y, dz = p.pos.z - z, d = Math.hypot(dx, dy, dz);
       if (d < m.rad && d > 0.01) {
         const f = 1 - d / m.rad, k = (f * m.k) / d;
@@ -831,7 +875,8 @@ class Game {
       if (alive) {
         const mf = canMove ? (this.held('fwd') ? 1 : 0) - (this.held('back') ? 1 : 0) : 0, mr = canMove ? (this.held('right') ? 1 : 0) - (this.held('left') ? 1 : 0) : 0;
         if (this.emote && (mf || mr || this.mouse.l || now >= this.emote.end)) { this.emote = null; this.ghost.group.visible = false; }   // 一動就取消
-        p.update(dt, { f: mf, r: mr, jump: canMove && this.held('jump'), crouch: canMove && this.held('crouch'), speed: (w ? w.def.move : 1) * cb.mods.speed * lerp(1, 0.6, cb.ads) });
+        this.skills.pre(dt, now);                              // 鉤索、黑洞會改速度，要排在物理之前
+        p.update(dt, { f: mf, r: mr, jump: canMove && this.held('jump'), crouch: canMove && this.held('crouch'), speed: (w ? w.def.move : 1) * cb.mods.speed * lerp(1, 0.6, cb.ads) * this.skills.speedMul(meS), grav: cb.mods.grav });
         const surf = this.surfaceAt(p.pos.x, p.pos.y, p.pos.z);
         if (p.justJumped) this.sfx.jump();
         if (p.justLanded) { this.sfx.land(surf); this.landDip = Math.min(0.24, p.landSpeed * 0.02); if (p.landSpeed > 7) this.fx.smoke(p.pos.x, p.pos.y + 0.05, p.pos.z, 2, 0.12); }
@@ -898,6 +943,7 @@ class Game {
         showView = alive;
       }
       cam.updateMatrixWorld();
+      this.skills.update(dt, now);
 
       const canFire = act && alive && live && !this.emote && !this.kc;
       cb.update(dt, { fire: this.mouse.l, firePressed: this.mouse.lp, ads: adsKey, reload: this.reloadPressed }, canFire);
@@ -945,7 +991,7 @@ class Game {
           this.spotAt = now + 120;
           const rp = this.remote.pos, e = cam.matrixWorld.elements, c = cam.position;
           let dx = rp.x - c.x, dy = rp.y + 1.1 - c.y, dz = rp.z - c.z; const d = Math.hypot(dx, dy, dz) || 1; dx /= d; dy /= d; dz /= d;
-          if (d < 80 && -(e[8] * dx + e[9] * dy + e[10] * dz) > 0.45 && !this.world.raycast(c.x, c.y, c.z, dx, dy, dz, d) && !this.fx.smokeBlocked(c.x, c.y, c.z, rp.x, rp.y + 1.1, rp.z)) this.mini.spot(now, rp.x, rp.z);
+          if (d < 80 && -(e[8] * dx + e[9] * dy + e[10] * dz) > 0.45 && !this.world.raycast(c.x, c.y, c.z, dx, dy, dz, d) && !this.fx.smokeBlocked(c.x, c.y, c.z, rp.x, rp.y + 1.1, rp.z) && !this.skills.oppCloaked()) this.mini.spot(now, rp.x, rp.z);
         }
       }
       // 受傷方向指示：1.6 秒內慢慢淡掉，角度每一幀照目前的視角重算
@@ -990,7 +1036,7 @@ class Game {
     // 對手的腳步聲與落地聲（對手跑步、跳下來時聽得到位置）
     const rm = this.remote;
     if (inRound && rm.alive && !this.kc) {
-      if (rm.grounded && !rm.crouched && rm.speed > PLAYER.STEP_SOUND_SPEED) {
+      if (rm.grounded && !rm.crouched && rm.speed > PLAYER.STEP_SOUND_SPEED && !this.oppHas('ghost')) {
         this.rStep += rm.speed * dt;
         if (this.rStep > 2.3) { this.rStep = 0; this.sfx.stepRemote(rm.pos.distanceTo(cam.position), this.panOf(rm.pos.x, rm.pos.z), this.surfaceAt(rm.pos.x, rm.pos.y, rm.pos.z)); }
       }
@@ -1010,7 +1056,7 @@ class Game {
         w, slot: cb.cur, slots: cb.slots, other: cb.slots[cb.last], reload: cb.reloadProgress(), scoped, third: !!this.emote || this.kc,
         gap: (Math.tan(cb.spread() * DEG) / Math.tan((cam.fov * DEG) / 2)) * (innerHeight / 2),
         net: (this.net.mode === 'bot' || this.warmBot ? '練習模式' : `延遲 ${this.net.ping} ms`) + (this.settings.fps ? `　${this.fpsV} FPS` : ''),
-        spd: alive ? p.speed2d() : 0, crouch: p.crouched, nades: cb.nades, money: meS.$,
+        spd: alive ? p.speed2d() : 0, crouch: p.crouched, nades: cb.nades, money: meS.$, sk: this.skills.hudState(now),
       });
       if (inRound && this.settings.minimap && now - this.miniAt > 50) {
         this.miniAt = now;

@@ -10,6 +10,9 @@
     "new": "node newfeat.mjs shots",
     "warm": "node warm.mjs shots",
     "warm:peer": "node warm.mjs shots peer",
+    "rogue": "node rogue.mjs shots",
+    "rogue:duel": "node rogue-duel.mjs shots",
+    "rogue:peer": "node rogue-duel.mjs shots peer",
     "audio": "node audio-check.mjs"
   },
   "devDependencies": {
