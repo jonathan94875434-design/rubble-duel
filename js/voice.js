@@ -33,6 +33,7 @@ export class Voice {
     try {                                              // 另外接一個音量計，畫面上才知道對方正在講話
       const AC = window.AudioContext || window.webkitAudioContext;
       this.actx = this.actx || new AC();
+      if (this.actx.state === 'suspended') this.actx.resume().catch(() => {});
       this.an = this.actx.createAnalyser(); this.an.fftSize = 256; this.buf = new Uint8Array(this.an.fftSize);
       this.actx.createMediaStreamSource(stream).connect(this.an);
     } catch { this.an = null; }
@@ -91,5 +92,8 @@ export class Voice {
     if (rx !== this.rx) { this.rx = rx; this.onChange(); }
   }
 
-  close() { this._stopMic(); this.hangup(); this.peer = null; }
+  close() {
+    this._stopMic(); this.hangup(); this.peer = null; this.an = null;
+    if (this.actx) { this.actx.close().catch(() => {}); this.actx = null; }
+  }
 }

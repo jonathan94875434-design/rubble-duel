@@ -33,6 +33,7 @@ export class Net {
   }
   _open() {
     if (this.connected) return;
+    this.sideBot = null;                                // 真人連上了：之後的封包一律走真的連線，不再送給陪練機器人
     this.connected = true; this.lastRecv = performance.now();
     clearInterval(this._pingTimer);
     if (this.mode !== 'bot') this._pingTimer = setInterval(() => {

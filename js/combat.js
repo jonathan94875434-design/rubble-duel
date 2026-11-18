@@ -210,7 +210,7 @@ export class Combat {
         if (ph && ph.t < pr.end) {
           let left = pen, walls = 0;
           for (const h of pr.hits) if (h.dist < ph.t && h.left >= 0) { left = h.left; walls++; }
-          const mul = walls ? Math.pow(Math.max(0.05, left / pen), 0.7) : 1;   // 穿牆之後傷害打折
+          const mul = walls && pen > 0 ? Math.pow(Math.max(0.05, left / pen), 0.7) : 1;   // 穿牆之後傷害打折
           total += def.dmg * falloff(def, ph.t) * (ph.head ? def.head : 1) * this.mods.dmg * mul;
           head = head || ph.head; hitAny = true; wb = wb || walls > 0; end = ph.t;
           g.fx.hitSpark(ox + dx * end, oy + dy * end, oz + dz * end, 0, def.pellets > 1 ? 3 : 7);
@@ -231,7 +231,7 @@ export class Combat {
           }
           // 穿出去的那一面也噴一點灰
           if (h.left >= 0 && h.exit && h.exit < end) g.fx.impact(ox + dx * h.exit, oy + dy * h.exit, oz + dz * h.exit, dx, dy, dz, h.type, 2);
-          if (h.left >= 0) km = Math.pow(Math.max(0.05, h.left / pen), 0.7);
+          if (h.left >= 0 && pen > 0) km = Math.pow(Math.max(0.05, h.left / pen), 0.7);
         }
         _b.set(ox + dx * end, oy + dy * end, oz + dz * end);
         ends.push(r3(_b.x), r3(_b.y), r3(_b.z));

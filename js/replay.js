@@ -31,7 +31,7 @@ export class Replay {
 
   // 回傳這一刻的畫面資料（兩格之間內插）；播完回傳 null
   sample(now, onEvent) {
-    if (!this.playing) return null;
+    if (!this.playing || this.f.length < 2) { this.playing = false; return null; }
     const t = this.t0 + (now - this.start);
     if (t >= this.t1) { this.playing = false; return null; }
     while (this.ei < this.ev.length && this.ev[this.ei].t <= t) onEvent(this.ev[this.ei++]);

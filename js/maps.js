@@ -355,8 +355,9 @@ function unrle(bytes, len) {
   const out = new Uint8Array(len);
   let o = 0;
   for (let i = 0; i < bytes.length && o < len;) {
-    let n = 0, sh = 1, b;
-    do { b = bytes[i++]; n += (b & 0x7f) * sh; sh *= 128; } while (b & 0x80);
+    let n = 0, sh = 1, b, k = 0;
+    do { b = bytes[i++]; n += (b & 0x7f) * sh; sh *= 128; } while ((b & 0x80) && ++k < 4);
+    if (!(n > 0)) break;                               // 壞掉的資料：到此為止，剩下的當作空氣
     const t = bytes[i++];
     out.fill(t, o, Math.min(len, o + n)); o += n;
   }
