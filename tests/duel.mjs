@@ -1,6 +1,7 @@
 // 雙人流程測試（同一個瀏覽器兩個分頁，走 BroadcastChannel 或真的 PeerJS）
 // 用法：node t3.mjs <截圖資料夾> [peer]
 import puppeteer from 'puppeteer-core';
+import { load, reload } from './load.mjs';
 import { mkdirSync } from 'node:fs';
 const OUT = process.argv[2] || 'shots';
 mkdirSync(OUT, { recursive: true });
@@ -28,14 +29,14 @@ const waitPhase = async (page, ph, ms = 15000) => { await page.waitForFunction((
 const hash = (page) => page.evaluate(() => { const t = __game.world.types, h = __game.world.hp; let a = 0, n = 0, s = 0; for (let i = 0; i < t.length; i++) { if (t[i]) { n++; a = (Math.imul(a, 31) + i * t[i]) | 0; s += h[i]; } } return `${n}/${a}/${Math.round(s)}`; });
 const ok = (name, cond, extra = '') => console.log(`${cond ? 'PASS' : 'FAIL'}  ${name} ${extra}`);
 
-await A.goto(`${BASE}?${Q}`, { waitUntil: 'load' });
+await load(A, `${BASE}?${Q}`);
 await A.type('#in-name', '阿強');
 await A.click('#btn-host');
 await waitPhase(A, 'lobby', 20000);
 const code = await A.evaluate(() => __game.code);
 const link = await A.evaluate(() => __game.inviteLink());
 console.log('room', code, link);
-await B.goto(link + '&nolock=1', { waitUntil: 'load' });
+await load(B, link + '&nolock=1');
 ok('邀請連結帶入房號', (await B.$eval('#in-code', (e) => e.value)) === code);
 await B.$eval('#in-name', (e) => { e.value = ''; });
 await B.type('#in-name', '小明');
@@ -190,7 +191,7 @@ for (let i = 0; i < 30 && !back; i++) { await sleep(500); back = (await A.evalua
 ok('訪客離線後房主回到大廳', back, `偵測花了 ${((Date.now() - tClose) / 1000).toFixed(1)} 秒`);
 // 同一個房間可以再讓人加入
 const C = await mk('C');
-await C.goto(link + '&nolock=1', { waitUntil: 'load' });
+await load(C, link + '&nolock=1');
 await C.click('#btn-join');
 await waitPhase(C, 'lobby', 25000); await sleep(600);
 ok('斷線後同一房號可重新加入', (await A.evaluate(() => __game.gs.here[1])) === true);

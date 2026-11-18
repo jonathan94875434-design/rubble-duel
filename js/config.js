@@ -43,7 +43,7 @@ export const MATCH = {
   ROUND_TIME: 120,   // 每局秒數
   LOADOUT_TIME: 30,  // 選槍時間
   COUNTDOWN: 3,
-  ROUND_END: 4,
+  ROUND_END: 5.5,    // 回合結束後停多久（要夠放完擊殺回放）
   // 'streak'：連敗時 buff 會累積，贏一局就清空
   // 'permanent'：整場比賽都保留
   // 'single'：只保留最近一個

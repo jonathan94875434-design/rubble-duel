@@ -1,17 +1,20 @@
-import { BS } from './config.js';
+import { BS, WORLD } from './config.js';
+import { store } from './util.js';
 
 // 方塊代號（跟 world.js 的 B 一致，這裡重寫一份避免循環引用）
 const AIR = 0, BEDROCK = 1, GROUND = 2, CONCRETE = 3, BRICK = 4, WOOD = 5, METAL = 6, WALL = 7,
-  CONT_R = 8, CONT_B = 9, CONT_Y = 10, SAND = 11, SANDGROUND = 12, PLASTER = 13, ROCK = 14;
+  CONT_R = 8, CONT_B = 9, CONT_Y = 10, SAND = 11, SANDGROUND = 12, PLASTER = 13, ROCK = 14,
+  GRASS = 15, TILE = 16, SHEET = 17, SANDBAG = 18, DIRT = 19;
 
 // 每張地圖的「地面高度」（站立的那一格，單位：方塊）。地面越高，底下能挖的空間越多
 const GP = 3, GL = 9, GY = 3, QLO = 7, QHI = 13;
 const m = (c) => (c + 0.5) * BS;
 
 // 地基 + 外圍牆。g = 地面高度；x0..z1 是外圍牆的位置（預設貼著世界邊緣）
-function base(w, ground, g, x0 = 0, z0 = 0, x1 = w.X - 1, z1 = w.Z - 1) {
+export function base(w, ground, g, x0 = 0, z0 = 0, x1 = w.X - 1, z1 = w.Z - 1) {
   w.box(0, 0, 0, w.X - 1, 0, w.Z - 1, BEDROCK);          // 最底層打不壞
-  w.box(0, 1, 0, w.X - 1, g - 1, w.Z - 1, ground);       // 上面的土可以炸開
+  w.box(0, 1, 0, w.X - 1, g - 2, w.Z - 1, ground === GROUND || ground === GRASS ? DIRT : ground);   // 底下的土可以炸開
+  w.box(0, g - 1, 0, w.X - 1, g - 1, w.Z - 1, ground);   // 最上面一層才是路面
   const WH = Math.min(w.Y - 3, g + 19);
   w.box(x0, 1, z0, x0 + 1, WH, z1, WALL); w.box(x1 - 1, 1, z0, x1, WH, z1, WALL);
   w.box(x0, 1, z0, x1, WH, z0 + 1, WALL); w.box(x0, 1, z1 - 1, x1, WH, z1, WALL);
@@ -248,6 +251,7 @@ export const MAPS = {
   plaza: {
     name: '廢墟廣場', desc: '開闊場地，中央兩層塔與角落高台',
     build: buildPlaza,
+    env: 'golden', ground: GP * BS,
     spawns: [
       { x: m(13), y: GP * BS, z: m(13), yaw: -Math.PI * 0.75 },
       { x: m(82), y: GP * BS, z: m(82), yaw: Math.PI * 0.25 },
@@ -263,6 +267,7 @@ export const MAPS = {
   lanes: {
     name: '三線街區', desc: '長巷、中路、隧道三條路線，中路底下有地下道',
     build: buildLanes,
+    env: 'noon', ground: GL * BS,
     spawns: [
       { x: m(47.5), y: GL * BS, z: m(7), yaw: Math.PI },
       { x: m(47.5), y: GL * BS, z: m(88), yaw: 0 },
@@ -279,6 +284,7 @@ export const MAPS = {
   yard: {
     name: '貨櫃碼頭', desc: '小而立體，考驗跳箱子的身法',
     build: buildYard,
+    env: 'overcast', ground: GY * BS,
     spawns: [
       { x: m(17.5), y: GY * BS, z: m(17.5), yaw: -Math.PI * 0.75 },
       { x: m(77.5), y: GY * BS, z: m(77.5), yaw: Math.PI * 0.25 },
@@ -294,6 +300,7 @@ export const MAPS = {
   quarry: {
     name: '礦場', desc: '高地、谷底、坡道、木橋與穿山隧道，高低差最大',
     build: buildQuarry,
+    env: 'morning', ground: QLO * BS,
     spawns: [
       { x: m(47.5), y: QHI * BS, z: m(7), yaw: Math.PI },
       { x: m(47.5), y: QHI * BS, z: m(88), yaw: 0 },
@@ -308,3 +315,91 @@ export const MAPS = {
   },
 };
 export const MAP_IDS = Object.keys(MAPS);
+
+// ═════════ 自製地圖（地圖編輯器做的）═════════
+// 一張自製地圖 = { name, env 天氣, g 地面高度（方塊）, spawns: [{x,y,z,yaw}×2], pickups: [...], types: Uint8Array（整張圖每一格的方塊）}
+// 分享代碼 = 上面這包資料壓縮後轉成文字，貼給朋友就能匯入；對戰時房主也會自動傳給對方。
+const b64 = {
+  enc(u8) { let s = ''; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); },
+  dec(str) { const s = atob(str.replace(/-/g, '+').replace(/_/g, '/')); const u = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return u; },
+};
+async function pipe(u8, stream) {
+  const out = new Response(new Blob([u8]).stream().pipeThrough(stream));
+  return new Uint8Array(await out.arrayBuffer());
+}
+// 連續相同的方塊記成（數量, 種類），數量用可變長度整數
+function rle(types) {
+  const out = [];
+  for (let i = 0; i < types.length;) {
+    const t = types[i]; let n = 1;
+    while (i + n < types.length && types[i + n] === t) n++;
+    i += n;
+    while (n >= 0x80) { out.push((n & 0x7f) | 0x80); n = Math.floor(n / 128); }
+    out.push(n, t);
+  }
+  return Uint8Array.from(out);
+}
+function unrle(bytes, len) {
+  const out = new Uint8Array(len);
+  let o = 0;
+  for (let i = 0; i < bytes.length && o < len;) {
+    let n = 0, sh = 1, b;
+    do { b = bytes[i++]; n += (b & 0x7f) * sh; sh *= 128; } while (b & 0x80);
+    const t = bytes[i++];
+    out.fill(t, o, Math.min(len, o + n)); o += n;
+  }
+  return out;
+}
+const hashStr = (s) => { let h = 2166136261; for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619); return (h >>> 0).toString(36); };
+
+export async function encodeMap(def) {
+  const head = new TextEncoder().encode(JSON.stringify({ v: 1, name: String(def.name || '自製地圖').slice(0, 20), env: def.env, g: def.g, spawns: def.spawns, pickups: def.pickups }));
+  const body = rle(def.types), raw = new Uint8Array(4 + head.length + body.length);
+  new DataView(raw.buffer).setUint32(0, head.length);
+  raw.set(head, 4); raw.set(body, 4 + head.length);
+  return 'RBL1.' + b64.enc(await pipe(raw, new CompressionStream('deflate-raw')));
+}
+export async function decodeMap(code) {
+  code = String(code || '').trim();
+  if (!code.startsWith('RBL1.')) throw new Error('這不是地圖代碼');
+  const raw = await pipe(b64.dec(code.slice(5)), new DecompressionStream('deflate-raw'));
+  const hl = new DataView(raw.buffer).getUint32(0);
+  const h = JSON.parse(new TextDecoder().decode(raw.subarray(4, 4 + hl)));
+  if (h.v !== 1 || !Array.isArray(h.spawns) || h.spawns.length !== 2) throw new Error('地圖資料不完整');
+  const n = WORLD.X * WORLD.Y * WORLD.Z, types = unrle(raw.subarray(4 + hl), n);
+  for (let i = 0; i < n; i++) if (types[i] > DIRT) types[i] = CONCRETE;     // 不認得的方塊（新版本做的圖）先當水泥
+  const num = (v, d = 0) => (Number.isFinite(+v) ? +v : d);
+  return {
+    name: String(h.name || '自製地圖').slice(0, 20), env: String(h.env || 'golden'), g: Math.max(1, Math.min(WORLD.Y - 6, num(h.g, 4) | 0)),
+    spawns: h.spawns.map((s) => ({ x: num(s.x, 4), y: num(s.y, 4), z: num(s.z, 4), yaw: num(s.yaw) })),
+    pickups: (Array.isArray(h.pickups) ? h.pickups : []).slice(0, 12).map((p) => ({ type: p.type === 'armor' ? 'armor' : 'hp', amount: Math.max(10, Math.min(50, num(p.amount, 25))), x: num(p.x), y: num(p.y), z: num(p.z), ...(p.type === 'armor' ? { respawn: 30 } : {}) })),
+    types,
+  };
+}
+
+// 登記成一張可以選的地圖；回傳它的代號（同一份代碼兩邊算出來的代號一樣）
+export function registerCustom(def, code) {
+  const id = 'c_' + hashStr(code);
+  MAPS[id] = {
+    name: def.name, desc: '自製地圖', custom: true, code, env: def.env, ground: def.g * BS,
+    build: (w) => w.loadRaw(def.types), spawns: def.spawns, pickups: def.pickups, def,
+  };
+  return id;
+}
+export const customIds = () => Object.keys(MAPS).filter((k) => MAPS[k].custom);
+
+// 這台電腦存過的自製地圖（localStorage）。開機時全部登記起來
+export async function loadSavedMaps() {
+  for (const code of store.get('maps', [])) { try { registerCustom(await decodeMap(code), code); } catch { /* 壞掉的就跳過 */ } }
+}
+export function saveMapCode(code, replaceId) {
+  let list = store.get('maps', []);
+  if (replaceId && MAPS[replaceId] && MAPS[replaceId].custom) { list = list.filter((c) => c !== MAPS[replaceId].code); delete MAPS[replaceId]; }
+  if (!list.includes(code)) list.push(code);
+  store.set('maps', list.slice(-24));
+}
+export function deleteMap(id) {
+  const m = MAPS[id]; if (!m || !m.custom) return;
+  store.set('maps', store.get('maps', []).filter((c) => c !== m.code));
+  delete MAPS[id];
+}

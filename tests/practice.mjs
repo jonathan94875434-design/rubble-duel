@@ -1,5 +1,6 @@
 // 練習模式：逐把槍試射、物理檢查、讓 bot 殺玩家走完「輸→選強化→下一局」
 import puppeteer from 'puppeteer-core';
+import { load, reload } from './load.mjs';
 import { mkdirSync } from 'node:fs';
 const OUT = process.argv[2] || 'shots';
 mkdirSync(OUT, { recursive: true });
@@ -15,7 +16,7 @@ const ok = (name, cond, extra = '') => console.log(`${cond ? 'PASS' : 'FAIL'}  $
 const waitPhase = (ph, ms = 15000) => page.waitForFunction((ph) => __game.phase === ph, { timeout: ms }, ph);
 // 這支測試的座標是照「廢墟廣場」寫的，所以固定地圖與難度
 await page.evaluateOnNewDocument(() => { localStorage.setItem('rubble.pmap', '"plaza"'); localStorage.setItem('rubble.bot', '"normal"'); });
-await page.goto(BASE + '?nolock=1', { waitUntil: 'load' });
+await load(page, BASE + '?nolock=1');
 await sleep(600);
 await page.screenshot({ path: OUT + '/p0-menu.png' });
 await page.click('#btn-bot'); await waitPhase('loadout');

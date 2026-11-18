@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<title>角色預覽</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #14171c; overflow: hidden; font: 12px/1.5 ui-monospace, Menlo, monospace; color: #cfd6df; }
+  canvas { display: block; }
+  #info { position: fixed; left: 10px; top: 8px; white-space: pre; text-shadow: 0 1px 2px #000; pointer-events: none; }
+</style>
+<script type="importmap">{ "imports": { "three": "../vendor/three.module.min.js" } }</script>
+</head>
+<body>
+<div id="info"></div>
+<script type="module">
+// 第三人稱角色模型的獨立預覽（跑的是遊戲裡同一個 RemotePlayer）。網址參數：
+//   skin=recruit  team=0|1  w=ar（武器代號） ws=stock（塗裝）
+//   pose=idle|run|walk|crouch|crouchwalk|jump|dead|wave|dance|salute|taunt|throw|melee|fire
+//   t=0.35        動畫凍結在第幾秒（不給 = 即時播放）
+//   pitch=0.3     瞄準俯仰（弧度）   dir=0（移動方向，度；90 = 往右橫移、180 = 後退）
+//   dx=..&dz=..   倒地方向（相對角色：dz=1 往後、dz=-1 往前；不給 = 往後）
+//   view=front|side|back|three|top|low|left|rear3   zoom=1   cy=0.92（鏡頭對準的高度）
+//   boxes=1（畫出受擊判定盒）  grid=1（八個造型排一排；grid=a 前四個、grid=b 後四個）
+import * as THREE from 'three';
+import { RemotePlayer, EMOTES } from '../js/remote.js';
+import { SKIN_IDS, SKINS } from '../js/skins.js';
+import { TEAM, PLAYER } from '../js/config.js';
+
+const qs = new URLSearchParams(location.search);
+const num = (k, d) => (qs.has(k) && qs.get(k) !== '' ? +qs.get(k) : d);
+const skin = qs.get('skin') || 'recruit', team = num('team', 0), weapon = qs.get('w') || 'ar', wskin = qs.get('ws') || 'stock';
+const pose = qs.get('pose') || 'idle', view = qs.get('view') || 'three', gridQ = qs.get('grid'), grid = !!gridQ && gridQ !== '0', boxes = qs.get('boxes') === '1';
+const frozen = qs.has('t'), tFreeze = num('t', 0), pitch = num('pitch', 0), dir = (num('dir', 0) * Math.PI) / 180, zoom = num('zoom', 1);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1;
+document.body.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(32, 1, 0.05, 200);
+
+// 天空漸層（也拿來烤環境反射）
+const skyGeo = new THREE.SphereGeometry(80, 24, 12), col = new Float32Array(skyGeo.attributes.position.count * 3);
+for (let i = 0; i < skyGeo.attributes.position.count; i++) {
+  const h = skyGeo.attributes.position.getY(i) / 80, c = new THREE.Color();
+  if (h > 0) c.setRGB(0.72, 0.74, 0.70).lerp(new THREE.Color().setRGB(0.14, 0.34, 0.74), Math.pow(h, 0.5)); else c.setRGB(0.72, 0.74, 0.70).lerp(new THREE.Color().setRGB(0.3, 0.26, 0.2), Math.min(1, -h * 6));
+  col.set([c.r, c.g, c.b], i * 3);
+}
+skyGeo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+const sky = new THREE.Mesh(skyGeo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, fog: false }));
+const envScene = new THREE.Scene(); envScene.add(sky);
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(envScene, 0, 1, 200).texture; scene.environmentIntensity = 0.8;
+scene.add(sky);
+// 光：跟遊戲「正午」差不多的強度
+const hemi = new THREE.HemisphereLight(new THREE.Color().setRGB(0.6, 0.72, 0.95), new THREE.Color().setRGB(0.55, 0.46, 0.32), 0.9); scene.add(hemi);
+const sun = new THREE.DirectionalLight(new THREE.Color().setRGB(1, 0.95, 0.84), 3.8);
+sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
+const sc = sun.shadow.camera; sc.left = -7; sc.right = 7; sc.top = 7; sc.bottom = -7; sc.near = 1; sc.far = 60;
+sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.03;
+scene.add(sun, sun.target);
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), new THREE.MeshStandardMaterial({ color: 0x6b675f, roughness: 0.95 }));
+ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
+const gridHelper = new THREE.GridHelper(40, 40, 0x44474c, 0x5c5952); gridHelper.position.y = 0.002; scene.add(gridHelper);
+
+// 角色
+const ids = !grid ? [skin] : gridQ === 'a' ? SKIN_IDS.slice(0, 4) : gridQ === 'b' ? SKIN_IDS.slice(4) : SKIN_IDS;
+const dolls = ids.map((id, i) => {
+  const rp = new RemotePlayer(scene, TEAM[team] ?? TEAM[0]);
+  rp.applySkin(id, TEAM[grid ? i % 2 : team] ?? TEAM[0]); rp.setWeapon(weapon, wskin);
+  rp.group.visible = true; rp.alive = true; rp.pitch = pitch;
+  rp.pos.set((i - (ids.length - 1) / 2) * 1.05, 0, 0); rp.lastPos.copy(rp.pos);
+  return rp;
+});
+window.__dolls = dolls; window.__rp = dolls[0];
+
+// ── 驅動姿勢：全部走 RemotePlayer.update，用固定步長所以每次結果一樣 ──
+const DT = 1 / 120;
+const speedOf = { run: PLAYER.SPEED, walk: 1.6, crouchwalk: PLAYER.SPEED * PLAYER.CROUCH_SPEED, jump: 4 };
+function step(rp, dt) {
+  const v = speedOf[pose] || 0;
+  if (v) { rp.pos.x += Math.sin(dir) * v * dt; rp.pos.z -= Math.cos(dir) * v * dt; }
+  rp.pitch = pitch;
+  rp.crouched = pose === 'crouch' || pose === 'crouchwalk' || qs.get('crouch') === '1';
+  rp.grounded = pose !== 'jump';
+  rp.update(dt);
+}
+function trigger(rp) {
+  if (pose === 'dead') {   // 參數是相對角色的方向，轉成世界座標再給 die()
+    if (qs.has('dx') || qs.has('dz')) { const lx = num('dx', 0), lz = num('dz', 1), s = Math.sin(rp.yaw), c = Math.cos(rp.yaw); rp.die(lx * c + lz * s, -lx * s + lz * c); } else rp.die();
+  } else if (EMOTES[pose]) rp.emote(pose);
+  else if (pose === 'throw') rp.throwAnim();
+  else if (pose === 'melee') rp.meleeAnim();
+  else if (pose === 'fire') rp.fireKick();
+}
+const oneShot = pose === 'dead' || EMOTES[pose] || pose === 'throw' || pose === 'melee' || pose === 'fire';
+for (const rp of dolls) {
+  for (let t = 0; t < 1.5; t += DT) step(rp, DT);          // 暖機：讓速度、蹲下這些混合到位
+  if (oneShot) trigger(rp);
+  if (frozen) for (let t = 0; t < tFreeze - 1e-9; t += DT) step(rp, DT);
+}
+
+// 受擊判定盒（util.js rayPlayer 的那兩個盒子）
+const hit = [];
+if (boxes) for (const rp of dolls) {
+  const mk = (w, h, c) => { const l = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(w, h, w)), new THREE.LineBasicMaterial({ color: c })); scene.add(l); return l; };
+  hit.push({ rp, body: mk(0.66, 1, 0x44ff66), head: mk(0.4, 0.4, 0xff4466) });
+}
+
+// 量模型的大小（不含槍），確認跟判定盒對得上
+function measure(rp) {
+  rp.group.updateWorldMatrix(true, true);
+  const b = new THREE.Box3(), hb = new THREE.Box3(), v = new THREE.Vector3(); let lowY = 1e9, low = '', hiY = -1e9, hi = '';
+  rp.group.traverse((o) => {
+    if (!o.isMesh || !o.visible) return;
+    let p = o, gun = false, head = false;
+    while (p) { if (p === rp.gunHolder) gun = true; if (p === rp.head) head = true; p = p.parent; }
+    if (gun) return;
+    const a = o.geometry.attributes.position;
+    for (let i = 0; i < a.count; i++) { v.fromBufferAttribute(a, i).applyMatrix4(o.matrixWorld); b.expandByPoint(v); if (head) hb.expandByPoint(v); if (v.y < lowY) { lowY = v.y; low = o.parent.name; } if (v.y > hiY) { hiY = v.y; hi = o.parent.name; } }
+  });
+  const r = (x) => +x.toFixed(3), P = rp.pos;
+  let tris = 0, meshes = 0;
+  rp.group.traverse((o) => { if (o.isMesh && o.visible) { let p = o, gun = false; while (p) { if (p === rp.gunHolder) gun = true; p = p.parent; } if (!gun) { tris += o.geometry.attributes.position.count / 3; meshes++; } } });
+  const mz = rp.muzzle(new THREE.Vector3());
+  return { top: r(b.max.y - P.y), bottom: r(b.min.y - P.y), x: [r(b.min.x - P.x), r(b.max.x - P.x)], z: [r(b.min.z - P.z), r(b.max.z - P.z)], headY: [r(hb.min.y - P.y), r(hb.max.y - P.y)], headX: [r(hb.min.x - P.x), r(hb.max.x - P.x)], headZ: [r(hb.min.z - P.z), r(hb.max.z - P.z)], tris, meshes, muzzle: [r(mz.x - P.x), r(mz.y - P.y), r(mz.z - P.z)], kind: rp.kind, low, hi, center: [r((b.min.x + b.max.x) / 2), r((b.min.z + b.max.z) / 2)] };
+}
+
+const VIEWS = { front: [0, 0.0, -1], side: [1, 0.0, 0], back: [0, 0.0, 1], three: [-0.62, 0.22, -0.78], top: [0.001, 1, -0.2], low: [-0.5, -0.12, -0.85], left: [-1, 0, 0], rear3: [0.6, 0.25, 0.8] };
+function frame() {
+  const w = innerWidth, h = innerHeight;
+  renderer.setSize(w, h, false); camera.aspect = w / h;
+  const c = dolls[Math.floor(dolls.length / 2)].pos, d = new THREE.Vector3(...(VIEWS[view] || VIEWS.three)).normalize();
+  const lying = pose === 'dead' && !grid, bc = lying && window.__info ? window.__info[0].center : null;   // 屍體：鏡頭對準身體中心
+  const cx = grid ? (dolls[0].pos.x + dolls[dolls.length - 1].pos.x) / 2 : bc ? bc[0] : c.x, cz = bc ? bc[1] : c.z;
+  const dist = (grid ? (ids.length > 4 ? 9.2 : 5.6) : 4.6) / zoom, ty = num('cy', bc ? 0.3 : 0.92);
+  camera.position.set(cx + d.x * dist, c.y + ty + d.y * dist, cz + d.z * dist);
+  camera.lookAt(cx, c.y + ty, cz); camera.updateProjectionMatrix();
+  // 主光跟著鏡頭轉（從鏡頭左上方打過來），每個角度都看得清楚
+  const side = new THREE.Vector3().crossVectors(d, new THREE.Vector3(0, 1, 0)).normalize();
+  const sd = new THREE.Vector3().copy(d).multiplyScalar(0.75).addScaledVector(side, 0.65).normalize(); sd.y = 0; sd.normalize().multiplyScalar(0.62); sd.y = 0.78;
+  sun.target.position.set(cx, c.y, cz); sun.position.copy(sun.target.position).addScaledVector(sd, 25);
+  for (const b of hit) { const n = b.rp.crouched ? 0.92 : 1.42, p = b.rp.pos; b.body.scale.y = n; b.body.position.set(p.x, p.y + n / 2, p.z); b.head.position.set(p.x, p.y + n + 0.2, p.z); }
+  renderer.render(scene, camera);
+}
+
+const info = document.getElementById('info');
+let last = performance.now(), loopT = 0;
+function loop(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  if (!frozen) {
+    loopT += dt;
+    for (const rp of dolls) {
+      step(rp, dt);
+      if (oneShot && loopT > (pose === 'dead' ? 3 : EMOTES[pose] ? EMOTES[pose].dur + 0.8 : 1.2)) { if (pose === 'dead') rp.revive(); trigger(rp); }
+    }
+    if (oneShot && loopT > (pose === 'dead' ? 3 : EMOTES[pose] ? EMOTES[pose].dur + 0.8 : 1.2)) loopT = 0;
+  }
+  if (!window.__info) window.__info = dolls.map(measure);
+  frame();
+  if (!window.__ready) { info.textContent = `${grid ? 'grid' : skin + ' (' + SKINS[skin]?.name + ')'}  pose=${pose}${frozen ? ' t=' + tFreeze : ''}  w=${weapon}  view=${view}\n` + JSON.stringify(window.__info[0]); window.__ready = true; }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

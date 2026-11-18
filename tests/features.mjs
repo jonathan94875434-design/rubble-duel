@@ -1,5 +1,6 @@
 // 新功能測試：身法物理、Shift 瞄準、機器人尋路（三張地圖）、地圖輪換
 import puppeteer from 'puppeteer-core';
+import { load, reload } from './load.mjs';
 import { mkdirSync } from 'node:fs';
 const OUT = process.argv[2] || 'shots';
 mkdirSync(OUT, { recursive: true });
@@ -14,7 +15,7 @@ const open = async (store = {}) => {
   page.on('console', (m) => { if (m.type() === 'error' && !(m.location().url || '').includes('favicon')) errs.push(m.text()); });
   page.on('pageerror', (e) => errs.push('[pageerror] ' + e.message + '\n' + e.stack));
   await page.evaluateOnNewDocument((store) => { for (const k in store) localStorage.setItem('rubble.' + k, JSON.stringify(store[k])); }, store);
-  await page.goto(BASE + '?nolock=1', { waitUntil: 'load' });
+  await load(page, BASE + '?nolock=1');
   await sleep(500);
   return page;
 };
@@ -206,7 +207,7 @@ for (const [map, spots] of [
   const cc = await page.evaluate(() => __game.player.crouched);
   await page.keyboard.up('KeyC');
   ok('新按鍵 X 會蹲下，舊按鍵 C 不會', cx === true && cc === false, `X:${cx} C:${cc}`);
-  await page.reload({ waitUntil: 'load' }); await sleep(500);
+  await reload(page); await sleep(500);
   ok('按鍵設定重新整理後還在', (await page.evaluate(() => __game.binds.crouch)) === 'KeyX');
   await page.evaluate(() => localStorage.removeItem('rubble.binds'));
   await page.close();

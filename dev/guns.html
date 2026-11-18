@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<title>槍枝模型預覽</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #101216; overflow: hidden; font: 12px/1.4 ui-monospace, Menlo, monospace; color: #cfd6df; }
+  canvas { display: block; position: fixed; inset: 0; }
+  .lab { position: fixed; padding: 5px 8px; text-shadow: 0 1px 2px #000; pointer-events: none; white-space: pre; }
+  .lab b { color: #f5c26b; font-weight: 600; }
+  #bar { position: fixed; right: 10px; bottom: 6px; z-index: 2; }
+  #bar a { color: #8fa3bd; margin-left: 10px; text-decoration: none; } #bar a.on { color: #f5c26b; }
+</style>
+<script type="importmap">{ "imports": { "three": "../vendor/three.module.min.js" } }</script>
+</head>
+<body>
+<div id="bar"></div>
+<script type="module">
+// 所有槍＋投擲物排成格子（跑的是遊戲裡同一個 js/gunmodel.js）。網址參數：
+//   wskin=stock|sand|snow|carbon|crimson|gold|neon|toxic   塗裝
+//   only=ar,smg      只看這幾把（放大；cols=2 改欄數）      view=left|right|top|rear|front|q（預設 q = 左前上方斜視）
+//   open=0..1        把會動的零件拉開（彈匣抽出、滑套後退、轉輪甩開…），檢查零件有沒有切對
+//   aim=1            打開看得穿的瞄準鏡鏡片
+import * as THREE from 'three';
+import { buildGun, buildProp, GUN_IDS, PROP_IDS } from '../js/gunmodel.js';
+import { WEAPONS } from '../js/weapons.js';
+import { WSKINS, WSKIN_IDS } from '../js/skins.js';
+
+const qs = new URLSearchParams(location.search);
+const wskin = WSKINS[qs.get('wskin')] ? qs.get('wskin') : 'stock', only = qs.get('only'), view = qs.get('view') || 'q', open = +(qs.get('open') || 0);
+const NAMES = { knife: '戰鬥刀', he: '手榴彈', flash: '閃光彈', smoke: '煙霧彈', molotov: '汽油彈' };
+document.getElementById('bar').innerHTML = WSKIN_IDS.map((w) => `<a class="${w === wskin ? 'on' : ''}" href="?${new URLSearchParams({ ...Object.fromEntries(qs), wskin: w })}">${WSKINS[w].name}</a>`).join('');
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1; renderer.autoClear = false;
+document.body.appendChild(renderer.domElement);
+
+// 環境反射：漸層棚 + 幾片柔光板（金屬才有東西可以反射）
+const envScene = new THREE.Scene();
+{
+  const geo = new THREE.SphereGeometry(50, 32, 16), col = new Float32Array(geo.attributes.position.count * 3), c = new THREE.Color();
+  for (let i = 0; i < geo.attributes.position.count; i++) {
+    const h = geo.attributes.position.getY(i) / 50;
+    if (h > 0) c.setRGB(0.5, 0.52, 0.55).lerp(new THREE.Color().setRGB(0.2, 0.26, 0.36), Math.pow(h, 0.6)); else c.setRGB(0.5, 0.52, 0.55).lerp(new THREE.Color().setRGB(0.1, 0.09, 0.08), Math.min(1, -h * 3));
+    col.set([c.r, c.g, c.b], i * 3);
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  envScene.add(new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide })));
+  const panel = (x, y, z, w, h, k) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: new THREE.Color(k, k, k * 0.96), side: THREE.DoubleSide })); m.position.set(x, y, z); m.lookAt(0, 0, 0); envScene.add(m); };
+  panel(-18, 22, 8, 22, 12, 9); panel(20, 10, -14, 12, 16, 4); panel(4, 26, -16, 16, 8, 5); panel(-6, 6, 26, 14, 8, 2.5);
+}
+const scene = new THREE.Scene();
+scene.environment = new THREE.PMREMGenerator(renderer).fromScene(envScene, 0.02, 1, 200).texture;
+scene.add(new THREE.HemisphereLight(0xcfdcf0, 0x4a4238, 0.7));
+const sun = new THREE.DirectionalLight(0xfff2dc, 2.6); sun.position.set(-2, 4, 1.5); scene.add(sun);
+
+const ids = only ? only.split(',') : [...GUN_IDS, ...PROP_IDS];
+const items = ids.map((id) => {
+  const prop = PROP_IDS.includes(id), g = prop ? buildProp(id) : buildGun(id, wskin), u = g.userData;
+  // 把會動的零件拉開一點
+  if (open && !prop) {
+    const p = u.parts, a = u.anim || {};
+    if (p.mag) p.mag.position.addScaledVector(a.magDir || new THREE.Vector3(0, -1, 0), 0.16 * open);
+    if (p.bolt) { if (a.boltLift) { p.bolt.rotation.z = a.boltLift * open; } p.bolt.position.z += (a.boltTravel || 0.04) * open; }
+    if (p.pump) p.pump.position.z += (a.pumpTravel || 0.08) * open;
+    if (p.cyl) p.cyl.rotation.z = (a.cylOpen || 1.5) * open;
+    if (p.drum) p.drum.rotation.z = 0.5 * open;
+    if (p.rocket) p.rocket.position.z -= 0.3 * open;
+    if (p.hammer) p.hammer.rotation.x = 0.7 * open;
+  }
+  if (qs.get('aim') === '1' && u.parts && u.parts.aim) { u.parts.aim.visible = true; u.parts.lens.visible = false; }
+  g.visible = false; scene.add(g);
+  const box = new THREE.Box3().setFromObject(g), lab = document.createElement('div');
+  lab.className = 'lab';
+  lab.innerHTML = `<b>${prop ? NAMES[id] : (WEAPONS[id] && WEAPONS[id].name) || NAMES[id] || id}</b>  ${id}\n${Math.round(u.tris)} tris${prop ? '' : `  長 ${u.len.toFixed(2)} m`}`;
+  document.body.appendChild(lab);
+  return { id, g, box, lab, prop };
+});
+
+const cam = new THREE.PerspectiveCamera(22, 1, 0.02, 50);
+const DIR = { q: [-1, 0.42, -0.62], left: [-1, 0, 0], right: [1, 0, 0], top: [-0.02, 1, 0.01], rear: [0.25, 0.3, 1], front: [-0.35, 0.25, -1], fp: [-0.35, 0.55, 1] };
+function draw() {
+  const W = innerWidth, H = innerHeight, cols = +(qs.get('cols') || (only ? Math.min(2, ids.length) : 4)), rows = Math.ceil(items.length / cols), cw = W / cols, ch = H / rows;
+  renderer.setSize(W, H, false); renderer.setScissorTest(false); renderer.setClearColor(0x101216); renderer.clear();
+  renderer.setScissorTest(true);
+  items.forEach((it, i) => {
+    const cx = (i % cols) * cw, cy = Math.floor(i / cols) * ch;
+    renderer.setViewport(cx, H - cy - ch, cw, ch); renderer.setScissor(cx + 1, H - cy - ch + 1, cw - 2, ch - 2);
+    renderer.setClearColor(0x181b21); renderer.clear();
+    // 鏡頭對準這個物件的包圍盒，距離剛好塞滿格子
+    const c = it.box.getCenter(new THREE.Vector3()), s = it.box.getSize(new THREE.Vector3()), d = new THREE.Vector3(...(DIR[view] || DIR.q)).normalize();
+    cam.aspect = cw / ch; cam.updateProjectionMatrix();
+    cam.position.copy(c).addScaledVector(d, 10); cam.up.set(0, 1, 0); if (Math.abs(d.y) > 0.95) cam.up.set(-1, 0, 0); cam.lookAt(c); cam.updateMatrixWorld();
+    // 把包圍盒八個角投到畫面上，來回修正幾次距離，直到剛好塞滿格子
+    const inv = cam.matrixWorldInverse, p = new THREE.Vector3(), t = Math.tan((cam.fov * Math.PI) / 360); let dist = 10;
+    for (let n = 0; n < 6; n++) {
+      cam.position.copy(c).addScaledVector(d, dist); cam.lookAt(c); cam.updateMatrixWorld(); inv.copy(cam.matrixWorld).invert();
+      let m = 0;
+      for (let k = 0; k < 8; k++) { p.set(k & 1 ? it.box.max.x : it.box.min.x, k & 2 ? it.box.max.y : it.box.min.y, k & 4 ? it.box.max.z : it.box.min.z).applyMatrix4(inv); m = Math.max(m, Math.abs(p.x) / (-p.z * t * cam.aspect), Math.abs(p.y) / (-p.z * t * 0.74)); }
+      dist *= Math.max(0.2, m) * 1.06 / 1; if (Math.abs(m * 1.06 - 1) < 0.01) break;
+    }
+    it.g.visible = true; renderer.render(scene, cam); it.g.visible = false;
+    it.lab.style.left = cx + 'px'; it.lab.style.top = cy + 'px';
+  });
+  window.__ready = true;
+}
+addEventListener('resize', draw);
+draw();
+window.items = items; window.scene = scene;
+</script>
+</body>
+</html>

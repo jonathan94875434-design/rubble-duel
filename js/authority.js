@@ -23,7 +23,7 @@ export class Authority {
   destroy() { clearInterval(this.timer); }
 
   _mk(name) {
-    return { name, score: 0, hp: PLAYER.MAX_HP, maxHp: PLAYER.MAX_HP, armor: 0, alive: false, buffs: [], streak: 0, money: ECON.START, spent: 0, loadout: validLoadout(null), look: { s: 'recruit', w: 'stock' }, ready: false, choices: null, dmg: 0, heads: 0, lastHurt: 0 };
+    return { name, score: 0, hp: PLAYER.MAX_HP, maxHp: PLAYER.MAX_HP, armor: 0, alive: false, buffs: [], streak: 0, money: ECON.START, spent: 0, loadout: validLoadout(null), look: { s: 'recruit', w: 'stock' }, ready: false, choices: null, dmg: 0, heads: 0, lastHurt: 0, rHits: 0, rDmg: 0, rHead: 0, respawnAt: 0 };
   }
 
   setName(i, n) { this.players[i].name = String(n || '').slice(0, 14) || '玩家 ' + (i + 1); this.dirty = true; }
@@ -32,7 +32,7 @@ export class Authority {
     if (this.phase !== 'lobby' && this.phase !== 'matchEnd') return;
     if ([1, 3, 5, 7, 10, 15].includes(+s.target)) this.settings.target = +s.target;
     if ([60, 90, 120, 180, 900].includes(+s.roundTime)) this.settings.roundTime = +s.roundTime;
-    if (s.map === 'random' || s.map === 'rotate' || MAP_IDS.includes(s.map)) this.settings.map = s.map;
+    if (s.map === 'random' || s.map === 'rotate' || MAPS[s.map]) this.settings.map = s.map;   // 也可以是自製地圖
     if (['streak', 'permanent', 'single', 'off'].includes(s.buffMode)) this.settings.buffMode = s.buffMode;
     this.dirty = true;
   }
@@ -43,9 +43,20 @@ export class Authority {
     for (const p of this.players) { p.score = 0; p.buffs = []; p.streak = 0; p.choices = null; p.dmg = 0; p.heads = 0; p.money = ECON.START; p.spent = 0; }
     this.round = 0; this.matchWinner = -1; this.result = null;
     const m = this.settings.map;
-    this.map = MAP_IDS.includes(m) ? m : m === 'rotate' ? MAP_IDS[0] : MAP_IDS[(Math.random() * MAP_IDS.length) | 0];
-    this.mapStart = MAP_IDS.indexOf(this.map);
+    this.map = MAPS[m] ? m : m === 'rotate' ? MAP_IDS[0] : MAP_IDS[(Math.random() * MAP_IDS.length) | 0];
+    this.mapStart = Math.max(0, MAP_IDS.indexOf(this.map));
     this._enterLoadout();
+  }
+
+  // 熱身：沒有回合、不計分，死了 2 秒後重生。等朋友的時候打發時間，或兩個人先試槍
+  startWarmup() {
+    if (this.phase !== 'lobby' && this.phase !== 'matchEnd') return;
+    for (const p of this.players) { p.maxHp = PLAYER.MAX_HP; p.hp = p.maxHp; p.armor = PLAYER.MAX_ARMOR; p.alive = true; p.buffs = []; p.choices = null; p.respawnAt = 0; p.rHits = p.rDmg = p.rHead = 0; p.lastHurt = 0; }
+    const m = this.settings.map;
+    this.map = MAPS[m] ? m : MAP_IDS[(Math.random() * MAP_IDS.length) | 0];
+    this.wn = (this.wn || 0) + 1; this.round = 1000 + this.wn;                // 熱身的局數從 1001 起跳，跟正式的局分開
+    this.pickups = MAPS[this.map].pickups.map(() => ({ on: true, at: 0 }));
+    this.result = null; this.matchWinner = -1; this.phase = 'warmup'; this.tEnd = 0; this.dirty = true;
   }
 
   _enterLoadout() {
@@ -64,6 +75,7 @@ export class Authority {
       p.spent = loadoutCost(p.loadout); p.money -= p.spent;
       p.maxHp = PLAYER.MAX_HP + (p.buffs.includes('vital') ? 35 : 0);
       p.hp = p.maxHp; p.armor = p.loadout.armor || p.buffs.includes('plate') ? 50 : 0; p.alive = true; p.lastHurt = 0;
+      p.rHits = p.rDmg = p.rHead = 0;   // 這一局的傷害報告歸零
     }
     this.pickups = MAPS[this.map].pickups.map(() => ({ on: true, at: 0 }));
     this.result = null;
@@ -96,18 +108,20 @@ export class Authority {
   handle(i, t, d) {
     const p = this.players[i];
     if (!p || !d) return;
-    if (t === 'loadout') { if (this.phase === 'loadout' || this.phase === 'lobby') { p.loadout = validLoadout(d); this.dirty = true; } }
+    if (t === 'loadout') { if (this.phase === 'loadout' || this.phase === 'lobby' || this.phase === 'warmup') { p.loadout = validLoadout(d); this.dirty = true; } }
     else if (t === 'buff') { if (p.choices && p.choices.includes(d.id)) { p.buffs.push(d.id); p.choices = null; this.dirty = true; } }
     else if (t === 'ready') { if (this.phase === 'loadout' && !p.choices) { p.ready = !!d.v; this.dirty = true; } }
-    else if (t === 'hit') { if (d.r === this.round) this.damage(1 - i, +d.d || 0, i, d.w, !!d.h); }
+    else if (t === 'hit') { if (d.r === this.round) this.damage(1 - i, +d.d || 0, i, d.w, !!d.h, d); }
     else if (t === 'self') { if (d.r === this.round) this.damage(i, +d.d || 0, i, d.w, false); }
     else if (t === 'pick') this._pickup(i, d.i | 0);
     else if (t === 'name') this.setName(i, d.name);
     else if (t === 'look') { p.look = validLook(d); this.dirty = true; }
   }
 
-  damage(target, dmg, attacker, weapon, head) {
-    if (this.phase !== 'playing') return;
+  // x：命中的附帶資訊（wb = 穿牆、bk = 背刺）
+  damage(target, dmg, attacker, weapon, head, x) {
+    const warm = this.phase === 'warmup';
+    if (this.phase !== 'playing' && !warm) return;
     const T = this.players[target], A = this.players[attacker];
     if (!T.alive || !(dmg > 0)) return;
     dmg = Math.min(dmg, 400);
@@ -117,7 +131,7 @@ export class Authority {
     const dealt = Math.min(T.hp, toHp);
     T.hp -= toHp; T.lastHurt = Date.now();
     if (attacker !== target) {
-      A.dmg += dealt;
+      A.dmg += dealt; A.rDmg += dealt; A.rHits++; if (head) A.rHead++;
       if (A.buffs.includes('leech') && A.alive) A.hp = Math.min(A.maxHp, A.hp + dealt * 0.25);
     }
     this.out(target, 'ev', { t: 'hurt', d: Math.round(toHp), self: attacker === target, h: head });
@@ -125,15 +139,18 @@ export class Authority {
       T.hp = 0; T.alive = false;
       const suicide = attacker === target;
       if (head && !suicide) A.heads++;
-      const info = { reason: suicide ? 'suicide' : 'kill', victim: target, w: weapon, head: head && !suicide };
-      this._endRound(1 - target, info);
+      const info = { reason: suicide ? 'suicide' : 'kill', victim: target, w: weapon, head: head && !suicide, wb: !!(x && x.wb) && !suicide, bk: !!(x && x.bk) && !suicide };
+      if (warm) {                                                              // 熱身：通知雙方（擊殺訊息用），2 秒後重生
+        T.respawnAt = Date.now() + 2000;
+        this.out(0, 'ev', { t: 'wkill', ...info }); this.out(1, 'ev', { t: 'wkill', ...info });
+      } else this._endRound(1 - target, info);
     }
     this.dirty = true; this.flush();
   }
 
   _pickup(i, k) {
     const p = this.players[i], pk = this.pickups[k], def = MAPS[this.map].pickups[k];
-    if (this.phase !== 'playing' || !p.alive || !pk || !pk.on) return;
+    if ((this.phase !== 'playing' && this.phase !== 'warmup') || !p.alive || !pk || !pk.on) return;
     if (def.type === 'hp') { if (p.hp >= p.maxHp) return; p.hp = Math.min(p.maxHp, p.hp + def.amount); }
     else { if (p.armor >= PLAYER.MAX_ARMOR) return; p.armor = Math.min(PLAYER.MAX_ARMOR, p.armor + def.amount); }
     pk.on = false; pk.at = Date.now() + (def.respawn || MATCH.PICKUP_RESPAWN) * 1000;
@@ -158,6 +175,11 @@ export class Authority {
         const va = a.hp + a.armor, vb = b.hp + b.armor;
         this._endRound(va === vb ? -1 : va > vb ? 0 : 1, { reason: 'time' });
       }
+    } else if (this.phase === 'warmup') {
+      this.players.forEach((p, i) => {
+        if (!p.alive && now >= p.respawnAt) { p.hp = p.maxHp; p.armor = PLAYER.MAX_ARMOR; p.alive = true; p.rHits = p.rDmg = p.rHead = 0; this.out(i, 'ev', { t: 'respawn' }); this.dirty = true; }
+      });
+      this.pickups.forEach((pk) => { if (!pk.on && now >= pk.at) { pk.on = true; this.dirty = true; } });
     } else if (this.phase === 'roundEnd') {
       if (now >= this.tEnd) {
         if (this.matchWinner >= 0) { this.phase = 'matchEnd'; this.dirty = true; }
@@ -173,7 +195,7 @@ export class Authority {
     const s = {
       phase: this.phase, round: this.round, tLeft: Math.max(0, this.tEnd - now), set: this.settings, res: this.result, mw: this.matchWinner,
       here: this.present, map: this.map,
-      p: this.players.map((p) => ({ n: p.name, sc: p.score, hp: Math.ceil(p.hp), mhp: p.maxHp, ar: Math.ceil(p.armor), al: p.alive, bf: p.buffs, st: p.streak, lo: p.loadout, $: p.money, sp: p.spent, lk: p.look, rd: p.ready, ch: p.choices, dmg: Math.round(p.dmg), hs: p.heads })),
+      p: this.players.map((p) => ({ n: p.name, sc: p.score, hp: Math.ceil(p.hp), mhp: p.maxHp, ar: Math.ceil(p.armor), al: p.alive, bf: p.buffs, st: p.streak, lo: p.loadout, $: p.money, sp: p.spent, lk: p.look, rd: p.ready, ch: p.choices, dmg: Math.round(p.dmg), hs: p.heads, rh: p.rHits, rdm: Math.round(p.rDmg), rhs: p.rHead })),
       pk: this.pickups.map((k) => (k.on ? 1 : 0)),
     };
     this.out(0, 'gs', s); this.out(1, 'gs', s);

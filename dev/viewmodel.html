@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<title>第一人稱持槍預覽</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #14171c; overflow: hidden; font: 12px/1.5 ui-monospace, Menlo, monospace; color: #cfd6df; }
+  canvas { display: block; }
+  #info { position: fixed; left: 10px; top: 8px; white-space: pre; text-shadow: 0 1px 2px #000; pointer-events: none; }
+  #cross { position: fixed; left: 50%; top: 50%; width: 0; height: 0; pointer-events: none; display: none; }
+  #cross::before, #cross::after { content: ''; position: absolute; background: rgba(255, 60, 60, .85); }
+  #cross::before { left: -14px; top: -0.5px; width: 28px; height: 1px; } #cross::after { left: -0.5px; top: -14px; width: 1px; height: 28px; }
+</style>
+<script type="importmap">{ "imports": { "three": "../vendor/three.module.min.js" } }</script>
+</head>
+<body>
+<div id="info"></div><div id="cross"></div>
+<script type="module">
+// 第一人稱手上的槍（跑的是遊戲裡同一個 js/viewmodel.js），背景是一片灰色的假場景。網址參數（全部是靜態姿勢，截圖可重現）：
+//   w=ar  wskin=stock  skin=recruit  team=0|1
+//   ads=0..1   reload=0..1   draw=0..1   moving=0..1&walk=相位   crouch=1   dx/dy=滑鼠位移   dip / vy
+//   fire=秒（開槍後過了幾秒）&big=1    melee=秒&heavy=1    throw=秒&nade=he|flash|smoke|molotov
+//   lit=0..1（有沒有被太陽照到）   yaw / pitch = 世界鏡頭的角度（弧度，檢查光照有沒有跟著轉）   scoped=1   loaded=0
+//   cam=x,y,z&look=x,y,z   改從旁邊看（鏡頭座標，檢查手有沒有握好）   cross=1 畫面中心畫十字   envtest=1 檢查環境反射的方向
+//   live=1  即時模式：滑鼠移動 = 晃動，左鍵開槍，R 換彈，右鍵瞄準，F 揮刀，G 丟
+import * as THREE from 'three';
+import { ViewModel } from '../js/viewmodel.js';
+import { WEAPONS } from '../js/weapons.js';
+import { TEAM } from '../js/config.js';
+
+// 固定亂數，火光角度、彈殼方向每次都一樣
+{ let a = 12345; Math.random = () => { a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+const qs = new URLSearchParams(location.search), num = (k, d) => (qs.has(k) && qs.get(k) !== '' ? +qs.get(k) : d);
+const w = qs.get('w') || 'ar', wskin = qs.get('wskin') || 'stock', skin = qs.get('skin') || 'recruit', team = num('team', 0), live = qs.get('live') === '1';
+if (qs.get('cross') === '1') document.getElementById('cross').style.display = 'block';
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05;
+document.body.appendChild(renderer.domElement);
+
+// 假世界：灰色漸層天空、地板、幾個模糊的方塊（看得出槍有沒有擋到視線）
+const scene = new THREE.Scene(), cam = new THREE.PerspectiveCamera(78, 1, 0.05, 300);
+cam.rotation.order = 'YXZ'; cam.position.set(0, 1.6, 0); cam.rotation.set(num('pitch', 0), num('yaw', 0.5), 0);
+const SUN = new THREE.Vector3(0.45, 0.7, 0.55).normalize(), SKY = new THREE.Color().setRGB(0.62, 0.7, 0.82), GROUND = new THREE.Color().setRGB(0.4, 0.37, 0.33);
+{
+  const geo = new THREE.SphereGeometry(200, 32, 16), col = new Float32Array(geo.attributes.position.count * 3), c = new THREE.Color();
+  for (let i = 0; i < geo.attributes.position.count; i++) {
+    const h = geo.attributes.position.getY(i) / 200;
+    if (h > 0) c.setRGB(0.6, 0.62, 0.64).lerp(new THREE.Color().setRGB(0.3, 0.38, 0.5), Math.pow(h, 0.5)); else c.setRGB(0.6, 0.62, 0.64).lerp(new THREE.Color().setRGB(0.26, 0.25, 0.23), Math.min(1, -h * 5));
+    col.set([c.r, c.g, c.b], i * 3);
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  scene.add(new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, fog: false })));
+  const sunDisc = new THREE.Mesh(new THREE.SphereGeometry(14, 12, 8), new THREE.MeshBasicMaterial({ color: new THREE.Color(30, 28, 24) })); sunDisc.position.copy(SUN).multiplyScalar(190); scene.add(sunDisc);
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), new THREE.MeshStandardMaterial({ color: 0x6f6d68, roughness: 1 })); floor.rotation.x = -Math.PI / 2; scene.add(floor);
+  const m = new THREE.MeshStandardMaterial({ color: 0x8a8782, roughness: 1 });
+  for (let i = 0; i < 26; i++) { const a = i * 2.4, r = 9 + ((i * 7) % 13), b = new THREE.Mesh(new THREE.BoxGeometry(2 + (i % 3), 1.5 + (i % 5), 2 + (i % 2)), m); b.position.set(Math.sin(a) * r, b.geometry.parameters.height / 2, Math.cos(a) * r); scene.add(b); }
+  scene.add(new THREE.HemisphereLight(SKY, GROUND, 1.1));
+  const sun = new THREE.DirectionalLight(0xfff1dc, 2.6); sun.position.copy(SUN).multiplyScalar(50); scene.add(sun);
+}
+const envMap = new THREE.PMREMGenerator(renderer).fromScene(scene, 0, 0.1, 400).texture;
+scene.environment = envMap;
+
+const view = window.view = new ViewModel();
+view.setEnv({ sunDir: SUN, sunColor: 0xfff1dc, sunIntensity: 2.6, skyColor: SKY, groundColor: GROUND, ambient: 1.1, envMap: qs.get('noenv') === '1' ? null : envMap });
+view.setLook(skin, TEAM && TEAM[team] !== undefined ? TEAM[team] : 0xff8a2a);
+view.setWeapon(w, wskin);
+if (qs.has('hip')) view.hip = qs.get('hip').split(',').map(Number);   // hip=x,y,z,俯仰,偏航,側傾：試腰射位置用
+if (qs.has('vfov')) { view.camera.fov = num('vfov', 54); view.camera.updateProjectionMatrix(); }
+
+// 環境反射方向的檢查：世界裡放一顆鏡面球，持槍場景裡在同一個畫面位置也放一顆，兩顆反射要一樣
+if (qs.get('envtest') === '1') {
+  const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 1, roughness: 0.05 });
+  const a = new THREE.Mesh(new THREE.SphereGeometry(0.12, 32, 16), mat); cam.updateMatrixWorld(); a.position.set(-0.2, 0.12, -0.8).applyMatrix4(cam.matrixWorld); scene.add(a);
+  const b = new THREE.Mesh(new THREE.SphereGeometry(0.12 * 0.5, 32, 16), mat); b.position.set(0.2 * 0.5, 0.12 * 0.5, -0.8 * 0.5); view.scene.add(b);
+}
+
+const S = {
+  ads: num('ads', 0), walkPhase: num('walk', 0), moving: num('moving', 0), reload: num('reload', 0), draw: num('draw', 1), dx: num('dx', 0), dy: num('dy', 0),
+  scoped: qs.get('scoped') === '1', dip: num('dip', 0), vy: num('vy', 0), crouch: qs.get('crouch') === '1', lit: num('lit', 1), camQuat: cam.quaternion,
+};
+if (qs.has('loaded')) S.loaded = qs.get('loaded') !== '0';
+function resize() { const W = innerWidth, H = innerHeight; renderer.setSize(W, H, false); cam.aspect = W / H; cam.updateProjectionMatrix(); view.setAspect(W / H); }
+function draw() {
+  renderer.autoClear = true; renderer.render(scene, cam);
+  if (qs.has('cam')) {   // 從旁邊看：直接搬動持槍場景的鏡頭
+    const p = qs.get('cam').split(',').map(Number), l = (qs.get('look') || '0.05,-0.12,-0.45').split(',').map(Number);
+    view.camera.position.set(p[0], p[1], p[2]); view.camera.lookAt(l[0], l[1], l[2]); view.camera.fov = num('fov', 40); view.camera.updateProjectionMatrix();
+  }
+  renderer.autoClear = false; view.render(renderer);
+}
+resize(); addEventListener('resize', () => { resize(); draw(); });
+const step = (t, dt = 1 / 240) => { for (let n = Math.round(t / dt); n > 0; n--) view.update(dt, S); };
+cam.updateMatrixWorld();
+
+if (!live) {
+  step(1.5, 1 / 60);                                           // 先讓晃動、蹲下那些平滑值收斂
+  if (qs.has('fire')) { view.fire(qs.get('big') === '1' || !!(WEAPONS[w] && (WEAPONS[w].pellets > 1 || WEAPONS[w].dmg >= 50))); step(num('fire', 0)); }
+  if (qs.has('melee')) { view.melee(qs.get('heavy') === '1'); step(num('melee', 0)); }
+  if (qs.has('throw')) { view.throw(qs.get('nade') || 'he'); step(num('throw', 0)); }
+  view.update(0, S);
+  draw();
+  document.getElementById('info').textContent = [...qs].map(([k, v]) => `${k}=${v}`).join('  ') || 'w=ar';
+  window.__ready = true;
+} else {
+  // 即時模式
+  let last = performance.now(), ads = 0, wantAds = false, rl = 0, rlDur = 0, walk = 0; const keys = {};
+  addEventListener('mousemove', (e) => { S.dx += e.movementX; S.dy += e.movementY; cam.rotation.y -= e.movementX * 0.002; cam.rotation.x = Math.max(-1.4, Math.min(1.4, cam.rotation.x - e.movementY * 0.002)); });
+  addEventListener('mousedown', (e) => { if (e.button === 0) view.fire(!!(WEAPONS[w] && (WEAPONS[w].pellets > 1 || WEAPONS[w].dmg >= 50))); if (e.button === 2) wantAds = true; });
+  addEventListener('mouseup', (e) => { if (e.button === 2) wantAds = false; });
+  addEventListener('contextmenu', (e) => e.preventDefault());
+  addEventListener('keydown', (e) => { keys[e.code] = true; if (e.code === 'KeyR' && !rl) { rl = 1e-4; rlDur = (WEAPONS[w] && WEAPONS[w].reload) || 2; } if (e.code === 'KeyF') view.melee(e.shiftKey); if (e.code === 'KeyG') view.throw(['he', 'flash', 'smoke', 'molotov'][(Math.random() * 4) | 0]); });
+  addEventListener('keyup', (e) => { keys[e.code] = false; });
+  renderer.domElement.addEventListener('click', () => renderer.domElement.requestPointerLock());
+  const loop = (now) => {
+    const dt = Math.min(0.05, (now - last) / 1000); last = now;
+    ads += ((wantAds ? 1 : 0) - ads) * Math.min(1, dt * 12); S.ads = ads;
+    if (rl) { rl += dt / rlDur; if (rl >= 1) rl = 0; } S.reload = rl;
+    S.moving = keys.KeyW ? 1 : 0; if (S.moving) walk += dt * 9; S.walkPhase = walk; S.crouch = !!keys.ControlLeft;
+    cam.updateMatrixWorld(); view.update(dt, S); S.dx = S.dy = 0; draw();
+    requestAnimationFrame(loop);
+  };
+  requestAnimationFrame(loop); window.__ready = true;
+}
+</script>
+</body>
+</html>

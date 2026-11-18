@@ -1,11 +1,13 @@
 // 可自訂的按鍵。左鍵開火、右鍵瞄準是固定的；這裡的「瞄準」是額外再給一個鍵（預設左 Shift）。
 export const DEFAULT_BINDS = {
   fwd: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD', jump: 'Space', crouch: 'KeyC', ads: 'ShiftLeft',
-  reload: 'KeyR', primary: 'Digit1', secondary: 'Digit2', swap: 'KeyQ', he: 'KeyG', flash: 'KeyF', smoke: 'KeyV',
+  reload: 'KeyR', primary: 'Digit1', secondary: 'Digit2', knife: 'Digit3', swap: 'KeyQ', he: 'KeyG', flash: 'KeyF', smoke: 'KeyV', molotov: 'KeyX',
+  spray: 'KeyT', emote: 'KeyZ', buy: 'KeyB', talk: 'KeyK',
 };
 export const BIND_LABELS = {
   fwd: '前進', back: '後退', left: '往左', right: '往右', jump: '跳', crouch: '蹲下', ads: '瞄準',
-  reload: '換彈', primary: '主武器', secondary: '副武器', swap: '切換武器', he: '丟手榴彈', flash: '丟閃光彈', smoke: '丟煙霧彈',
+  reload: '換彈', primary: '主武器', secondary: '副武器', knife: '刀', swap: '切回上一把', he: '丟手榴彈', flash: '丟閃光彈', smoke: '丟煙霧彈', molotov: '丟燃燒瓶',
+  spray: '噴漆', emote: '表情動作', buy: '熱身時開商店', talk: '語音（按住說話）',
 };
 export const BIND_ACTIONS = Object.keys(DEFAULT_BINDS);
 

@@ -40,6 +40,7 @@ export class Bot {
   recv(msg) {
     const [type, d] = msg;
     if (type === 'gs') this.onGs(d);
+    else if (type === 'ev') { if (d.t === 'respawn') this._respawn(); }
     else if (type === 'st') {
       this.tx = d[0]; this.ty = d[1]; this.tz = d[2]; this.tcr = !!(d[6] & 1);
       if (d[6] & 2) { this.gx = d[0]; this.gy = d[1]; this.gz = d[2]; }
@@ -72,7 +73,8 @@ export class Bot {
       this.weapon = lo.p || lo.s;
       this.send('auth', { t: 'loadout', ...lo });
       setTimeout(() => this.send('auth', { t: 'ready', v: true }), 700);
-    } else if (gs.phase === 'countdown') {
+    } else if (gs.phase === 'warmup') { this.round = gs.round; this._respawn(); }
+    else if (gs.phase === 'countdown') {
       this.round = gs.round;
       const sp = MAPS[gs.map].spawns;
       this.body.spawn(sp[(1 + gs.round) % 2]);
@@ -82,6 +84,18 @@ export class Bot {
       this.ammo = Math.round(WEAPONS[this.weapon].mag * this.mods.mag);
       this.nextShot = 0; this.blindUntil = 0; this.noLos = 0; this.holdT = 0; this.path = null; this.planAt = 0; this.stuckN = 0; this.breachT = 0; this.chkAt = 0;
     }
+  }
+
+  // 熱身模式的重生：挑離玩家比較遠的出生點，隨機換一把槍
+  _respawn() {
+    const gs = this.gs; if (!gs || !MAPS[gs.map]) return;
+    const sp = MAPS[gs.map].spawns, d = (s) => Math.hypot(s.x - this.tx, s.z - this.tz);
+    this.body.spawn(d(sp[0]) > d(sp[1]) ? sp[0] : sp[1]);
+    const list = ['ar', 'smg', 'shotgun', 'dmr', 'pistol'];
+    this.weapon = list[(Math.random() * list.length) | 0];
+    this.mods = buffMods([]); this.body.maxAirJumps = 0;
+    this.ammo = WEAPONS[this.weapon].mag;
+    this.nextShot = performance.now() + 900; this.blindUntil = 0; this.noLos = 0; this.holdT = 0; this.path = null; this.planAt = 0; this.stuckN = 0; this.breachT = 0; this.chkAt = 0;
   }
 
   // 被閃光彈閃到：看得到它、而且面向它才算，期間不會開槍
@@ -126,9 +140,9 @@ export class Bot {
     const gs = this.gs;
     if (!gs) return;
     const ph = gs.phase;
-    if (ph !== 'countdown' && ph !== 'playing' && ph !== 'roundEnd') return;
+    if (ph !== 'countdown' && ph !== 'playing' && ph !== 'roundEnd' && ph !== 'warmup') return;
     const me = gs.p[1], foe = gs.p[0], b = this.body, def = WEAPONS[this.weapon], L = this.L;
-    if (ph === 'playing' && me.al && !L.still) {
+    if ((ph === 'playing' || ph === 'warmup') && me.al && !L.still) {
       const ex = b.pos.x, ey = b.pos.y + PLAYER.EYE, ez = b.pos.z;
       let dx = this.tx - ex, dy = this.ty + (this.tcr ? 0.65 : 1.15) - ey, dz = this.tz - ez;
       const dist = Math.hypot(dx, dy, dz) || 1;

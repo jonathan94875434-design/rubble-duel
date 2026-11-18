@@ -10,13 +10,15 @@ export class Net {
     this.h = {}; this.isHost = false; this.connected = false; this.mode = null;
     this.peer = null; this.conn = null; this.bc = null; this.bot = null; this.ping = 0; this.lastRecv = 0;
     this._pingTimer = null;
+    this.sideBot = null; this.hostId = '';   // sideBot：房主等朋友時陪練的機器人（朋友一連進來就換掉）
   }
   on(type, fn) { this.h[type] = fn; }
   emit(type, data) { const f = this.h[type]; if (f) f(data); }
 
   send(type, data) {
-    if (!this.connected) return;
     const msg = [type, data];
+    if (this.sideBot) { const b = this.sideBot; setTimeout(() => this.sideBot === b && b.recv(msg), 0); return; }
+    if (!this.connected) return;
     if (this.mode === 'peer') { if (this.conn && this.conn.open) this.conn.send(msg); }
     else if (this.mode === 'local') this.bc.postMessage({ from: this.isHost ? 'h' : 'g', m: msg });
     else if (this.mode === 'bot') setTimeout(() => this.bot && this.bot.recv(msg), 0);
@@ -78,7 +80,7 @@ export class Net {
   join(code, local) {
     this.isHost = false;
     if (local) return this._joinLocal(code);
-    this.mode = 'peer';
+    this.mode = 'peer'; this.hostId = NET.PREFIX + code;
     return new Promise((resolve, reject) => {
       let done = false;
       const fail = (m) => { if (!done) { done = true; reject(new Error(m)); } };
@@ -140,6 +142,12 @@ export class Net {
     this._open();
   }
 
+  // 房主一個人熱身：先塞一個機器人當對手，真人連進來時由 main.js 把它拿掉
+  attachBot(bot) { this.sideBot = bot; bot.link = (msg) => setTimeout(() => this.sideBot === bot && this.emit(msg[0], msg[1]), 0); }
+  detachBot() { this.sideBot = null; }
+  // 對方的 PeerJS 代號（語音通話要用）
+  remoteId() { return this.mode !== 'peer' ? '' : this.isHost ? (this.conn ? this.conn.peer : '') : this.hostId; }
+
   close() {
     clearInterval(this._pingTimer);
     if (this.connected && this.mode === 'peer' && this.conn && this.conn.open) { try { this.conn.send(['bye']); } catch { /* 忽略 */ } }
@@ -147,6 +155,6 @@ export class Net {
     if (this.bc) { try { this.bc.postMessage({ sys: 'bye', from: this.isHost ? 'h' : 'g' }); this.bc.close(); } catch { /* 忽略 */ } this.bc = null; }
     if (this.conn) { try { this.conn.close(); } catch { /* 忽略 */ } this.conn = null; }
     if (this.peer) { try { this.peer.destroy(); } catch { /* 忽略 */ } this.peer = null; }
-    this.bot = null; this.mode = null;
+    this.bot = null; this.sideBot = null; this.mode = null;
   }
 }
