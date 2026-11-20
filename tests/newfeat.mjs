@@ -1,12 +1,12 @@
 // 新功能測試（單人）：穿牆、刀、燃燒瓶、傷害報告、擊殺回放、戰績、噴漆、表情、小地圖、準星、地圖編輯器
 import puppeteer from 'puppeteer-core';
-import { load } from './load.mjs';
+import { load, CHROME } from './load.mjs';
 import { mkdirSync } from 'node:fs';
 const OUT = process.argv[2] || 'shots';
 mkdirSync(OUT, { recursive: true });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const BASE = (process.env.BASE || 'http://localhost:8765/').replace(/\/?$/, '/');
-const browser = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: 'new',
+const browser = await puppeteer.launch({ executablePath: CHROME, headless: 'new',
   args: ['--window-size=1280,760', '--ignore-gpu-blocklist', '--enable-unsafe-swiftshader', '--mute-audio'], defaultViewport: { width: 1280, height: 760 }, protocolTimeout: 90000 });
 const errs = [];
 let fails = 0;

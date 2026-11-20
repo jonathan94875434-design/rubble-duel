@@ -1,12 +1,12 @@
 // 練習模式：逐把槍試射、物理檢查、讓 bot 殺玩家走完「輸→選強化→下一局」
 import puppeteer from 'puppeteer-core';
-import { load, reload } from './load.mjs';
+import { load, reload, CHROME } from './load.mjs';
 import { mkdirSync } from 'node:fs';
 const OUT = process.argv[2] || 'shots';
 mkdirSync(OUT, { recursive: true });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const BASE = (process.env.BASE || 'http://localhost:8765/').replace(/\/?$/, '/'); // 要測線上版就設 BASE=網址
-const browser = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: 'new',
+const browser = await puppeteer.launch({ executablePath: CHROME, headless: 'new',
   args: ['--window-size=1280,760', '--ignore-gpu-blocklist', '--enable-unsafe-swiftshader'], defaultViewport: { width: 1280, height: 760 }, protocolTimeout: 40000 });
 const page = await browser.newPage();
 const errs = [];

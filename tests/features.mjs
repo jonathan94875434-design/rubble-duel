@@ -1,12 +1,12 @@
 // 新功能測試：身法物理、Shift 瞄準、機器人尋路（三張地圖）、地圖輪換
 import puppeteer from 'puppeteer-core';
-import { load, reload } from './load.mjs';
+import { load, reload, CHROME } from './load.mjs';
 import { mkdirSync } from 'node:fs';
 const OUT = process.argv[2] || 'shots';
 mkdirSync(OUT, { recursive: true });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const BASE = (process.env.BASE || 'http://localhost:8765/').replace(/\/?$/, '/');
-const browser = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: 'new',
+const browser = await puppeteer.launch({ executablePath: CHROME, headless: 'new',
   args: ['--window-size=1280,760', '--ignore-gpu-blocklist', '--enable-unsafe-swiftshader'], defaultViewport: { width: 1280, height: 760 }, protocolTimeout: 90000 });
 const errs = [];
 const ok = (name, cond, extra = '') => console.log(`${cond ? 'PASS' : 'FAIL'}  ${name} ${extra}`);

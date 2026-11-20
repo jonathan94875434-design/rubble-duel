@@ -2,6 +2,7 @@
 // 用法：node shot-character.mjs [關鍵字 ...]   只拍檔名含關鍵字的（不給 = 全部）；加 --nogame 跳過遊戲本體那一段
 // 圖存在 tests/shots/c-*.png
 import puppeteer from 'puppeteer-core';
+import { CHROME } from './load.mjs';
 import { mkdirSync } from 'node:fs';
 const OUT = 'shots';
 mkdirSync(OUT, { recursive: true });
@@ -52,7 +53,7 @@ const SHOTS = {
   'skin-recruit-blue': 'skin=recruit&team=1&pose=idle&t=0.4&view=front&zoom=1.5',
 };
 
-const browser = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: 'new',
+const browser = await puppeteer.launch({ executablePath: CHROME, headless: 'new',
   args: ['--window-size=1280,760', '--ignore-gpu-blocklist', '--enable-unsafe-swiftshader'], defaultViewport: { width: 1280, height: 760 }, protocolTimeout: 60000 });
 const page = await browser.newPage();
 const errs = [];

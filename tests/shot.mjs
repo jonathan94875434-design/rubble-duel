@@ -3,14 +3,15 @@
 // 例：node shot.mjs plaza high "__game.setMap('plaza')" 1500
 // 環境變數 GPU=1 → 用真的顯示卡算（比較快，畫面也跟玩家看到的一樣）
 import puppeteer from 'puppeteer-core';
+import { CHROME, ANGLE } from './load.mjs';
 import { mkdirSync } from 'node:fs';
 const [name = 'shot', quality = 'high', js = '', wait = '1500'] = process.argv.slice(2);
 mkdirSync('shots', { recursive: true });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const BASE = (process.env.BASE || 'http://localhost:8765/').replace(/\/?$/, '/');
 const W = +(process.env.W || 1280), H = +(process.env.H || 720);
-const args = [`--window-size=${W},${H}`, '--ignore-gpu-blocklist', ...(process.env.GPU ? ['--use-angle=metal', '--enable-gpu'] : ['--enable-unsafe-swiftshader'])];
-const browser = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: 'new', args, defaultViewport: { width: W, height: H }, protocolTimeout: 120000 });
+const args = [`--window-size=${W},${H}`, '--ignore-gpu-blocklist', ...(process.env.GPU ? ['--use-angle=' + ANGLE, '--enable-gpu'] : ['--enable-unsafe-swiftshader'])];
+const browser = await puppeteer.launch({ executablePath: CHROME, headless: 'new', args, defaultViewport: { width: W, height: H }, protocolTimeout: 120000 });
 const page = await browser.newPage();
 const errs = [];
 page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') errs.push(m.text().slice(0, 600)); });

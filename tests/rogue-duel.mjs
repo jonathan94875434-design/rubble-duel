@@ -1,7 +1,7 @@
 // Roguelike 模式的雙人同步：選卡要等自己選完才公開對手的、技能效果在兩邊都看得到、地形改動兩邊一致
 // 用法：node rogue-duel.mjs <截圖資料夾> [peer]
 import puppeteer from 'puppeteer-core';
-import { load } from './load.mjs';
+import { load, CHROME } from './load.mjs';
 import { mkdirSync } from 'node:fs';
 const OUT = process.argv[2] || 'shots';
 mkdirSync(OUT, { recursive: true });
@@ -9,7 +9,7 @@ const PEER = process.argv[3] === 'peer';
 const Q = PEER ? 'nolock=1' : 'local=1&nolock=1';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const BASE = (process.env.BASE || 'http://localhost:8765/').replace(/\/?$/, '/');
-const browser = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: 'new',
+const browser = await puppeteer.launch({ executablePath: CHROME, headless: 'new',
   args: ['--window-size=1100,680', '--ignore-gpu-blocklist', '--enable-unsafe-swiftshader', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows'],
   defaultViewport: { width: 1100, height: 680 }, protocolTimeout: 60000 });
 const errs = [];

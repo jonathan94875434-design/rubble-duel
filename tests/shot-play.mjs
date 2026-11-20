@@ -3,13 +3,13 @@
 // 清單的每一項：{ n: 檔名, js: 要執行的程式, wait: 等幾毫秒 }
 import puppeteer from 'puppeteer-core';
 import { mkdirSync } from 'node:fs';
-import { load } from './load.mjs';
+import { load, CHROME, ANGLE } from './load.mjs';
 const [prefix = 'vm', map = 'plaza', listJson = '[]', quality = 'high'] = process.argv.slice(2);
 mkdirSync('shots', { recursive: true });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const BASE = (process.env.BASE || 'http://localhost:8765/').replace(/\/?$/, '/');
-const browser = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: 'new',
-  args: ['--window-size=1280,720', '--ignore-gpu-blocklist', '--use-angle=metal', '--enable-gpu', '--mute-audio'], defaultViewport: { width: 1280, height: 720 }, protocolTimeout: 120000 });
+const browser = await puppeteer.launch({ executablePath: CHROME, headless: 'new',
+  args: ['--window-size=1280,720', '--ignore-gpu-blocklist', '--use-angle=' + ANGLE, '--enable-gpu', '--mute-audio'], defaultViewport: { width: 1280, height: 720 }, protocolTimeout: 120000 });
 const page = await browser.newPage();
 const errs = [];
 page.on('console', (m) => { if (m.type() === 'error') errs.push(m.text().slice(0, 500)); });

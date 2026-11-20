@@ -1,7 +1,7 @@
 // 新功能測試（雙人）：熱身、陪練機器人讓位、自製地圖同步、噴漆／表情／火焰同步、擊殺回放、語音
 // 用法：node warm.mjs <截圖資料夾> [peer]　（peer = 走真的 PeerJS 連線，才測得到語音）
 import puppeteer from 'puppeteer-core';
-import { load } from './load.mjs';
+import { load, CHROME } from './load.mjs';
 import { mkdirSync } from 'node:fs';
 const OUT = process.argv[2] || 'shots';
 mkdirSync(OUT, { recursive: true });
@@ -9,7 +9,7 @@ const PEER = process.argv[3] === 'peer';
 const Q = PEER ? 'nolock=1' : 'local=1&nolock=1';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const BASE = (process.env.BASE || 'http://localhost:8765/').replace(/\/?$/, '/');
-const browser = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: 'new',
+const browser = await puppeteer.launch({ executablePath: CHROME, headless: 'new',
   args: ['--window-size=1100,680', '--ignore-gpu-blocklist', '--enable-unsafe-swiftshader', '--mute-audio', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows',
     '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'],
   defaultViewport: { width: 1100, height: 680 }, protocolTimeout: 60000 });

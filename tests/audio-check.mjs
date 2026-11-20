@@ -3,9 +3,10 @@
 // 再加上：1000rpm 連發壓力測試、距離遞減、各類槍的頻譜差異、循環音與環境音的停止、節點有沒有洩漏、遊戲本體能不能開機。
 //   cd tests && node audio-check.mjs          （要先有本機伺服器 http://localhost:8765/；測線上版就設 BASE=網址）
 import puppeteer from 'puppeteer-core';
+import { CHROME } from './load.mjs';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const BASE = (process.env.BASE || 'http://localhost:8765/').replace(/\/?$/, '/');
-const browser = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: 'new',
+const browser = await puppeteer.launch({ executablePath: CHROME, headless: 'new',
   args: ['--ignore-gpu-blocklist', '--enable-unsafe-swiftshader', '--autoplay-policy=no-user-gesture-required', '--mute-audio'], protocolTimeout: 300000 });
 let fails = 0;
 const ok = (name, cond, extra = '') => { if (!cond) fails++; console.log(`${cond ? 'PASS' : 'FAIL'}  ${name} ${extra}`); };

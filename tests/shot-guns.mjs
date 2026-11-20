@@ -4,12 +4,13 @@
 //   node shot-guns.mjs one <檔名> <網址（dev/ 之後的部分）>   只拍一張，例：one t "viewmodel.html?w=ar&reload=0.4"
 //   node shot-guns.mjs boot       只檢查遊戲本體開得起來、沒有錯誤
 import puppeteer from 'puppeteer-core';
+import { CHROME } from './load.mjs';
 import { mkdirSync } from 'node:fs';
 const [mode = 'all', a1, a2] = process.argv.slice(2);
 mkdirSync('shots', { recursive: true });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const BASE = (process.env.BASE || 'http://localhost:8765/').replace(/\/?$/, '/');
-const browser = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: 'new',
+const browser = await puppeteer.launch({ executablePath: CHROME, headless: 'new',
   args: ['--window-size=1280,760', '--ignore-gpu-blocklist', '--enable-unsafe-swiftshader'], defaultViewport: { width: 1280, height: 760 }, protocolTimeout: 120000 });
 const errs = [];
 const page = await browser.newPage();
