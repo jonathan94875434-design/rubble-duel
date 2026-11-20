@@ -224,7 +224,7 @@ export class Horde {
     if (!p) return null;
     const body = new Player(g.world);
     body.spawn({ x: p.x, y: p.y, z: p.z, yaw: Math.random() * 6.283 });
-    const wid = d.w[(Math.random() * d.w.length) | 0], wd = WEAPONS[wid] || null;
+    const wid = d.w[(Math.random() * d.w.length) | 0], wd = WEAPONS[wid] && !WEAPONS[wid].melee ? WEAPONS[wid] : null;   // 拿刀的（自爆兵）不會開槍
     const wave = this.kind === 'defense' ? Math.max(1, this.waveN) : 1;
     const hp = Math.round(d.hp * (this.kind === 'defense' ? 1 + 0.07 * (wave - 1) : 1));
     const m = {
@@ -397,9 +397,14 @@ export class Horde {
       if (d.boom) {                                              // 自爆兵：衝向最近的人（8 公尺內看得到）或據點，貼上去就炸
         const go = T && tdist < 8 ? T : null, gx = go ? go.x : c[0], gy = go ? go.y : c[1], gz = go ? go.z : c[2];
         const dd = Math.hypot(gx - ex, gy + 1 - (b.pos.y + 1), gz - ez);
-        if (dd < 2.3) { this._boom(m); return; }
+        m.nearT = dd < 3.6 ? (m.nearT || 0) + dt : 0;
+        if (dd < 2.6 || m.nearT > 1.2) { this._boom(m); return; }       // 貼上去就炸；在旁邊被小台階卡住超過一秒也直接炸
         if (dd < 9 && now >= m.beepAt) { m.beepAt = now + Math.max(120, dd * 70); const o = this.views.get(m.id); if (o) o.v.hitFlash(); }
         if (dd < 3.5) { wx = gx - ex; wz = gz - ez; } else { m.gx = gx; m.gy = gy; m.gz = gz; follow = true; }
+        if (m.breachT > 0 || (m.stuck >= 2 && b.onGround)) {                // 被牆（例如沙包牆）擋住過不去：直接在牆邊炸開
+          const fx = -Math.sin(b.yaw), fz = -Math.cos(b.yaw), h = g.world.raycast(ex, b.pos.y + 0.9, ez, fx, 0, fz, 1.6);
+          if (h && !h.oob && BLOCK[h.type].hp !== Infinity) { this._boom(m); return; }
+        }
       } else if (T && tdist < d.range && (m.def !== MOBS.rusher || tdist < 16)) {
         strafeHere(d.keep ? (tdist > d.keep ? 0.6 : 0) : tdist > 14 ? 0.8 : tdist < 5 ? -0.5 : 0.1);
       } else {

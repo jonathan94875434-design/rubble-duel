@@ -128,8 +128,14 @@ await A.evaluate(() => {
     g.player.spawn({ x, y: q.y, z, yaw: Math.atan2(dx, dz) }); return;
   }
 });
-await sleep(4000);
-st = await A.evaluate(() => { const m = __game.horde.mobs.find((x) => x.alive && x.vis[0]); return m ? { off: Math.hypot(m.body.pos.x - m.post.x, m.body.pos.z - m.post.z), moved: Math.hypot(m.body.pos.x - m.post.x, m.body.pos.z - m.post.z) > 0.2 || m.body.speed2d() > 0.5 } : null; });
+// 等到有機器人看到你、開始左右閃；接下來 2 秒記下它離原位最遠多遠
+await until(A, () => __game.horde.mobs.some((m) => m.alive && m.vis[0] && m.body.speed2d() > 0.5), null, 10000);
+st = await A.evaluate(async () => {
+  const m = __game.horde.mobs.find((x) => x.alive && x.vis[0]); if (!m) return null;
+  let off = 0, moved = false;
+  for (let i = 0; i < 20; i++) { off = Math.max(off, Math.hypot(m.body.pos.x - m.post.x, m.body.pos.z - m.post.z)); moved = moved || m.body.speed2d() > 0.5; await new Promise((r) => setTimeout(r, 100)); }
+  return { off, moved };
+});
 ok('「定點左右閃」：看到你會左右閃，但不會離開原位兩公尺以上', st && st.moved && st.off < 2.4, JSON.stringify(st));
 
 // 時間到：結算
@@ -298,8 +304,10 @@ await B.evaluate(() => {
     g.player.spawn({ x, y: m.y, z, yaw: Math.atan2(dx, dz) }); return;
   }
 });
+const placed = await B.evaluate(() => [__game.player.pos.x, __game.player.pos.z].map((v) => +v.toFixed(1)));
 const bh = await until(B, () => __game.gs.p[1].hp < 100 || __game.gs.hz.d[1] > 0, null, 25000);
-ok('機器人也會開槍打訪客', bh);
+const diag = bh ? '' : JSON.stringify({ placed, host: await A.evaluate(() => { const h = __game.horde; return { tg: (h.tg || []).map((t) => [t.i, t.al, +t.x.toFixed(1), +t.z.toFixed(1)]), p1: [__game.authority.players[1].alive, __game.authority.players[1].inv > Date.now()], hz: [__game.gs.hz.st, __game.gs.hz.core], mobs: h.mobs.filter((m) => m.alive).map((m) => [m.id, m.tgt, m.vis.map(Number).join(''), +m.body.pos.x.toFixed(1), +m.body.pos.z.toFixed(1), m.nextShot > performance.now() + 1e6 ? 'frozen' : '']) }; }) });
+ok('機器人也會開槍打訪客', bh, diag);
 await B.screenshot({ path: OUT + '/hz9-coop-guest.png' });
 // 訪客蓋沙包牆 → 房主那邊也有；機器人打爛的掩體兩邊一樣
 await A.evaluate(() => { const p = __game.authority.players[1]; p.inv = Date.now() + 1e9; if (!p.alive) p.respawnAt = 0; });
