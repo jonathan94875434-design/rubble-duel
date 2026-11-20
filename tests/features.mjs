@@ -189,7 +189,7 @@ for (const [map, spots] of [
 {
   const page = await open({ pmap: 'plaza', bot: 'dummy' });
   await page.evaluate(() => localStorage.removeItem('rubble.binds'));
-  await page.click('#btn-gear'); await sleep(200);
+  await page.click('#btn-settings'); await sleep(200);
   ok('對局外可以開設定', await page.evaluate(() => !document.getElementById('pause').classList.contains('hidden') && document.getElementById('pause-title').textContent === '設定'));
   await page.click('.kb[data-a="crouch"]'); await page.keyboard.press('KeyX'); await sleep(150);
   await page.click('.kb[data-a="he"]'); await page.keyboard.press('KeyW'); await sleep(150);   // 跟「前進」撞鍵 → 應該互換

@@ -31,20 +31,26 @@ const until = async (page, fn, arg, ms = 15000) => { try { await page.waitForFun
 const hash = (page) => page.evaluate(() => { const t = __game.world.types, h = __game.world.hp; let a = 0, n = 0, s = 0; for (let i = 0; i < t.length; i++) { if (t[i]) { n++; a = (Math.imul(a, 31) + i * t[i]) | 0; s += h[i]; } } return `${n}/${a}/${Math.round(s)}`; });
 
 const A = await mk('A');
-await A.evaluateOnNewDocument(() => { localStorage.setItem('rubble.hzmap', '"plaza"'); localStorage.removeItem('rubble.hzbest'); });
+await A.evaluateOnNewDocument(() => { localStorage.setItem('rubble.hzdef', JSON.stringify({ lv: 'normal', map: 'plaza' })); localStorage.removeItem('rubble.hzdm'); localStorage.removeItem('rubble.hzbest'); });
 await load(A, `${BASE}?nolock=1`);
 
 // ═════════ 死鬥練習 ═════════
-const dm = (cfg) => A.evaluate((cfg) => { __game.leave(); __game.settings.hzdm = { n: 8, beh: 'hunt', atk: true, lv: 'normal', time: 300, ...cfg }; __game.practiceHorde('dm'); }, cfg);
+const dm = (cfg) => A.evaluate((cfg) => { __game.leave(); __game.settings.hzdm = { n: 8, beh: 'hunt', atk: true, lv: 'normal', time: 300, map: 'plaza', ...cfg }; __game.practiceHorde('dm'); }, cfg);
 const alive = () => A.evaluate(() => __game.horde.mobs.filter((m) => m.alive).length);
 const god = (page, on) => page.evaluate((on) => { const a = __game.authority; if (a) for (const p of a.players) p.inv = on ? Date.now() + 1e9 : 0; }, on);
 const dist = () => A.evaluate(() => { const g = __game, p = g.player.pos, ms = g.horde.mobs.filter((m) => m.alive); return ms.reduce((s, m) => s + Math.hypot(m.body.pos.x - p.x, m.body.pos.z - p.z), 0) / Math.max(1, ms.length); });
 
-await A.evaluate(() => { document.getElementById('btn-dm').click(); });
-await sleep(300);
-let st = await A.evaluate(() => ({ scr: !document.getElementById('scr-hz').classList.contains('hidden'), title: document.getElementById('hz-title').textContent, dmOpts: [...document.querySelectorAll('#scr-hz .dmopt')].filter((e) => !e.classList.contains('hidden')).length }));
-ok('主選單「死鬥練習」打開設定畫面（數量、行為、會不會開槍、時間）', st.scr && st.title === '死鬥練習' && st.dmOpts === 4, JSON.stringify(st));
-await A.screenshot({ path: OUT + '/hz1-setup.png' });
+// 主選單：每個模式一張卡片，死鬥和守據點的選項直接在卡片上
+let st = await A.evaluate(() => ({
+  cards: [...document.querySelectorAll('#scr-menu .mode h2')].map((e) => e.textContent),
+  dmSel: document.querySelectorAll('.m-dm select').length, dfSel: document.querySelectorAll('.m-def select').length,
+  dmN: document.getElementById('dm-n').value, dfMap: document.getElementById('df-map').value,
+}));
+ok('主選單分成四張卡片：跟朋友對戰、一對一練習、死鬥練習、守據點；死鬥 6 個選項、守據點 2 個', st.cards.join() === '跟朋友對戰,一對一練習,死鬥練習,守據點' && st.dmSel === 6 && st.dfSel === 2 && st.dmN === '8' && st.dfMap === 'plaza', JSON.stringify(st));
+await A.select('#dm-n', '12'); await A.select('#dm-beh', 'hold');
+st = await A.evaluate(() => ({ s: __game.settings.hzdm, stored: JSON.parse(localStorage.getItem('rubble.hzdm')) }));
+ok('卡片上改的設定會記住', st.s.n === 12 && st.s.beh === 'hold' && st.stored.n === 12, JSON.stringify(st));
+await A.screenshot({ path: OUT + '/hz1-menu.png' });
 
 await dm({ n: 8, beh: 'hunt' });
 await until(A, () => __game.phase === 'horde' && __game.horde.mobs.filter((m) => m.alive).length === 8, null, 8000);
@@ -113,7 +119,15 @@ ok('「定點不動」＋「不開槍」：機器人站著不動、也不會打�
 // 定點左右閃：會動，但不會離開原位太遠
 await dm({ n: 4, beh: 'strafe', atk: false });
 await until(A, () => __game.phase === 'horde' && __game.horde.mobs.filter((m) => m.alive).length === 4, null, 8000);
-await A.evaluate(() => { const g = __game, m = g.horde.mobs[0]; g.player.spawn({ x: m.post.x + 6, y: m.post.y, z: m.post.z, yaw: Math.PI / 2 }); });
+// 玩家站到第一隻機器人看得到的地方（6 公尺外、中間沒有牆、腳下有地）
+await A.evaluate(() => {
+  const g = __game, w = g.world, m = g.horde.mobs.find((x) => x.alive), q = m.post;
+  for (let k = 0; k < 16; k++) {
+    const a = (k / 16) * Math.PI * 2, dx = Math.cos(a), dz = Math.sin(a), x = q.x + dx * 6, z = q.z + dz * 6;
+    if (w.raycast(q.x, q.y + 1.5, q.z, dx, 0, dz, 6.5) || g.player.collides(x, q.y, z) || !g.player.collides(x, q.y - 0.3, z)) continue;
+    g.player.spawn({ x, y: q.y, z, yaw: Math.atan2(dx, dz) }); return;
+  }
+});
 await sleep(4000);
 st = await A.evaluate(() => { const m = __game.horde.mobs.find((x) => x.alive && x.vis[0]); return m ? { off: Math.hypot(m.body.pos.x - m.post.x, m.body.pos.z - m.post.z), moved: Math.hypot(m.body.pos.x - m.post.x, m.body.pos.z - m.post.z) > 0.2 || m.body.speed2d() > 0.5 } : null; });
 ok('「定點左右閃」：看到你會左右閃，但不會離開原位兩公尺以上', st && st.moved && st.off < 2.4, JSON.stringify(st));
@@ -134,7 +148,7 @@ ok('死鬥時間到：結算顯示擊倒數、爆頭，記下最佳紀錄，機�
 await A.screenshot({ path: OUT + '/hz3-dm-end.png' });
 
 // ═════════ 守據點（自己一個人）═════════
-await A.evaluate(() => { __game.leave(); __game.settings.hzlv = 'normal'; __game.practiceHorde('defense'); });
+await A.evaluate(() => { __game.leave(); __game.settings.hzdef = { lv: 'normal', map: 'plaza' }; __game.practiceHorde('defense'); });
 await until(A, () => __game.phase === 'horde' && __game.horde.core, null, 8000);
 await sleep(500);
 st = await A.evaluate(() => {
@@ -173,7 +187,8 @@ const c0 = await A.evaluate(() => __game.gs.hz.core);
 const hit = await until(A, (c0) => __game.gs.hz.core < c0 - 20, c0, 30000);
 ok('機器人會走到據點附近開槍打它', hit, String(c0));
 await A.screenshot({ path: OUT + '/hz5-def-wave.png' });
-// 自爆兵：衝到據點旁邊炸開
+// 自爆兵：衝到據點旁邊炸開（先把這一波的步兵定住不開槍，免得據點在這段時間被打光）
+await A.evaluate(() => { const h = __game.horde; for (const m of h.mobs) if (m.alive) { m.nextShot = Infinity; m.beh = 'hold'; m.post = { x: m.body.pos.x, y: m.body.pos.y, z: m.body.pos.z }; } });
 st = await A.evaluate(() => {
   const h = __game.horde, c = h.core, sp = h._pick((s) => { const d = Math.hypot(s.x - c[0], s.z - c[2]); return d > 5 && d < 9; }, 400);
   const m = h._spawn('bomber', 'core', sp); return { id: m && m.id, core: __game.authority.hz.core };
@@ -240,10 +255,11 @@ await B.click('#btn-join');
 await until(B, () => __game.phase === 'lobby', null, 30000);
 await sleep(500);
 await A.select('#set-map', 'plaza');
-await A.select('#set-mode', 'defense');
+await A.click('#lb-modes .mtile[data-mode="defense"]');
 await sleep(500);
-st = await B.evaluate(() => ({ mode: __game.gs.set.mode, duelHidden: document.querySelector('#scr-lobby .duelopt').classList.contains('hidden'), lv: !document.getElementById('set-hzlv').parentElement.classList.contains('hidden'), n: document.getElementById('set-hzn').parentElement.classList.contains('hidden') }));
-ok('大廳選「守據點」：訪客也看到，對戰的選項收起來、只剩難度', st.mode === 'defense' && st.duelHidden && st.lv && st.n, JSON.stringify(st));
+st = await B.evaluate(() => ({ mode: __game.gs.set.mode, on: document.querySelector('#lb-modes .mtile.on').dataset.mode, dis: [...document.querySelectorAll('#lb-modes .mtile')].filter((e) => e.disabled).length,
+  duelHidden: document.querySelector('#scr-lobby .duelopt').classList.contains('hidden'), lv: !document.getElementById('set-hzlv').parentElement.classList.contains('hidden'), n: document.getElementById('set-hzn').parentElement.classList.contains('hidden') }));
+ok('大廳點「守據點」卡片：訪客也看到亮起來（訪客不能改），對戰的選項收起來、只剩難度', st.mode === 'defense' && st.on === 'defense' && st.dis === 3 && st.duelHidden && st.lv && st.n, JSON.stringify(st));
 await A.click('#btn-start');
 await until(A, () => __game.phase === 'horde', null, 10000); await until(B, () => __game.phase === 'horde', null, 10000);
 await sleep(1500);

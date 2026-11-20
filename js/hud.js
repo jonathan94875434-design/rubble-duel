@@ -15,7 +15,7 @@ import { store } from './util.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const SCREENS = ['menu', 'lobby', 'loadout', 'end', 'locker', 'stats', 'editor', 'hz'];
+const SCREENS = ['menu', 'lobby', 'loadout', 'end', 'locker', 'stats', 'editor'];
 const hex = (n) => '#' + n.toString(16).padStart(6, '0');
 const opts = (list, cur) => list.map(([v, t]) => `<option value="${esc(v)}"${v === cur ? ' selected' : ''}>${esc(t)}</option>`).join('');
 const svg = (d, vb = '0 0 16 16') => `<svg viewBox="${vb}" aria-hidden="true">${d}</svg>`;
@@ -181,8 +181,11 @@ export class Hud {
     const g = this.g, all = this.mapOpts();
     const cur = $('set-map').value || 'random';
     $('set-map').innerHTML = opts([['random', '隨機一張（整場固定）'], ['rotate', '每局輪流換圖'], ...all], cur);
-    const pm = MAPS[g.settings.pmap] ? g.settings.pmap : 'random';
-    $('sel-pmap').innerHTML = opts([['random', '地圖：隨機'], ...all], pm);
+    const pm = MAPS[g.settings.pmap] ? g.settings.pmap : 'random', mm = (k) => (MAPS[g.settings[k].map] ? g.settings[k].map : 'random');
+    $('sel-pmap').innerHTML = opts([['random', '隨機'], ...all], pm);
+    $('dm-map').innerHTML = opts([['random', '隨機'], ...all], mm('hzdm'));
+    $('df-map').innerHTML = opts([['random', '隨機'], ...all], mm('hzdef'));
+    this._hzBest();
     $('ed-src').innerHTML = opts([['', '空地'], ...all], '');
   }
 
@@ -213,7 +216,7 @@ export class Hud {
     $('btn-join').addEventListener('click', () => g.joinGame($('in-code').value));
     $('in-code').addEventListener('keydown', (e) => { if (e.key === 'Enter') g.joinGame($('in-code').value); });
     $('btn-bot').addEventListener('click', () => g.practice());
-    $('sel-bot').innerHTML = opts(Object.keys(BOT_LEVELS).map((k) => [k, '對手：' + BOT_LEVELS[k].name]), g.settings.bot);
+    $('sel-bot').innerHTML = opts(Object.keys(BOT_LEVELS).map((k) => [k, BOT_LEVELS[k].name]), g.settings.bot);
     $('sel-bot').addEventListener('change', (e) => g.setSetting('bot', e.target.value));
     $('sel-pmap').addEventListener('change', (e) => g.setSetting('pmap', e.target.value));
     $('chk-prog').checked = !!g.settings.prog;
@@ -230,9 +233,11 @@ export class Hud {
       try { await navigator.clipboard.writeText(g.inviteLink()); this.toast('邀請連結已複製，貼給朋友吧'); }
       catch { this.toast('複製失敗，請手動告訴朋友房號'); }
     });
-    for (const [id, key] of [['set-target', 'target'], ['set-time', 'roundTime'], ['set-buff', 'buffMode'], ['set-map', 'map'], ['set-mode', 'mode']]) {
+    for (const [id, key] of [['set-target', 'target'], ['set-time', 'roundTime'], ['set-buff', 'buffMode'], ['set-map', 'map']]) {
       $(id).addEventListener('change', (e) => g.changeSettings({ [key]: e.target.value }));
     }
+    // 大廳的模式卡片：房主點了就換
+    document.querySelectorAll('#lb-modes .mtile').forEach((el) => el.addEventListener('click', () => { if (g.net.isHost) { g.sfx.ui(); g.changeSettings({ mode: el.dataset.mode }); } }));
     // 機器人模式的選項（大廳和「自己玩」的設定畫面共用同一份清單）
     const HZ_OPTS = {
       n: [4, 8, 12, 16].map((v) => [String(v), v + ' 個']), beh: Object.entries(HZ_BEH), lv: Object.entries(HZ_LEVELS).map(([k, v]) => [k, v.name]),
@@ -243,19 +248,17 @@ export class Hud {
       $(id).innerHTML = opts(HZ_OPTS[key], '');
       $(id).addEventListener('change', (e) => g.changeSettings({ hz: { [key]: key === 'beh' || key === 'lv' ? e.target.value : +e.target.value } }));
     }
-    for (const [id, key] of [['hz-n', 'n'], ['hz-beh', 'beh'], ['hz-lv', 'lv'], ['hz-time', 'time']]) $(id).innerHTML = opts(HZ_OPTS[key], '');
-    const saveHz = () => {
-      const lv = $('hz-lv').value;
-      g.setSetting('hzdm', { n: +$('hz-n').value, beh: $('hz-beh').value, atk: $('hz-atk').value === '1', lv: this.hzKind === 'dm' ? lv : g.settings.hzdm.lv, time: +$('hz-time').value });
-      if (this.hzKind === 'defense') g.setSetting('hzlv', lv);
-      g.setSetting('hzmap', $('hz-map').value);
-      this._hzBest();
-    };
-    for (const id of ['hz-n', 'hz-beh', 'hz-atk', 'hz-lv', 'hz-time', 'hz-map']) $(id).addEventListener('change', saveHz);
-    $('btn-dm').addEventListener('click', () => { g.sfx.ui(); this.openHz('dm'); });
-    $('btn-def').addEventListener('click', () => { g.sfx.ui(); this.openHz('defense'); });
-    $('btn-hz-back').addEventListener('click', () => { g.sfx.ui(); this.show('menu'); });
-    $('btn-hz-go').addEventListener('click', () => g.practiceHorde(this.hzKind));
+    // 主選單：死鬥練習、守據點各自的卡片
+    const st0 = g.settings;
+    for (const [id, key] of [['dm-n', 'n'], ['dm-beh', 'beh'], ['dm-lv', 'lv'], ['dm-time', 'time'], ['df-lv', 'lv']]) $(id).innerHTML = opts(HZ_OPTS[key], '');
+    $('dm-n').value = String(st0.hzdm.n); $('dm-beh').value = st0.hzdm.beh; $('dm-atk').value = st0.hzdm.atk ? '1' : '0'; $('dm-lv').value = st0.hzdm.lv; $('dm-time').value = String(st0.hzdm.time);
+    $('df-lv').value = st0.hzdef.lv;
+    const saveDm = () => { g.setSetting('hzdm', { n: +$('dm-n').value, beh: $('dm-beh').value, atk: $('dm-atk').value === '1', lv: $('dm-lv').value, time: +$('dm-time').value, map: $('dm-map').value }); this._hzBest(); };
+    const saveDf = () => { g.setSetting('hzdef', { lv: $('df-lv').value, map: $('df-map').value }); this._hzBest(); };
+    for (const id of ['dm-n', 'dm-beh', 'dm-atk', 'dm-lv', 'dm-time', 'dm-map']) $(id).addEventListener('change', saveDm);
+    for (const id of ['df-lv', 'df-map']) $(id).addEventListener('change', saveDf);
+    $('btn-dm').addEventListener('click', () => g.practiceHorde('dm'));
+    $('btn-def').addEventListener('click', () => g.practiceHorde('defense'));
     $('btn-start').addEventListener('click', () => g.startMatch());
     $('btn-warm').addEventListener('click', () => g.startWarmup());
     $('btn-rematch').addEventListener('click', () => g.startMatch());
@@ -326,7 +329,7 @@ export class Hud {
   show(name) {
     for (const s of SCREENS) $('scr-' + s).classList.toggle('hidden', s !== name);
     this.screen = name;
-    $('btn-gear').classList.toggle('hidden', !name || name === 'editor');   // 對局外隨時可以開設定；對戰中用 Esc
+    $('btn-gear').classList.toggle('hidden', !name || name === 'editor' || name === 'menu');   // 對局外隨時可以開設定（主選單上有自己的按鈕）；對戰中用 Esc
     if (!name && this.setMode === 'menu') this._settings(null);
     if (name === 'loadout') this._icons();
   }
@@ -343,25 +346,12 @@ export class Hud {
   menuMsg(t) { $('menu-msg').textContent = t || ''; }
   menuBusy(b) { for (const id of ['btn-host', 'btn-join', 'btn-bot', 'btn-dm', 'btn-def', 'btn-locker', 'btn-editor', 'btn-stats']) $(id).disabled = b; }
 
-  // ───────── 機器人模式（自己玩）的設定畫面 ─────────
-  openHz(kind) {
-    const g = this.g, st = g.settings, dm = kind === 'dm';
-    this.hzKind = kind;
-    $('hz-title').textContent = dm ? '死鬥練習' : '守據點';
-    $('hz-desc').textContent = dm
-      ? '一大群機器人，打倒了會再補。你無限重生，隨時按商店鍵換槍。可以讓它們站著當靶子、左右閃，或是滿地圖找你。'
-      : '守住地圖中間的據點。機器人一波一波從地圖邊緣殺過來，每 5 波來一隻巨人。每一波之間可以選強化卡、換裝備、蓋沙包牆。據點被打爆就結束。';
-    document.querySelectorAll('#scr-hz .dmopt').forEach((el) => el.classList.toggle('hidden', !dm));
-    $('hz-n').value = String(st.hzdm.n); $('hz-beh').value = st.hzdm.beh; $('hz-atk').value = st.hzdm.atk ? '1' : '0'; $('hz-time').value = String(st.hzdm.time);
-    $('hz-lv').value = dm ? st.hzdm.lv : st.hzlv;
-    $('hz-map').innerHTML = opts([['random', '隨機'], ...this.mapOpts()], MAPS[st.hzmap] ? st.hzmap : 'random');
-    this._hzBest();
-    this.show('hz');
-  }
+  // 主選單卡片上的最佳紀錄（這台電腦）
   _hzBest() {
-    const best = store.get('hzbest', null) || {}, dm = this.hzKind === 'dm';
-    const v = dm ? best[`dm:${$('hz-time').value}:${$('hz-n').value}`] : best[`def:${$('hz-lv').value}`];
-    $('hz-best').textContent = v ? (dm ? `這個設定的最佳紀錄：擊倒 ${v} 個` : `這個難度的最佳紀錄：撐過 ${v} 波`) : '';
+    const best = store.get('hzbest', null) || {}, st = this.g.settings;
+    const d = best[`dm:${st.hzdm.time}:${st.hzdm.n}`], f = best[`def:${st.hzdef.lv}`];
+    $('dm-best').innerHTML = d ? `最佳紀錄：<b>擊倒 ${d}</b>（這個數量和時間）` : '';
+    $('df-best').innerHTML = f ? `最佳紀錄：<b>撐過 ${f} 波</b>（${(HZ_LEVELS[st.hzdef.lv] || HZ_LEVELS.normal).name}）` : '';
   }
   // 守據點：下一波從哪幾個方向來（以據點為中心，小地圖上方 = 北）
   gateText(hz) {
@@ -472,7 +462,7 @@ export class Hud {
     const solo = hz && !gs.here[opp], bots = hz ? (hz.kind === 'defense' ? Math.max(0, hz.left) : g.horde.views.size ? [...g.horde.views.values()].filter((o) => o.alive).length : 0) : 0;
     this._set('nm-me', P[me].n); this._set('nm-opp', solo ? '機器人' : P[opp].n);
     this._set('sc-me', hz ? String(hz.k[me]) : warm ? '–' : String(P[me].sc)); this._set('sc-opp', hz ? String(solo ? bots : hz.k[opp]) : warm ? '–' : String(P[opp].sc));
-    this._set('roundno', hz ? `${hz.kind === 'dm' ? '死鬥' : '守據點 · ' + HZ_LEVELS[hz.cfg.lv].name} · ${MAPS[gs.map].name}` : warm ? `熱身 · ${MAPS[gs.map].name}` : `第 ${gs.round} 局 · 搶 ${gs.set.target} · ${MAPS[gs.map].name}`);
+    this._set('roundno', hz ? `${hz.kind === 'dm' ? '死鬥' : '守據點 · ' + (HZ_LEVELS[hz.cfg.lv] || HZ_LEVELS.normal).name} · ${MAPS[gs.map].name}` : warm ? `熱身 · ${MAPS[gs.map].name}` : `第 ${gs.round} 局 · 搶 ${gs.set.target} · ${MAPS[gs.map].name}`);
     this._cls('hzinfo', 'hidden', !hz);
 
     // 對戰中：對手帶了哪些異能（記分板下面一排小圖示）
@@ -491,10 +481,12 @@ export class Hud {
             ? '注意：現在是本機網址（localhost），朋友的電腦打不開這個連結。要先把遊戲放上網路，再從那個網址建立房間。'
             : '按「複製邀請連結」傳給朋友，對方打開連結、按加入就會進來。等的時候可以先按「熱身」跟機器人打，朋友一進來會自動回到這裡。')
         : '已連線，等房主按開始。');
-      for (const [id, key] of [['set-target', 'target'], ['set-time', 'roundTime'], ['set-buff', 'buffMode'], ['set-map', 'map'], ['set-mode', 'mode']]) {
+      for (const [id, key] of [['set-target', 'target'], ['set-time', 'roundTime'], ['set-buff', 'buffMode'], ['set-map', 'map']]) {
         const el = $(id); el.disabled = !g.net.isHost;
         if (document.activeElement !== el) el.value = String(gs.set[key]);
       }
+      document.querySelectorAll('#lb-modes .mtile').forEach((el) => { el.classList.toggle('on', el.dataset.mode === gs.set.mode); el.disabled = !g.net.isHost && el.dataset.mode !== gs.set.mode; });
+      $('lb-modes').classList.toggle('ro', !g.net.isHost);
       for (const [id, key] of [['set-hzn', 'n'], ['set-hzbeh', 'beh'], ['set-hzlv', 'lv'], ['set-hzt', 'time']]) {
         const el = $(id); el.disabled = !g.net.isHost;
         if (document.activeElement !== el && gs.set.hz) el.value = String(gs.set.hz[key]);

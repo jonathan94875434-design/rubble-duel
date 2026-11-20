@@ -69,35 +69,83 @@
 <div id="screens">
   <!-- 主選單 -->
   <section id="scr-menu" class="screen">
-    <div class="panel menu">
-      <h1>tay is gay</h1>
-      <p class="tagline">把牆打穿，把朋友打爆。</p>
-      <label class="field"><span>你的名字</span><input id="in-name" maxlength="14" placeholder="玩家" autocomplete="off"></label>
-      <button id="btn-host" class="btn primary">建立房間</button>
-      <div class="joinrow">
-        <input id="in-code" maxlength="5" placeholder="房號" autocomplete="off">
-        <button id="btn-join" class="btn">加入房間</button>
+    <div class="home">
+      <header class="home-head">
+        <div class="brand"><h1>tay is gay</h1><p class="tagline">把牆打穿，把朋友打爆。</p></div>
+        <label class="field namefield"><span>你的名字</span><input id="in-name" maxlength="14" placeholder="玩家" autocomplete="off"></label>
+      </header>
+
+      <div class="modes">
+        <!-- 跟朋友（連線） -->
+        <article class="mode m-online">
+          <div class="mh"><span class="mi"><svg viewBox="0 0 24 24"><circle cx="8.5" cy="8" r="3.2"/><circle cx="16.8" cy="9.2" r="2.6"/><path d="M2.8 19.5c.6-3.5 2.9-5.4 5.7-5.4s5.1 1.9 5.7 5.4M14.6 14.4c.7-.4 1.4-.6 2.2-.6 2.3 0 4 1.6 4.6 4.7"/></svg></span><div><h2>跟朋友對戰</h2><span class="tag">2 人・連線</span></div></div>
+          <p class="md">建立房間把連結傳給朋友，或輸入房號加入。</p>
+          <div class="chips"><i>房間裡可以選</i><span class="c-classic">一般對戰</span><span class="c-rogue">Roguelike</span><span class="c-def">守據點</span><span class="c-dm">機器人死鬥</span></div>
+          <div class="mbody">
+            <button id="btn-host" class="btn primary go">建立房間</button>
+            <div class="or"><span>或加入朋友的房間</span></div>
+            <div class="joinrow">
+              <input id="in-code" maxlength="5" placeholder="房號" autocomplete="off">
+              <button id="btn-join" class="btn">加入</button>
+            </div>
+            <div id="menu-msg" class="msg"></div>
+          </div>
+        </article>
+
+        <!-- 一對一練習 -->
+        <article class="mode m-bot">
+          <div class="mh"><span class="mi"><svg viewBox="0 0 24 24"><rect x="4.5" y="8" width="15" height="11.5" rx="3"/><path d="M12 4.5V8M9 13.2v.6M15 13.2v.6M9.5 16.6h5M2.5 12.5v3M21.5 12.5v3"/><circle cx="12" cy="3.6" r="1.1"/></svg></span><div><h2>一對一練習</h2><span class="tag">1 人・電腦對手</span></div></div>
+          <p class="md">跟一個電腦對手打完整的對戰：買槍、搶分、輸家補償，規則跟真人對戰一樣。</p>
+          <div class="mopts">
+            <label>對手難度<select id="sel-bot" title="對手難度"></select></label>
+            <label>地圖<select id="sel-pmap" title="練習地圖"></select></label>
+          </div>
+          <label class="check"><input id="chk-prog" type="checkbox"> 用 Roguelike 模式（每局選一張異能卡）</label>
+          <button id="btn-bot" class="btn go">開始練習</button>
+        </article>
+
+        <!-- 死鬥練習 -->
+        <article class="mode m-dm">
+          <div class="mh"><span class="mi"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7.5"/><circle cx="12" cy="12" r="3.2"/><path d="M12 1.8v4.4M12 17.8v4.4M1.8 12h4.4M17.8 12h4.4"/></svg></span><div><h2>死鬥練習</h2><span class="tag">1 人・一大群機器人</span></div></div>
+          <p class="md">機器人打倒會再補，你無限重生、免費換槍。可以讓它們站著當靶子，或滿地圖來找你。</p>
+          <div class="mopts">
+            <label>數量<select id="dm-n"></select></label>
+            <label>行為<select id="dm-beh"></select></label>
+            <label>開槍<select id="dm-atk"><option value="1">會打你</option><option value="0">不開槍（靶子）</option></select></label>
+            <label>難度<select id="dm-lv"></select></label>
+            <label>時間<select id="dm-time"></select></label>
+            <label>地圖<select id="dm-map"></select></label>
+          </div>
+          <div class="best" id="dm-best"></div>
+          <button id="btn-dm" class="btn go">開始死鬥</button>
+        </article>
+
+        <!-- 守據點 -->
+        <article class="mode m-def">
+          <div class="mh"><span class="mi"><svg viewBox="0 0 24 24"><path d="M12 2.8l7.6 2.9v5.8c0 4.7-3.2 8.4-7.6 9.7-4.4-1.3-7.6-5-7.6-9.7V5.7z"/><path d="M12 7.6l2.6 3.7L12 16.4l-2.6-5.1z"/></svg></span><div><h2>守據點</h2><span class="tag">1～2 人・一波波機器人</span></div></div>
+          <p class="md">守住地圖中間的據點，擋下一波波機器人，每 5 波來一隻巨人。休息時選強化卡、換裝備、蓋沙包牆。</p>
+          <div class="mopts">
+            <label>難度<select id="df-lv"></select></label>
+            <label>地圖<select id="df-map"></select></label>
+          </div>
+          <p class="mtip">想跟朋友一起守：建立房間，在房間裡選「守據點」。</p>
+          <div class="best" id="df-best"></div>
+          <button id="btn-def" class="btn go">開始守據點</button>
+        </article>
       </div>
-      <div class="botrow">
-        <button id="btn-bot" class="btn">單人練習</button>
-        <select id="sel-bot" title="對手難度"></select>
-        <select id="sel-pmap" title="練習地圖"></select>
-      </div>
-      <label class="check"><input id="chk-prog" type="checkbox"> 練習用 Roguelike 模式（每局選一張異能卡）</label>
-      <div class="grid2 hzrow">
-        <button id="btn-dm" class="btn" title="一大群機器人，可以選定點或來找你、會不會開槍">死鬥練習</button>
-        <button id="btn-def" class="btn" title="守住地圖中間的據點，擋下一波波機器人">守據點</button>
-      </div>
-      <div class="grid2">
-        <button id="btn-locker" class="btn ghost">造型 / 噴漆</button>
-        <button id="btn-stats" class="btn ghost">戰績</button>
-        <button id="btn-editor" class="btn ghost">地圖編輯器</button>
-        <button id="btn-settings" class="btn ghost">設定 / 按鍵</button>
-      </div>
-      <div id="menu-msg" class="msg"></div>
-      <div class="keys">
-        <div id="keys-hint"></div>
-        <details><summary>身法小抄</summary>
+
+      <footer class="home-foot">
+        <div class="tools">
+          <button id="btn-locker" class="btn tool"><svg viewBox="0 0 24 24"><path d="M8.5 3.8L4 6.8l1.9 4 2.1-1v10.4h8V9.8l2.1 1 1.9-4-4.5-3c-.6 1.6-2 2.6-3.5 2.6S9.1 5.4 8.5 3.8z"/></svg><span>造型 / 噴漆</span></button>
+          <button id="btn-stats" class="btn tool"><svg viewBox="0 0 24 24"><path d="M3 20.5h18M6 20.5v-8M11 20.5V5M16 20.5v-11M21 20.5v-5"/></svg><span>戰績</span></button>
+          <button id="btn-editor" class="btn tool"><svg viewBox="0 0 24 24"><path d="M12 2.8l8.2 4.6v9.2L12 21.2l-8.2-4.6V7.4z"/><path d="M12 12l8.2-4.6M12 12v9.2M12 12L3.8 7.4"/></svg><span>地圖編輯器</span></button>
+          <button id="btn-settings" class="btn tool"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></svg><span>設定 / 按鍵</span></button>
+        </div>
+        <details class="help">
+          <summary>按鍵與規則說明</summary>
+          <div class="keys">
+            <div id="keys-hint"></div>
+            <details><summary>身法小抄</summary>
           <p><b>急停</b>：跑動時子彈會散，放開方向鍵或點一下反方向鍵，停住再開槍。蹲下更準。</p>
           <p><b>蹲跳</b>：跳起來後按住蹲下鍵把腳收起來，可以上 1.5 公尺高的箱子、鑽窗戶。</p>
           <p><b>空中轉向</b>：跳起來之後按方向鍵或轉視角，就能在空中轉彎，速度不會掉。</p>
@@ -105,23 +153,25 @@
           <p><b>靜步</b>：瞄準走或蹲走沒有腳步聲；跑步、跳下來對手聽得到你在哪。</p>
           <p><b>刀</b>：砍到就一刀斃命。左鍵快砍，瞄準鍵突刺（搆得比較遠、收刀慢）。拿刀的移動速度最快。</p>
         </details>
-        <details><summary>Roguelike 模式</summary>
-          <p>房主在大廳把「模式」改成 Roguelike。每一局開打前，雙方各從 3 張<b>異能卡</b>裡選 1 張，整場累積；<b>上一局輸的人有 4 張可以選</b>，也比較容易抽到稀有卡。</p>
+            <details><summary>Roguelike 模式</summary>
+          <p>房主在房間裡點「Roguelike」卡片（一對一練習可以勾選用 Roguelike 模式）。每一局開打前，雙方各從 3 張<b>異能卡</b>裡選 1 張，整場累積；<b>上一局輸的人有 4 張可以選</b>，也比較容易抽到稀有卡。</p>
           <p><b>被動</b>拿了就一直有效；<b>主動技能</b>最多帶兩個，用技能鍵施放（預設 E 和 4，可以改）。兩格都滿了再拿新技能，要挑一個換掉。</p>
           <p>你選好之前看不到對手這一局拿了什麼；選完才公開，接著買裝備——看對手的組合決定這一局怎麼打。不滿意可以花 $400 重抽，每局最多 2 次。</p>
         </details>
-        <details><summary>死鬥練習、守據點</summary>
+            <details><summary>死鬥練習、守據點</summary>
           <p><b>死鬥練習</b>：場上同時有 4～16 個機器人，打倒會再補。可以選它們<b>定點不動、定點左右閃、主動來找你</b>或混合，也可以設成<b>不開槍</b>當靶子練槍。你自己無限重生，按商店鍵隨時換槍。</p>
           <p><b>守據點</b>：守住地圖中間發光的據點，機器人一波一波從地圖邊緣殺過來（小地圖上的紅色箭頭是下一波的方向）。每一波之間休息時可以<b>選一張強化卡、換裝備、用技能鍵蓋沙包牆</b>；好的槍要撐到後面幾波才開放。每 5 波會來一隻巨人。據點被打爆就結束。</p>
-          <p>兩個人一起玩：建立房間，在大廳把「模式」改成<b>守據點</b>或<b>機器人死鬥</b>，朋友不用等，晚點進來也會直接加入。</p>
+          <p>兩個人一起玩：建立房間，在房間裡點<b>守據點</b>或<b>機器人死鬥</b>卡片，朋友不用等，晚點進來也會直接加入。</p>
         </details>
-        <details><summary>經濟與戰鬥規則</summary>
+            <details><summary>經濟與戰鬥規則</summary>
           <p>每局開打前用錢買裝備，買了就花掉；<b>商店每局都重置</b>，不會沿用上一局買的。開場 $800，<b>第 1 局只能買手槍</b>。</p>
           <p>贏一局 +$2000；<b>輸一局 +$3000</b>，連敗每局再多 $500（最多 $4500）。</p>
           <p><b>穿牆</b>：子彈能打穿木板、鐵皮、薄牆，穿過去之後傷害會打折；狙擊槍連水泥都穿得過，鋼板幾乎擋得住所有槍。</p>
           <p><b>小地圖</b>：對手只有在你看得到他、或他開槍的時候才會出現在小地圖上。</p>
         </details>
-      </div>
+          </div>
+        </details>
+      </footer>
     </div>
   </section>
 
@@ -136,8 +186,13 @@
         <div class="vs">VS</div>
         <div class="pl p1"><i></i><span id="lb-p1"></span></div>
       </div>
+      <div class="mtiles" id="lb-modes">
+        <button class="mtile t-classic" data-mode="classic"><span class="mi"><svg viewBox="0 0 24 24"><circle cx="8.5" cy="8" r="3.2"/><circle cx="16.8" cy="9.2" r="2.6"/><path d="M2.8 19.5c.6-3.5 2.9-5.4 5.7-5.4s5.1 1.9 5.7 5.4M14.6 14.4c.7-.4 1.4-.6 2.2-.6 2.3 0 4 1.6 4.6 4.7"/></svg></span><b>一般對戰</b><span>買槍、搶分、輸家補償</span></button>
+        <button class="mtile t-rogue" data-mode="rogue"><span class="mi"><svg viewBox="0 0 24 24"><rect x="4" y="3.5" width="11" height="15" rx="2"/><path d="M9 21.5h9.5a2 2 0 0 0 2-2V8"/><path d="M9.5 8.2l1.6 3-1.6 3-1.6-3z"/></svg></span><b>Roguelike</b><span>每局選一張異能卡</span></button>
+        <button class="mtile t-def" data-mode="defense"><span class="mi"><svg viewBox="0 0 24 24"><path d="M12 2.8l7.6 2.9v5.8c0 4.7-3.2 8.4-7.6 9.7-4.4-1.3-7.6-5-7.6-9.7V5.7z"/><path d="M12 7.6l2.6 3.7L12 16.4l-2.6-5.1z"/></svg></span><b>守據點</b><span>兩人合作擋機器人</span></button>
+        <button class="mtile t-dm" data-mode="dm"><span class="mi"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7.5"/><circle cx="12" cy="12" r="3.2"/><path d="M12 1.8v4.4M12 17.8v4.4M1.8 12h4.4M17.8 12h4.4"/></svg></span><b>機器人死鬥</b><span>一起打，比誰擊倒多</span></button>
+      </div>
       <div class="settings">
-        <label class="wide">模式<select id="set-mode"><option value="classic">一般對戰</option><option value="rogue">Roguelike — 每局選一張異能卡，整場累積</option><option value="defense">守據點 — 兩個人一起擋一波波機器人</option><option value="dm">機器人死鬥 — 兩個人一起打機器人，比誰打倒得多</option></select></label>
         <label class="hzopt dmopt">機器人數量<select id="set-hzn"></select></label>
         <label class="hzopt dmopt">機器人行為<select id="set-hzbeh"></select></label>
         <label class="hzopt">難度<select id="set-hzlv"></select></label>
@@ -148,24 +203,6 @@
         <label>輸家補償<select id="set-buff"><option value="streak">強化：連敗累積，贏了清空</option><option value="single">強化：只維持下一局</option><option value="permanent">強化：整場保留</option><option value="off">不給強化（只靠多拿錢）</option></select></label>
       </div>
       <div class="actions"><button id="btn-leave" class="btn ghost">離開</button><button id="btn-warm" class="btn">熱身</button><button id="btn-start" class="btn primary">開始對戰</button></div>
-    </div>
-  </section>
-
-  <!-- 死鬥練習／守據點（自己玩）的設定 -->
-  <section id="scr-hz" class="screen hidden">
-    <div class="panel hzset">
-      <h2 id="hz-title">死鬥練習</h2>
-      <p class="hint" id="hz-desc"></p>
-      <div class="settings">
-        <label class="dmopt">機器人數量<select id="hz-n"></select></label>
-        <label class="dmopt">機器人行為<select id="hz-beh"></select></label>
-        <label class="dmopt">會不會開槍<select id="hz-atk"><option value="1">會開槍打你</option><option value="0">不開槍（當靶子練槍）</option></select></label>
-        <label>難度<select id="hz-lv"></select></label>
-        <label class="dmopt">時間<select id="hz-time"></select></label>
-        <label>地圖<select id="hz-map"></select></label>
-      </div>
-      <div class="hint" id="hz-best"></div>
-      <div class="actions"><button id="btn-hz-back" class="btn ghost">返回</button><button id="btn-hz-go" class="btn primary">開始</button></div>
     </div>
   </section>
 

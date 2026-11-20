@@ -54,8 +54,9 @@ class Game {
       wheel: store.get('wheel', true),          // 滾輪切槍（Magic Mouse 容易誤觸，可以關）
       bot: store.get('bot', 'normal'), pmap: store.get('pmap', 'random'),  // 練習模式的難度與地圖
       prog: store.get('prog', false),           // 練習時也用 Roguelike 模式
-      // 機器人模式（自己玩）的設定：死鬥的數量／行為／會不會開槍／難度／時間，守據點的難度，以及地圖
-      hzdm: { n: 8, beh: 'hunt', atk: true, lv: 'normal', time: 300, ...(store.get('hzdm', null) || {}) }, hzlv: store.get('hzlv', 'normal'), hzmap: store.get('hzmap', 'random'),
+      // 機器人模式（自己玩）的設定：死鬥的數量／行為／會不會開槍／難度／時間／地圖，守據點的難度／地圖
+      hzdm: { n: 8, beh: 'hunt', atk: true, lv: 'normal', time: 300, map: store.get('hzmap', 'random'), ...(store.get('hzdm', null) || {}) },
+      hzdef: { lv: store.get('hzlv', 'normal'), map: store.get('hzmap', 'random'), ...(store.get('hzdef', null) || {}) },
       skin: look.s, wskin: look.w,
       quality: store.get('quality', 'auto'),    // 畫質：auto / low / medium / high
       xh: { ...DEFAULT_XHAIR, ...(store.get('xh', null) || {}) },   // 準星
@@ -453,7 +454,7 @@ class Game {
     this.sfx.init(); this.me = 0; this.code = '';
     this.net.close(); this.net.isHost = true;
     this._mkAuthority();
-    const m = this.settings.hzmap, hz = kind === 'dm' ? this.settings.hzdm : { lv: this.settings.hzlv, atk: true };
+    const c = kind === 'dm' ? this.settings.hzdm : this.settings.hzdef, m = c.map, hz = kind === 'dm' ? c : { lv: c.lv, atk: true };
     this.authority.setSettings({ mode: kind, map: MAPS[m] ? m : 'random', hz });
     this.authority.startMatch();
   }
