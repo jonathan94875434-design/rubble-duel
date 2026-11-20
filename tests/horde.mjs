@@ -55,6 +55,7 @@ await A.screenshot({ path: OUT + '/hz1-menu.png' });
 await dm({ n: 8, beh: 'hunt' });
 await until(A, () => __game.phase === 'horde' && __game.horde.mobs.filter((m) => m.alive).length === 8, null, 8000);
 await god(A, true);
+await sleep(400);   // 記分板跟著主機狀態更新（每 0.1 秒一次）
 st = await A.evaluate(() => ({ ph: __game.phase, n: __game.horde.mobs.filter((m) => m.alive).length, views: [...__game.horde.views.values()].filter((o) => o.alive && o.v.group.visible).length, mini: __game.horde.mini().length, opp: document.getElementById('nm-opp').textContent, sc: document.getElementById('sc-opp').textContent }));
 ok('開始死鬥：場上 8 個機器人，模型、小地圖都有，記分板右邊顯示機器人數量', st.ph === 'horde' && st.n === 8 && st.views === 8 && st.mini === 8 && st.opp === '機器人' && st.sc === '8', JSON.stringify(st));
 const d0 = await dist(); await sleep(4500); const d1 = await dist();
