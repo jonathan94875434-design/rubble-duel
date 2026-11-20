@@ -1,6 +1,10 @@
-import { MATCH, PLAYER, ECON, ROGUE } from './config.js';
+import { MATCH, PLAYER, ECON, ROGUE, HORDE } from './config.js';
 import { rollBuffChoices } from './buffs.js';
-import { CARDS, rollCards } from './cards.js';
+import { CARDS, CARD_IDS, rollCards } from './cards.js';
+
+// 守據點每一波打完可以選的強化卡：只有對機器人也有效的被動（跟對手互動的、跟錢有關的、主動技能都不放）
+const HZ_NO_CARDS = CARD_IDS.filter((id) => CARDS[id].k === 'a' || ['plate', 'arsenal', 'radar', 'ghost', 'investor', 'thorns', 'cryo', 'incendiary'].includes(id));
+const HZ_BEHS = ['hold', 'strafe', 'hunt', 'mix'], HZ_LVS = ['easy', 'normal', 'hard'];
 import { WEAPONS, validLoadout, fitLoadout, loadoutCost } from './weapons.js';
 import { MAPS, MAP_IDS } from './maps.js';
 import { validLook } from './skins.js';
@@ -13,7 +17,10 @@ export class Authority {
     this.out = out;
     // map：'random' 整場隨機一張、'rotate' 每局輪流、或指定某張地圖的代號
     // mode：'classic' 一般對戰／'rogue' Roguelike（每局選一張異能卡，整場累積；輸家補償改成「多一張可以選」）
-    this.settings = { target: MATCH.TARGET, roundTime: MATCH.ROUND_TIME, buffMode: MATCH.BUFF_MODE, map: 'random', mode: 'classic' };
+    //       'dm' 機器人死鬥／'defense' 守據點（這兩個是跟機器人打，見 horde.js）
+    // hz：機器人模式的設定。n 幾隻、beh 行為、atk 會不會開槍、lv 難度、time 死鬥幾秒（0 = 不限）
+    this.settings = { target: MATCH.TARGET, roundTime: MATCH.ROUND_TIME, buffMode: MATCH.BUFF_MODE, map: 'random', mode: 'classic', hz: { n: 8, beh: 'hunt', atk: true, lv: 'normal', time: 300 } };
+    this.hz = null; this.onMobHit = null;   // onMobHit(誰, 資料)：玩家打中機器人（main.js 接到 horde.js）
     this.map = MAP_IDS[0]; this.mapStart = 0; this.lastLoser = -1;
     this.phase = 'lobby'; this.round = 0; this.tEnd = 0; this.result = null; this.matchWinner = -1;
     this.players = [this._mk('玩家 1'), this._mk('玩家 2')];
@@ -39,13 +46,23 @@ export class Authority {
     if ([60, 90, 120, 180, 900].includes(+s.roundTime)) this.settings.roundTime = +s.roundTime;
     if (s.map === 'random' || s.map === 'rotate' || MAPS[s.map]) this.settings.map = s.map;   // 也可以是自製地圖
     if (['streak', 'permanent', 'single', 'off'].includes(s.buffMode)) this.settings.buffMode = s.buffMode;
-    if (s.mode === 'classic' || s.mode === 'rogue') this.settings.mode = s.mode;
+    if (['classic', 'rogue', 'dm', 'defense'].includes(s.mode)) this.settings.mode = s.mode;
+    if (s.hz && typeof s.hz === 'object') {
+      const h = this.settings.hz, n = s.hz;
+      if ([4, 8, 12, 16].includes(+n.n)) h.n = +n.n;
+      if (HZ_BEHS.includes(n.beh)) h.beh = n.beh;
+      if (typeof n.atk === 'boolean') h.atk = n.atk;
+      if (HZ_LVS.includes(n.lv)) h.lv = n.lv;
+      if ([0, 120, 300, 600].includes(+n.time)) h.time = +n.time;
+    }
     this.dirty = true;
   }
 
-  toLobby() { this.phase = 'lobby'; this.round = 0; this.result = null; this.dirty = true; }
+  toLobby() { this.phase = 'lobby'; this.round = 0; this.result = null; this.hz = null; this.dirty = true; }
 
   startMatch() {
+    if (this.settings.mode === 'dm' || this.settings.mode === 'defense') { this._startHorde(); return; }
+    this.hz = null;
     for (const p of this.players) { p.score = 0; p.buffs = []; p.skills = [null, null]; p.streak = 0; p.choices = null; p.dmg = 0; p.heads = 0; p.money = ECON.START; p.spent = 0; }
     this.round = 0; this.matchWinner = -1; this.result = null; this.lastLoser = -1;
     const m = this.settings.map;
@@ -62,7 +79,101 @@ export class Authority {
     this.map = MAPS[m] ? m : MAP_IDS[(Math.random() * MAP_IDS.length) | 0];
     this.wn = (this.wn || 0) + 1; this.round = 1000 + this.wn;                // 熱身的局數從 1001 起跳，跟正式的局分開
     this.pickups = MAPS[this.map].pickups.map(() => ({ on: true, at: 0 }));
-    this.result = null; this.matchWinner = -1; this.phase = 'warmup'; this.tEnd = 0; this.dirty = true;
+    this.result = null; this.matchWinner = -1; this.phase = 'warmup'; this.tEnd = 0; this.hz = null; this.dirty = true;
+  }
+
+  // ───────── 機器人模式：死鬥、守據點 ─────────
+  // 跟熱身一樣是無限重生、免費拿裝備；不同的是對手換成一大群機器人（房主的 horde.js 在跑），
+  // 這裡只記分數、重生、據點血量和波次
+  _startHorde() {
+    const s = this.settings, now = Date.now(), kind = s.mode, m = s.map;
+    this.map = MAPS[m] ? m : MAP_IDS[(Math.random() * MAP_IDS.length) | 0];
+    this.hn = (this.hn || 0) + 1; this.round = 2000 + this.hn;                // 局數從 2001 起跳，跟熱身、正式局分開
+    this.players.forEach((p, i) => {
+      Object.assign(p, { score: 0, buffs: [], skills: kind === 'defense' ? ['wall', null] : [null, null], choices: null, dmg: 0, heads: 0, maxHp: PLAYER.MAX_HP, hp: PLAYER.MAX_HP, armor: PLAYER.MAX_ARMOR,
+        alive: this.present[i], respawnAt: 0, rHits: 0, rDmg: 0, rHead: 0, lastHurt: 0, inv: 0, slowT: 0, burnT: 0, phx: false, ready: false });
+    });
+    const c = s.hz;
+    this.hz = {
+      // 守據點的機器人一定會開槍（「不開槍」只給死鬥練習用）
+      kind, cfg: kind === 'defense' ? { ...c, atk: true } : { ...c }, t0: now, end: kind === 'dm' && c.time ? now + c.time * 1000 : 0,
+      st: kind === 'defense' ? 'break' : 'fight', wave: 0, cleared: 0, next: kind === 'defense' ? now + HORDE.FIRST_BREAK * 1000 : 0,
+      core: HORDE.CORE_HP, coreMax: HORDE.CORE_HP, cp: null, gates: [], k: [0, 0], hs: [0, 0], d: [0, 0], left: -1, ack: 0, boss: 0, res: null, coreEvAt: 0,
+    };
+    this.pickups = MAPS[this.map].pickups.map(() => ({ on: true, at: 0 }));
+    this.result = null; this.matchWinner = -1; this.phase = 'horde'; this.tEnd = this.hz.end || this.hz.next; this.dirty = true;
+  }
+  // 卡片影響的血量上限（守據點每一波選的卡）
+  _hzApply(p) {
+    const has = (b) => p.buffs.includes(b), old = p.maxHp;
+    p.maxHp = Math.max(40, PLAYER.MAX_HP + (has('vital') ? 35 : 0) + (has('jugg') ? 60 : 0) - (has('glass') ? 35 : 0));
+    if (p.alive) p.hp = Math.max(1, Math.min(p.maxHp, p.hp + (p.maxHp - old)));
+    this.dirty = true;
+  }
+  _hordeTick(now) {
+    const hz = this.hz;
+    this.players.forEach((p, i) => {
+      if (!this.present[i]) { if (p.alive) { p.alive = false; this.dirty = true; } return; }
+      if (!p.alive && now >= p.respawnAt) {
+        p.hp = p.maxHp; p.armor = PLAYER.MAX_ARMOR; p.alive = true; p.inv = now + 1500; p.burnT = p.slowT = 0;   // 剛重生有 1.5 秒無敵
+        this.out(i, 'ev', { t: 'respawn' }); this.dirty = true;
+      }
+      if (p.alive && p.buffs.includes('regen') && p.hp < p.maxHp && now - p.lastHurt > 4000) p.hp = Math.min(p.maxHp, p.hp + 6 * 0.05);
+    });
+    this.pickups.forEach((pk) => { if (!pk.on && now >= pk.at) { pk.on = true; this.dirty = true; } });
+    if (hz.kind === 'dm') { if (hz.end && now >= hz.end) this._hordeEnd('time'); return; }
+    if (hz.st === 'break' && now >= hz.next) {
+      hz.st = 'wave'; hz.wave++; hz.left = -1; this.tEnd = 0;
+      for (const p of this.players) if (p.choices) { this._take(p, p.choices[0], 0); this._hzApply(p); }   // 休息時沒選：自動拿第一張
+      this.out(0, 'ev', { t: 'wave', st: 'wave', n: hz.wave }); this.out(1, 'ev', { t: 'wave', st: 'wave', n: hz.wave });
+      this.dirty = true;
+    } else if (hz.st === 'wave' && hz.ack === hz.wave && hz.left === 0) {
+      // 這一波清光了：休息、倒下的人直接復活、每個人選一張強化卡
+      hz.st = 'break'; hz.cleared = hz.wave; hz.next = now + HORDE.BREAK * 1000; this.tEnd = hz.next;
+      hz.core = Math.min(hz.coreMax, hz.core + hz.coreMax * HORDE.CORE_REGEN);
+      this.players.forEach((p, i) => {
+        if (!this.present[i]) return;
+        p.respawnAt = 0; p.phx = false;
+        const c = rollCards({ owned: p.buffs, n: 3, exclude: HZ_NO_CARDS });
+        p.choices = c.length ? c : null;
+      });
+      this.out(0, 'ev', { t: 'wave', st: 'break', n: hz.wave }); this.out(1, 'ev', { t: 'wave', st: 'break', n: hz.wave });
+      this.dirty = true;
+    }
+  }
+  _hordeEnd(why) {
+    const hz = this.hz;
+    if (!hz || this.phase !== 'horde') return;
+    hz.res = { why, t: Date.now() - hz.t0, waves: hz.cleared };
+    this.phase = 'matchEnd'; this.matchWinner = -1; this.tEnd = 0; this.dirty = true; this.flush();
+  }
+  endHorde() { this._hordeEnd('quit'); }
+  // 以下由房主的 horde.js 呼叫
+  hzSetCore(c) { if (this.hz && Array.isArray(c)) { this.hz.cp = c.map((v) => Math.round(v * 1000) / 1000); this.dirty = true; } }
+  hzGates(g) { if (this.hz) { this.hz.gates = g; this.dirty = true; } }
+  hzCount(n, wave, boss) {
+    const hz = this.hz; if (!hz) return;
+    const b = Math.round(boss * 100) / 100;
+    if (hz.left !== n || hz.ack !== wave || hz.boss !== b) { hz.left = n; hz.ack = wave; hz.boss = b; this.dirty = true; }
+  }
+  hzKill(by, kind, head, w) {
+    const hz = this.hz; if (!hz || this.phase !== 'horde' || !this.players[by]) return;
+    hz.k[by]++; if (head) { hz.hs[by]++; this.players[by].heads++; }
+    this.players[by].score = hz.k[by];
+    const e = { t: 'mkill', by, kind, head: !!head, w };
+    this.out(0, 'ev', e); this.out(1, 'ev', e); this.dirty = true;
+  }
+  hzHit(by, dealt) {
+    const A = this.players[by]; if (!A || this.phase !== 'horde') return;
+    A.dmg += dealt; A.rDmg += dealt; A.rHits++;
+    if (A.buffs.includes('leech') && A.alive) A.hp = Math.min(A.maxHp, A.hp + dealt * 0.25);
+  }
+  hzCore(d) {
+    const hz = this.hz, now = Date.now();
+    if (!hz || this.phase !== 'horde' || hz.kind !== 'defense' || !(d > 0)) return;
+    hz.core = Math.max(0, hz.core - d); this.dirty = true;
+    if (now - hz.coreEvAt > 220) { hz.coreEvAt = now; this.out(0, 'ev', { t: 'core' }); this.out(1, 'ev', { t: 'core' }); }
+    if (hz.core <= 0) this._hordeEnd('core');
   }
 
   _enterLoadout() {
@@ -158,24 +269,26 @@ export class Authority {
   handle(i, t, d) {
     const p = this.players[i];
     if (!p || !d) return;
-    if (t === 'loadout') { if (this.phase === 'loadout' || this.phase === 'lobby' || this.phase === 'warmup') { p.loadout = validLoadout(d); this.dirty = true; } }
-    else if (t === 'buff') { if (p.choices && p.choices.includes(d.id)) this._take(p, d.id, d.slot | 0); }
+    if (t === 'loadout') { if (this.phase === 'loadout' || this.phase === 'lobby' || this.phase === 'warmup' || this.phase === 'horde') { p.loadout = validLoadout(d); this.dirty = true; } }
+    else if (t === 'buff') { if (p.choices && p.choices.includes(d.id)) { this._take(p, d.id, d.slot | 0); if (this.phase === 'horde') this._hzApply(p); } }
+    else if (t === 'mobhit') { if (d.r === this.round && this.phase === 'horde' && p.alive && this.onMobHit) this.onMobHit(i, d); }
     else if (t === 'reroll') this._reroll(p);
     else if (t === 'skill') { if (d.r === this.round) this._skill(i, d.id); }
     else if (t === 'ready') { if (this.phase === 'loadout' && !p.choices) { p.ready = !!d.v; this.dirty = true; } }
-    else if (t === 'hit') { if (d.r === this.round) this.damage(1 - i, +d.d || 0, i, d.w, !!d.h, d); }
+    else if (t === 'hit') { if (d.r === this.round && this.phase !== 'horde') this.damage(1 - i, +d.d || 0, i, d.w, !!d.h, d); }   // 機器人模式是同一隊，打不到隊友
     else if (t === 'self') { if (d.r === this.round) this.damage(i, +d.d || 0, i, d.w, false); }
     else if (t === 'pick') this._pickup(i, d.i | 0);
     else if (t === 'name') this.setName(i, d.name);
     else if (t === 'look') { p.look = validLook(d); this.dirty = true; }
   }
 
-  // x：命中的附帶資訊（wb = 穿牆、bk = 背刺）
+  // x：命中的附帶資訊（wb = 穿牆、bk = 背刺；機器人打的：mob = 哪一種、src = 開槍的位置 [x, z]）
+  // attacker = -1：機器人
   damage(target, dmg, attacker, weapon, head, x) {
-    const warm = this.phase === 'warmup';
-    if (this.phase !== 'playing' && !warm) return;
-    const T = this.players[target], A = this.players[attacker], now = Date.now();
-    if (!T.alive || !(dmg > 0)) return;
+    const warm = this.phase === 'warmup', horde = this.phase === 'horde';
+    if (this.phase !== 'playing' && !warm && !horde) return;
+    const T = this.players[target], A = attacker >= 0 ? this.players[attacker] : null, now = Date.now();
+    if (!T || !T.alive || !(dmg > 0)) return;
     if (now < T.inv) return;                                 // 不死鳥剛重生：短暫無敵
     dmg = Math.min(dmg, 400);
     if (T.buffs.includes('tough')) dmg *= 0.85;
@@ -183,7 +296,7 @@ export class Authority {
     if (T.armor > 0) { const ab = Math.min(T.armor, dmg * PLAYER.ARMOR_ABSORB); T.armor -= ab; toHp = dmg - ab; }
     const dealt = Math.min(T.hp, toHp);
     T.hp -= toHp; T.lastHurt = now;
-    if (attacker !== target) {
+    if (A && attacker !== target) {
       A.dmg += dealt; A.rDmg += dealt; A.rHits++; if (head) A.rHead++;
       if (A.buffs.includes('leech') && A.alive) A.hp = Math.min(A.maxHp, A.hp + dealt * 0.25);
       // 以下只有「真的被對手的槍或刀打中」才算（灼燒、反彈這類後續傷害不會再觸發一輪）
@@ -196,7 +309,8 @@ export class Authority {
         }
       }
     }
-    this.out(target, 'ev', { t: 'hurt', d: Math.round(toHp), self: attacker === target, h: head, w: weapon });
+    const src = x && Array.isArray(x.src) && x.src.length === 2 ? x.src : undefined;
+    this.out(target, 'ev', { t: 'hurt', d: Math.round(toHp), self: attacker === target, h: head, w: weapon, src });
     if (T.hp <= 0 && !warm && T.buffs.includes('phoenix') && !T.phx) {
       // 不死鳥：這一下本來會死，改成原地重生
       T.phx = true; T.hp = Math.min(T.maxHp, 40); T.inv = now + 1200; T.burnT = 0; T.slowT = 0;
@@ -204,9 +318,14 @@ export class Authority {
     } else if (T.hp <= 0) {
       T.hp = 0; T.alive = false;
       const suicide = attacker === target;
-      if (head && !suicide) A.heads++;
+      if (head && !suicide && A) A.heads++;
       const info = { reason: suicide ? 'suicide' : 'kill', victim: target, w: weapon, head: head && !suicide, wb: !!(x && x.wb) && !suicide, bk: !!(x && x.bk) && !suicide };
-      if (warm) {                                                              // 熱身：通知雙方（擊殺訊息用），2 秒後重生
+      if (horde) {                                                             // 機器人模式：記一次陣亡，過幾秒重生
+        this.hz.d[target]++;
+        T.respawnAt = now + (this.hz.kind === 'dm' ? HORDE.DM_RESPAWN : HORDE.DEF_RESPAWN) * 1000;
+        const e = { t: 'hkill', ...info, mob: x && typeof x.mob === 'string' ? x.mob : '' };
+        this.out(0, 'ev', e); this.out(1, 'ev', e);
+      } else if (warm) {                                                              // 熱身：通知雙方（擊殺訊息用），2 秒後重生
         T.respawnAt = Date.now() + 2000;
         this.out(0, 'ev', { t: 'wkill', ...info }); this.out(1, 'ev', { t: 'wkill', ...info });
       } else this._endRound(1 - target, info);
@@ -216,7 +335,7 @@ export class Authority {
 
   _pickup(i, k) {
     const p = this.players[i], pk = this.pickups[k], def = MAPS[this.map].pickups[k];
-    if ((this.phase !== 'playing' && this.phase !== 'warmup') || !p.alive || !pk || !pk.on) return;
+    if ((this.phase !== 'playing' && this.phase !== 'warmup' && this.phase !== 'horde') || !p.alive || !pk || !pk.on) return;
     if (def.type === 'hp') { if (p.hp >= p.maxHp) return; p.hp = Math.min(p.maxHp, p.hp + def.amount); }
     else { if (p.armor >= PLAYER.MAX_ARMOR) return; p.armor = Math.min(PLAYER.MAX_ARMOR, p.armor + def.amount); }
     pk.on = false; pk.at = Date.now() + (def.respawn || MATCH.PICKUP_RESPAWN) * 1000;
@@ -249,7 +368,8 @@ export class Authority {
         if (!p.alive && now >= p.respawnAt) { p.hp = p.maxHp; p.armor = PLAYER.MAX_ARMOR; p.alive = true; p.rHits = p.rDmg = p.rHead = 0; this.out(i, 'ev', { t: 'respawn' }); this.dirty = true; }
       });
       this.pickups.forEach((pk) => { if (!pk.on && now >= pk.at) { pk.on = true; this.dirty = true; } });
-    } else if (this.phase === 'roundEnd') {
+    } else if (this.phase === 'horde') this._hordeTick(now);
+    else if (this.phase === 'roundEnd') {
       if (now >= this.tEnd) {
         if (this.matchWinner >= 0) { this.phase = 'matchEnd'; this.dirty = true; }
         else this._enterLoadout();
@@ -268,6 +388,8 @@ export class Authority {
         sk: p.skills, rr: p.rr, lu: p.lucky ? 1 : 0, fz: now < p.slowT ? 1 : 0, bu: now < p.burnT ? 1 : 0 })),
       pk: this.pickups.map((k) => (k.on ? 1 : 0)),
     };
+    const hz = this.hz;
+    if (hz) s.hz = { kind: hz.kind, cfg: hz.cfg, st: hz.st, wave: hz.wave, cleared: hz.cleared, core: Math.ceil(hz.core), coreMax: hz.coreMax, cp: hz.cp, gates: hz.gates, k: hz.k, hs: hz.hs, d: hz.d, left: hz.left, boss: hz.boss, res: hz.res, t: now - hz.t0 };
     this.out(0, 'gs', s); this.out(1, 'gs', s);
   }
 }

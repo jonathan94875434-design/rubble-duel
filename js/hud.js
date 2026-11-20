@@ -1,7 +1,8 @@
 import { WEAPONS, PRIMARIES, SECONDARIES, GEAR, GEAR_IDS, NADE_IDS, loadoutCost, weaponBars, itemName } from './weapons.js';
 import { BIND_ACTIONS, BIND_LABELS, keyName } from './binds.js';
 import { CARDS, RARITY, cardName } from './cards.js';
-import { TEAM_CSS, ROGUE } from './config.js';
+import { TEAM_CSS, ROGUE, HORDE } from './config.js';
+import { MOBS, HZ_LEVELS, HZ_BEH, HZ_TIER } from './horde.js';
 import { MAPS, MAP_IDS, customIds, deleteMap } from './maps.js';
 import { BOT_LEVELS } from './bot.js';
 import { SKINS, SKIN_IDS, WSKINS, WSKIN_IDS } from './skins.js';
@@ -10,10 +11,11 @@ import { ENVS, ENV_IDS } from './env.js';
 import { SPRAYS, SPRAY_IDS, sprayCanvas } from './sprays.js';
 import { PALETTE, SYM } from './editor.js';
 import { shootIcons } from './icons.js';
+import { store } from './util.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const SCREENS = ['menu', 'lobby', 'loadout', 'end', 'locker', 'stats', 'editor'];
+const SCREENS = ['menu', 'lobby', 'loadout', 'end', 'locker', 'stats', 'editor', 'hz'];
 const hex = (n) => '#' + n.toString(16).padStart(6, '0');
 const opts = (list, cur) => list.map(([v, t]) => `<option value="${esc(v)}"${v === cur ? ' selected' : ''}>${esc(t)}</option>`).join('');
 const svg = (d, vb = '0 0 16 16') => `<svg viewBox="${vb}" aria-hidden="true">${d}</svg>`;
@@ -107,7 +109,8 @@ export class Hud {
     $('pause-title').textContent = mode === 'pause' ? '暫停 — 點空白處或按「繼續」回到遊戲' : '設定';
     $('btn-resume').textContent = mode === 'pause' ? '繼續' : '完成';
     $('btn-quit').classList.toggle('hidden', mode !== 'pause');
-    $('btn-endwarm').classList.toggle('hidden', !(mode === 'pause' && g.phase === 'warmup' && g.net.isHost));
+    $('btn-endwarm').classList.toggle('hidden', !(mode === 'pause' && (g.phase === 'warmup' || g.phase === 'horde') && g.net.isHost));
+    $('btn-endwarm').textContent = g.phase === 'horde' ? '結束這一場（看結算）' : '結束熱身';
     this.syncSettings();
     this.renderBinds();
   }
@@ -230,6 +233,29 @@ export class Hud {
     for (const [id, key] of [['set-target', 'target'], ['set-time', 'roundTime'], ['set-buff', 'buffMode'], ['set-map', 'map'], ['set-mode', 'mode']]) {
       $(id).addEventListener('change', (e) => g.changeSettings({ [key]: e.target.value }));
     }
+    // 機器人模式的選項（大廳和「自己玩」的設定畫面共用同一份清單）
+    const HZ_OPTS = {
+      n: [4, 8, 12, 16].map((v) => [String(v), v + ' 個']), beh: Object.entries(HZ_BEH), lv: Object.entries(HZ_LEVELS).map(([k, v]) => [k, v.name]),
+      time: [['120', '2 分鐘'], ['300', '5 分鐘'], ['600', '10 分鐘'], ['0', '不限時間']],
+    };
+    this.HZ_OPTS = HZ_OPTS;
+    for (const [id, key] of [['set-hzn', 'n'], ['set-hzbeh', 'beh'], ['set-hzlv', 'lv'], ['set-hzt', 'time']]) {
+      $(id).innerHTML = opts(HZ_OPTS[key], '');
+      $(id).addEventListener('change', (e) => g.changeSettings({ hz: { [key]: key === 'beh' || key === 'lv' ? e.target.value : +e.target.value } }));
+    }
+    for (const [id, key] of [['hz-n', 'n'], ['hz-beh', 'beh'], ['hz-lv', 'lv'], ['hz-time', 'time']]) $(id).innerHTML = opts(HZ_OPTS[key], '');
+    const saveHz = () => {
+      const lv = $('hz-lv').value;
+      g.setSetting('hzdm', { n: +$('hz-n').value, beh: $('hz-beh').value, atk: $('hz-atk').value === '1', lv: this.hzKind === 'dm' ? lv : g.settings.hzdm.lv, time: +$('hz-time').value });
+      if (this.hzKind === 'defense') g.setSetting('hzlv', lv);
+      g.setSetting('hzmap', $('hz-map').value);
+      this._hzBest();
+    };
+    for (const id of ['hz-n', 'hz-beh', 'hz-atk', 'hz-lv', 'hz-time', 'hz-map']) $(id).addEventListener('change', saveHz);
+    $('btn-dm').addEventListener('click', () => { g.sfx.ui(); this.openHz('dm'); });
+    $('btn-def').addEventListener('click', () => { g.sfx.ui(); this.openHz('defense'); });
+    $('btn-hz-back').addEventListener('click', () => { g.sfx.ui(); this.show('menu'); });
+    $('btn-hz-go').addEventListener('click', () => g.practiceHorde(this.hzKind));
     $('btn-start').addEventListener('click', () => g.startMatch());
     $('btn-warm').addEventListener('click', () => g.startWarmup());
     $('btn-rematch').addEventListener('click', () => g.startMatch());
@@ -315,7 +341,38 @@ export class Hud {
   clearFlash() { clearTimeout(this.flashT); const f = $('flashfx'); f.style.transition = 'none'; f.style.opacity = '0'; }
   showHud(v) { $('hud').classList.toggle('hidden', !v); }
   menuMsg(t) { $('menu-msg').textContent = t || ''; }
-  menuBusy(b) { for (const id of ['btn-host', 'btn-join', 'btn-bot', 'btn-locker', 'btn-editor', 'btn-stats']) $(id).disabled = b; }
+  menuBusy(b) { for (const id of ['btn-host', 'btn-join', 'btn-bot', 'btn-dm', 'btn-def', 'btn-locker', 'btn-editor', 'btn-stats']) $(id).disabled = b; }
+
+  // ───────── 機器人模式（自己玩）的設定畫面 ─────────
+  openHz(kind) {
+    const g = this.g, st = g.settings, dm = kind === 'dm';
+    this.hzKind = kind;
+    $('hz-title').textContent = dm ? '死鬥練習' : '守據點';
+    $('hz-desc').textContent = dm
+      ? '一大群機器人，打倒了會再補。你無限重生，隨時按商店鍵換槍。可以讓它們站著當靶子、左右閃，或是滿地圖找你。'
+      : '守住地圖中間的據點。機器人一波一波從地圖邊緣殺過來，每 5 波來一隻巨人。每一波之間可以選強化卡、換裝備、蓋沙包牆。據點被打爆就結束。';
+    document.querySelectorAll('#scr-hz .dmopt').forEach((el) => el.classList.toggle('hidden', !dm));
+    $('hz-n').value = String(st.hzdm.n); $('hz-beh').value = st.hzdm.beh; $('hz-atk').value = st.hzdm.atk ? '1' : '0'; $('hz-time').value = String(st.hzdm.time);
+    $('hz-lv').value = dm ? st.hzdm.lv : st.hzlv;
+    $('hz-map').innerHTML = opts([['random', '隨機'], ...this.mapOpts()], MAPS[st.hzmap] ? st.hzmap : 'random');
+    this._hzBest();
+    this.show('hz');
+  }
+  _hzBest() {
+    const best = store.get('hzbest', null) || {}, dm = this.hzKind === 'dm';
+    const v = dm ? best[`dm:${$('hz-time').value}:${$('hz-n').value}`] : best[`def:${$('hz-lv').value}`];
+    $('hz-best').textContent = v ? (dm ? `這個設定的最佳紀錄：擊倒 ${v} 個` : `這個難度的最佳紀錄：撐過 ${v} 波`) : '';
+  }
+  // 守據點：下一波從哪幾個方向來（以據點為中心，小地圖上方 = 北）
+  gateText(hz) {
+    if (!hz || !hz.cp || !hz.gates || !hz.gates.length) return '';
+    const names = ['東', '東南', '南', '西南', '西', '西北', '北', '東北'], out = [];
+    for (const q of hz.gates) {
+      const a = Math.atan2(q[1] - hz.cp[2], q[0] - hz.cp[0]), n = names[((Math.round(a / (Math.PI / 4)) % 8) + 8) % 8];
+      if (!out.includes(n)) out.push(n);
+    }
+    return out.join('、');
+  }
   setCode(c) { $('in-code').value = c; }
 
   toast(text, ms = 2600) {
@@ -408,12 +465,15 @@ export class Hud {
 
   // ───────── 依主機狀態更新靜態畫面 ─────────
   onState(gs) {
-    const g = this.g, me = g.me, opp = 1 - me, P = gs.p, warm = gs.phase === 'warmup';
+    const g = this.g, me = g.me, opp = 1 - me, P = gs.p, warm = gs.phase === 'warmup', hz = gs.phase === 'horde' ? gs.hz : null;
     document.documentElement.style.setProperty('--me', TEAM_CSS[me]);
     document.documentElement.style.setProperty('--opp', TEAM_CSS[opp]);
-    this._set('nm-me', P[me].n); this._set('nm-opp', P[opp].n);
-    this._set('sc-me', warm ? '–' : String(P[me].sc)); this._set('sc-opp', warm ? '–' : String(P[opp].sc));
-    this._set('roundno', warm ? `熱身 · ${MAPS[gs.map].name}` : `第 ${gs.round} 局 · 搶 ${gs.set.target} · ${MAPS[gs.map].name}`);
+    // 機器人模式：記分板顯示各打倒幾隻；只有自己一個人時，右邊顯示場上還有幾個機器人
+    const solo = hz && !gs.here[opp], bots = hz ? (hz.kind === 'defense' ? Math.max(0, hz.left) : g.horde.views.size ? [...g.horde.views.values()].filter((o) => o.alive).length : 0) : 0;
+    this._set('nm-me', P[me].n); this._set('nm-opp', solo ? '機器人' : P[opp].n);
+    this._set('sc-me', hz ? String(hz.k[me]) : warm ? '–' : String(P[me].sc)); this._set('sc-opp', hz ? String(solo ? bots : hz.k[opp]) : warm ? '–' : String(P[opp].sc));
+    this._set('roundno', hz ? `${hz.kind === 'dm' ? '死鬥' : '守據點 · ' + HZ_LEVELS[hz.cfg.lv].name} · ${MAPS[gs.map].name}` : warm ? `熱身 · ${MAPS[gs.map].name}` : `第 ${gs.round} 局 · 搶 ${gs.set.target} · ${MAPS[gs.map].name}`);
+    this._cls('hzinfo', 'hidden', !hz);
 
     // 對戰中：對手帶了哪些異能（記分板下面一排小圖示）
     const rg = gs.set.mode === 'rogue' && !warm, ob = rg ? [...(P[opp].sk || []).filter(Boolean), ...P[opp].bf].join(',') : '';
@@ -435,21 +495,30 @@ export class Hud {
         const el = $(id); el.disabled = !g.net.isHost;
         if (document.activeElement !== el) el.value = String(gs.set[key]);
       }
-      $('set-buff').parentElement.classList.toggle('hidden', gs.set.mode === 'rogue');   // Roguelike 的輸家補償是「多一張卡可以選」，這個選項用不到
+      for (const [id, key] of [['set-hzn', 'n'], ['set-hzbeh', 'beh'], ['set-hzlv', 'lv'], ['set-hzt', 'time']]) {
+        const el = $(id); el.disabled = !g.net.isHost;
+        if (document.activeElement !== el && gs.set.hz) el.value = String(gs.set.hz[key]);
+      }
+      const hm = gs.set.mode === 'dm' || gs.set.mode === 'defense';
+      document.querySelectorAll('#scr-lobby .duelopt').forEach((el) => el.classList.toggle('hidden', hm));
+      document.querySelectorAll('#scr-lobby .hzopt').forEach((el) => el.classList.toggle('hidden', !hm || (el.classList.contains('dmopt') && gs.set.mode !== 'dm')));
+      $('set-buff').parentElement.classList.toggle('hidden', gs.set.mode !== 'classic');   // Roguelike 的輸家補償是「多一張卡可以選」；機器人模式沒有輸家
       $('btn-start').classList.toggle('hidden', !g.net.isHost);
-      $('btn-start').disabled = !gs.here[1];
+      $('btn-start').disabled = !gs.here[1] && !hm;              // 機器人模式可以先自己開打
+      this._set('btn-start', hm ? (gs.here[1] ? '開始' : '先自己開打（朋友晚點進來會直接加入）') : '開始對戰');
       $('btn-warm').classList.toggle('hidden', !g.net.isHost);
       this._set('btn-warm', gs.here[1] ? '一起熱身' : '熱身（跟機器人）');
       $('btn-copy').classList.toggle('hidden', !g.net.isHost);
-    } else if (gs.phase === 'loadout' || (warm && g.buyOpen)) this._loadout(gs, warm);
+    } else if (gs.phase === 'loadout' || ((warm || hz) && g.buyOpen)) this._loadout(gs, warm || !!hz);
     else if (gs.phase === 'matchEnd') this._end(gs);
   }
 
   _loadout(gs, warm) {
     const g = this.g, me = gs.p[g.me], opp = gs.p[1 - g.me];
-    const r1 = !warm && gs.round <= 1, sel = warm ? g.wsel : g.sel, money = warm ? 99999 : me.$, cost = warm ? 0 : loadoutCost(sel);
+    const r1 = !warm && gs.round <= 1, sel = g.shopSel(), money = warm ? 99999 : me.$, cost = warm ? 0 : loadoutCost(sel);
+    const hz = gs.phase === 'horde' ? gs.hz : null, tier = g.hzTier();
     this._cls('scr-loadout', 'warm', !!warm);
-    this._set('lo-title', warm ? '熱身 — 全部免費，隨便拿' : r1 ? '第 1 局 — 手槍局（只能買副武器和裝備）' : `第 ${gs.round} 局 — 購買裝備`);
+    this._set('lo-title', hz ? (hz.kind === 'defense' ? `守據點 — 第 ${hz.wave + (hz.st === 'break' ? 1 : 0)} 波之前　全部免費（好槍撐到後面幾波才開放）` : '死鬥練習 — 全部免費，隨便拿') : warm ? '熱身 — 全部免費，隨便拿' : r1 ? '第 1 局 — 手槍局（只能買副武器和裝備）' : `第 ${gs.round} 局 — 購買裝備`);
     this._set('lo-map', `地圖：${MAPS[gs.map].name}　${MAPS[gs.map].desc}`);
     const mk = warm ? 'warm' : `${money}:${cost}`;
     if (this.cache.loMoney !== mk) { this.cache.loMoney = mk; $('lo-money').innerHTML = warm ? '' : `<b>$${money}</b><span>本局花費 $${cost}　剩下 $${money - cost}</span>`; }
@@ -462,7 +531,10 @@ export class Hud {
     document.querySelectorAll('.wcard').forEach((el) => {
       const d = WEAPONS[el.dataset.id], isP = d.slot === 'p', on = isP ? sel.p === el.dataset.id : sel.s === el.dataset.id;
       const rest = cost - (isP ? (sel.p ? WEAPONS[sel.p].price : 0) : WEAPONS[sel.s].price);   // 這一格以外已經花掉的
-      el.classList.toggle('sel', on); el.classList.toggle('locked', isP && r1); el.classList.toggle('poor', !warm && !on && rest + d.price > money);
+      const lockW = isP && (HZ_TIER[el.dataset.id] || 1) > tier;
+      el.classList.toggle('sel', on); el.classList.toggle('locked', isP && (r1 || lockW)); el.classList.toggle('poor', !warm && !on && rest + d.price > money);
+      const pr = el.querySelector('.price'), pt = hz ? (lockW ? `第 ${HZ_TIER[el.dataset.id]} 波開放` : '免費') : d.price ? '$' + d.price : '免費';
+      if (pr.textContent !== pt) pr.textContent = pt;
     });
     document.querySelectorAll('.gcard').forEach((el) => {
       const d = GEAR[el.dataset.id], n = sel[el.dataset.id] || 0;
@@ -471,7 +543,7 @@ export class Hud {
     });
 
     const rogue = !warm && gs.set.mode === 'rogue', mySk = me.sk || [null, null];
-    const key = !warm && me.ch ? me.ch.join(',') + '|' + mySk.join(',') + '|' + rogue : '';
+    const key = (!warm || hz) && me.ch ? me.ch.join(',') + '|' + mySk.join(',') + '|' + rogue : '';
     if (key !== this.buffKey) {
       this.buffKey = key;
       const box = $('lo-buff-cards'); box.innerHTML = '';
@@ -493,8 +565,8 @@ export class Hud {
       });
     }
     if (key) {
-      this._set('lo-buff-title', rogue ? `第 ${gs.round} 局 — 選一張異能卡` : '上一局落敗補償 — 選一個強化');
-      this._set('lo-buff-sub', !rogue ? '' : me.lu ? '上一局落敗：多一張可以選，手氣也比較好。你選好之前看不到對手拿了什麼' : '你選好之前看不到對手這一局拿了什麼');
+      this._set('lo-buff-title', hz ? `第 ${hz.cleared} 波擋下來了 — 選一張強化卡` : rogue ? `第 ${gs.round} 局 — 選一張異能卡` : '上一局落敗補償 — 選一個強化');
+      this._set('lo-buff-sub', hz ? '下一波開始前沒選，會自動拿第一張' : !rogue ? '' : me.lu ? '上一局落敗：多一張可以選，手氣也比較好。你選好之前看不到對手拿了什麼' : '你選好之前看不到對手這一局拿了什麼');
       const left = ROGUE.REROLLS - (me.rr || 0), rb = $('btn-reroll');
       rb.classList.toggle('hidden', !rogue);
       rb.disabled = left <= 0 || money - cost < ROGUE.REROLL;
@@ -518,7 +590,7 @@ export class Hud {
           + (hidden ? `<i>${opp.ch ? '（還在選）' : '（已選好，等你選完才公開）'}</i>` : '');
       }
     }
-    const bk = warm || rogue ? '' : me.bf.join(',');
+    const bk = (warm && !hz) || rogue ? '' : me.bf.join(',');
     if (this.cache.myBuffs !== bk) {
       this.cache.myBuffs = bk;
       $('lo-mybuffs').innerHTML = bk
@@ -529,12 +601,14 @@ export class Hud {
     this._set('lo-opp', os); this._cls('lo-opp', 'ok', !warm && !!opp.rd);
     const rb = $('btn-ready');
     rb.disabled = !warm && !!me.ch;
-    this._set('btn-ready', warm ? `拿好了，繼續（${this.key('buy')}）` : me.ch ? (rogue ? '先選一張異能卡' : '先選一個強化') : me.rd ? '已準備 ✓（再按取消）' : '準備');
+    this._set('btn-ready', warm ? (hz && me.ch ? `先不選，繼續（${this.key('buy')}）` : `拿好了，繼續（${this.key('buy')}）`) : me.ch ? (rogue ? '先選一張異能卡' : '先選一個強化') : me.rd ? '已準備 ✓（再按取消）' : '準備');
     this._cls('btn-ready', 'on', !warm && !!me.rd);
   }
 
   _end(gs) {
+    if (gs.hz) { this._hzEnd(gs); return; }
     const g = this.g, me = gs.p[g.me], opp = gs.p[1 - g.me], win = gs.mw === g.me;
+    this._set('btn-rematch', '再來一場');
     const t = $('end-title'); t.textContent = win ? '勝利' : '落敗'; t.className = win ? 'win' : 'lose';
     $('end-score').innerHTML = `<span class="me">${me.sc}</span> ： <span class="opp">${opp.sc}</span>`;
     $('end-stats').innerHTML = `<tr><th></th><th>拿下局數</th><th>總傷害</th><th>爆頭擊殺</th></tr>`
@@ -543,13 +617,52 @@ export class Hud {
     $('end-wait').textContent = g.net.isHost ? '' : '等房主決定要不要再來一場…';
   }
 
+  // 機器人模式的結算：擊倒、爆頭、陣亡、撐過幾波、最佳紀錄
+  _hzEnd(gs) {
+    const g = this.g, hz = gs.hz, res = hz.res || {}, dm = hz.kind === 'dm', me = g.me;
+    const t = $('end-title');
+    t.textContent = dm ? (res.why === 'time' ? '時間到' : '結束') : res.why === 'core' ? '據點被攻陷' : '結束'; t.className = dm || res.why !== 'core' ? 'win' : 'lose';
+    const sec = Math.round((res.t || 0) / 1000), mmss = `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+    const acc = g.hzAcc && g.hzAcc.shots ? Math.round((g.hzAcc.hits / g.hzAcc.shots) * 100) + '%' : '—';
+    $('end-score').innerHTML = dm ? `<span class="me">${hz.k[me]}</span><small>擊倒　${mmss}</small>` : `<span class="me">${res.waves || 0}</span><small>撐過的波數　${mmss}</small>`;
+    const rows = [0, 1].filter((i) => i === me || gs.here[i]).map((i) => `<tr><td>${esc(gs.p[i].n)}</td><td>${hz.k[i]}</td><td>${hz.hs[i]}</td><td>${hz.d[i]}</td><td>${gs.p[i].dmg}</td></tr>`).join('');
+    $('end-stats').innerHTML = `<tr><th></th><th>擊倒</th><th>爆頭</th><th>陣亡</th><th>傷害</th></tr>${rows}`
+      + `<tr class="sub"><td colspan="5">你的命中率 ${acc}${g.hzNew ? '　<b class="newrec">新紀錄！</b>' : g.hzPrev ? `　最佳紀錄 ${g.hzPrev}${dm ? ' 擊倒' : ' 波'}` : ''}</td></tr>`;
+    $('btn-rematch').classList.toggle('hidden', !g.net.isHost);
+    this._set('btn-rematch', '再來一次');
+    $('end-wait').textContent = g.net.isHost ? '' : '等房主決定要不要再來一次…';
+  }
+
+  // 機器人模式的抬頭顯示：剩幾隻、據點血量、巨人血量、休息倒數
+  _hzFrame(gs, tl) {
+    const hz = gs.hz, g = this.g, def = hz.kind === 'defense', s = Math.ceil(tl / 1000);
+    let line = '';
+    if (!def) line = `擊倒 ${hz.k[g.me]}　爆頭 ${hz.hs[g.me]}　陣亡 ${hz.d[g.me]}`;
+    else if (hz.st === 'break') {
+      const dirs = this.gateText(hz), me = gs.p[g.me];
+      line = `第 ${hz.wave + 1} 波 ${s} 秒後${dirs ? `從${dirs}` : ''}來　${this.key('skill1')} 蓋沙包牆　${this.key('buy')} ${me.ch ? '選強化卡、' : ''}換裝備`;
+    } else line = `第 ${hz.wave} 波　剩 ${Math.max(0, hz.left)} 個敵人`;
+    this._set('hz-line', line);
+    this._cls('hz-core', 'hidden', !def);
+    if (def) {
+      const f = Math.max(0, Math.min(1, hz.core / hz.coreMax)), k = Math.round(f * 200);
+      if (this.cache.coreW !== k) { this.cache.coreW = k; $('hz-corebar').style.width = (f * 100).toFixed(1) + '%'; $('hz-core').classList.toggle('low', f < 0.3); }
+      this._set('hz-corenum', String(hz.core));
+    }
+    this._cls('hz-boss', 'hidden', !(hz.boss > 0));
+    if (hz.boss > 0) { const k = Math.round(hz.boss * 200); if (this.cache.bossW !== k) { this.cache.bossW = k; $('hz-bossbar').style.width = (hz.boss * 100).toFixed(1) + '%'; } }
+  }
+
   // ───────── 每一幀更新 ─────────
   frame(d) {
     const tl = Math.max(0, d.tLeft), g = this.g;
     if (d.phase === 'loadout') { this._set('lo-timer', String(Math.ceil(tl / 1000))); return; }
     const s = Math.ceil(tl / 1000);
-    this._set('timer', d.phase === 'playing' ? `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}` : d.phase === 'warmup' ? '熱身' : '--:--');
-    this._cls('timer', 'low', d.phase === 'playing' && s <= 15);
+    const hz = d.phase === 'horde' && g.gs ? g.gs.hz : null;
+    const clock = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+    this._set('timer', hz ? (hz.kind === 'dm' ? (hz.cfg.time ? clock : '∞') : hz.st === 'break' ? clock : `第 ${hz.wave} 波`) : d.phase === 'playing' ? clock : d.phase === 'warmup' ? '熱身' : '--:--');
+    this._cls('timer', 'low', (d.phase === 'playing' || (hz && hz.kind === 'dm' && hz.cfg.time)) && s <= 15);
+    if (hz) this._hzFrame(g.gs, tl);
 
     const hp = d.hp, mhp = d.mhp;
     this._set('num-hp', String(hp)); this._set('num-armor', String(d.armor));
@@ -565,7 +678,8 @@ export class Hud {
     const sk = d.sk, ids = sk.slots.map((x) => (x ? x.id : '')).join(',') + '|' + this.key('skill1') + this.key('skill2');
     if (this.cache.skIds !== ids) {
       this.cache.skIds = ids; this.cache.sk0 = this.cache.sk1 = null;
-      $('skills').innerHTML = sk.slots.map((x, i) => (x ? `<div class="sk r-${CARDS[x.id].r}" id="sk${i}" title="${esc(CARDS[x.id].name)}"><b>${esc(this.key(i ? 'skill2' : 'skill1'))}</b><span>${CARDS[x.id].glyph}</span><u></u><i></i><em>${esc(CARDS[x.id].name)}</em></div>` : '')).join('');
+      const nm = (id) => (id === 'wall' && g.phase === 'horde' ? '沙包牆' : CARDS[id].name);   // 守據點的牆是沙包
+      $('skills').innerHTML = sk.slots.map((x, i) => (x ? `<div class="sk r-${CARDS[x.id].r}" id="sk${i}" title="${esc(nm(x.id))}"><b>${esc(this.key(i ? 'skill2' : 'skill1'))}</b><span>${CARDS[x.id].glyph}</span><u></u><i></i><em>${esc(nm(x.id))}</em></div>` : '')).join('');
     }
     sk.slots.forEach((x, i) => {
       if (!x) return;
@@ -614,7 +728,7 @@ export class Hud {
       this.cache.nades = nk;
       $('nades').innerHTML = NADE_IDS.filter((k) => d.nades[k] > 0).map((k) => `<span title="${esc(GEAR[k].name)}">${ICON[k]}<b>${esc(this.key(k))}</b>${d.nades[k] > 1 ? `<i>×${d.nades[k]}</i>` : ''}</span>`).join('');
     }
-    this._set('money', d.phase === 'warmup' ? '' : '$' + d.money);
+    this._set('money', d.phase === 'warmup' || d.phase === 'horde' ? '' : '$' + d.money);
     this._set('speed-n', d.spd.toFixed(1));
     this._cls('speed', 'fast', d.spd > 7.2); this._cls('speed', 'crouch', !!d.crouch);
   }

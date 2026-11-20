@@ -58,14 +58,16 @@ export class Nav {
     return best;
   }
 
-  // A*。回傳路徑點陣列 [{x,y,z}]（公尺，含起點與終點），走不到回 null
+  // A*。回傳路徑點陣列 [{x,y,z}]（公尺，含起點與終點），走不到回 null。
+  // goal = -1：不找終點，把走得到的地方全部展開一遍（reachable() 用）
   find(start, goal, maxExpand = 40000) {
-    if (start < 0 || goal < 0) return null;
+    if (start < 0 || goal < -1) return null;
+    const all = goal === -1;
     const { NX, mask, g, f, from, stamp, done } = this;
     const gen = ++this.gen, heap = this.heap;
     heap.length = 0;
     const gi = ((goal / 32) | 0) % NX, gk = (((goal / 32) | 0) / NX) | 0, gy = goal % 32;
-    const h = (i, k, y) => { const a = Math.abs(i - gi), b = Math.abs(k - gk); return Math.max(a, b) + 0.414 * Math.min(a, b) + 0.5 * Math.abs(y - gy); };
+    const h = all ? () => 0 : (i, k, y) => { const a = Math.abs(i - gi), b = Math.abs(k - gk); return Math.max(a, b) + 0.414 * Math.min(a, b) + 0.5 * Math.abs(y - gy); };
     const push = (id, cost, parent, i, k, y) => {
       if (stamp[id] === gen && g[id] <= cost) return;
       stamp[id] = gen; g[id] = cost; from[id] = parent; f[id] = cost + h(i, k, y);
@@ -130,5 +132,20 @@ export class Nav {
   path(ax, ay, az, bx, by, bz) {
     this.refresh();
     return this.find(this.nearest(ax, ay, az), this.nearest(bx, by, bz));
+  }
+
+  // 從某個位置走得到的所有站立點（公尺座標，節點在方塊格線交點上）。機器人模式用來挑出生點和據點
+  reachable(x, y, z) {
+    this.refresh();
+    const s = this.nearest(x, y, z);
+    if (s < 0) return [];
+    this.find(s, -1, 400000);
+    const out = [], { NX, done } = this, gen = this.gen;
+    for (let id = 0; id < done.length; id++) {
+      if (done[id] !== gen) continue;
+      const c = (id / 32) | 0;
+      out.push({ x: (c % NX) * BS, y: (id % 32) * BS, z: ((c / NX) | 0) * BS });
+    }
+    return out;
   }
 }

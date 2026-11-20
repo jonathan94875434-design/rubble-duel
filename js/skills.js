@@ -33,6 +33,7 @@ export class Skills {
   constructor(g) {
     this.g = g; this.t = 0;
     this.slots = [null, null]; this.ready = [0, 0]; this.uses = [0, 0];
+    this.wallType = B.METAL;                       // 鋼牆技能用什麼方塊（守據點蓋的是沙包，機器人打得爛）
     this._reset();
     this._build();
   }
@@ -86,12 +87,14 @@ export class Skills {
   }
 
   // ───────── 每一局 ─────────
-  // skills = 主機狀態裡我的兩格技能（[代號或 null, 代號或 null]）
-  setup(skills) {
+  // skills = 主機狀態裡我的兩格技能（[代號或 null, 代號或 null]）；uses = 指定每格能用幾次（不給就照卡片）
+  setup(skills, uses) {
     this.clear();
     this.slots = [0, 1].map((i) => (skills && CARDS[skills[i]] && CARDS[skills[i]].k === 'a' ? skills[i] : null));
-    this.ready = [0, 0]; this.uses = this.slots.map((id) => (id && CARDS[id].uses) || 0);
+    this.ready = [0, 0]; this.uses = this.slots.map((id, i) => (uses && uses[i] !== undefined ? uses[i] : (id && CARDS[id].uses) || 0));
   }
+  // 只補次數，不清掉場上的東西（守據點每一波休息時）
+  refill(i, n) { if (this.slots[i]) { this.uses[i] = n; this.ready[i] = 0; } }
   // 開打的瞬間：殺傷力大的技能要等幾秒才能用（不然一開局就能往對手的出生點丟）
   go(now) { this.slots.forEach((id, i) => { if (id && CARDS[id].lock) this.ready[i] = Math.max(this.ready[i], now + CARDS[id].lock * 1000); }); }
 
@@ -107,7 +110,7 @@ export class Skills {
   // ───────── 施放 ─────────
   use(i) {
     const g = this.g, id = this.slots[i], now = performance.now();
-    if (!id || g.phase !== 'playing' || !g.meAlive() || g.kc || g.emote) return false;
+    if (!id || (g.phase !== 'playing' && g.phase !== 'horde') || !g.meAlive() || g.kc || g.emote) return false;
     const c = CARDS[id];
     if (now < this.ready[i] || (c.uses && this.uses[i] <= 0)) { g.sfx.deny(); return false; }
     if (!this['_' + id](now)) { g.sfx.deny(); return false; }
@@ -188,26 +191,26 @@ export class Skills {
     for (let i = -3; i <= 3; i++) for (let j = 0; j < 5; j++) {
       const x = alongX ? cx + i : cx, z = alongX ? cz : cz + i, y = by + j;
       if (!w.inb(x, y, z) || w.types[w.idx(x, y, z)]) continue;
-      if (this._boxHits(x, y, z, p.pos, 0.36, p.h) || (g.remote.alive && this._boxHits(x, y, z, g.remote.pos, 0.45, 1.85))) continue;
+      if (this._boxHits(x, y, z, p.pos, 0.36, p.h) || (g.remote.alive && this._boxHits(x, y, z, g.remote.pos, 0.45, 1.85)) || (g.horde.on && g.horde.blocks(x, y, z))) continue;
       cells.push(w.idx(x, y, z));
     }
     if (cells.length < 4) return false;
-    this._placeWall(cells, true);
-    this._send({ id: 'wall', c: cells });
+    this._placeWall(cells, true, this.wallType);
+    this._send({ id: 'wall', c: cells, b: this.wallType });
     return true;
   }
   _boxHits(bx, by, bz, pos, hw, h) {
     return (bx + 1) * BS > pos.x - hw && bx * BS < pos.x + hw && (bz + 1) * BS > pos.z - hw && bz * BS < pos.z + hw && (by + 1) * BS > pos.y && by * BS < pos.y + h;
   }
   // mine = 是我放的。對手放的牆如果有幾格會蓋在我身上，我這邊不放，並且請對手把那幾格撤掉（兩邊地形才會一樣）
-  _placeWall(cells, mine) {
+  _placeWall(cells, mine, type = B.METAL) {
     const g = this.g, w = g.world, p = g.player, skipped = [];
     let n = 0, sx = 0, sy = 0, sz = 0;
     for (const ci of cells) {
       if (!Number.isInteger(ci) || ci < 0 || ci >= w.types.length || w.types[ci]) continue;
       const x = ci % w.X, r = (ci - x) / w.X, z = r % w.Z, y = (r - z) / w.Z;
       if (!mine && g.meAlive() && this._boxHits(x, y, z, p.pos, 0.3, p.h)) { skipped.push(ci); continue; }
-      w.edit(x, y, z, B.METAL);
+      w.edit(x, y, z, type);
       if (mine) this.myWall.add(ci);
       const wx = (x + 0.5) * BS, wy = (y + 0.5) * BS, wz = (z + 0.5) * BS;
       sx += wx; sy += wy; sz += wz; n++;
@@ -220,7 +223,7 @@ export class Skills {
   _unwall(cells) {
     const w = this.g.world;
     for (const ci of cells) {
-      if (!this.myWall.has(ci) || w.types[ci] !== B.METAL) continue;
+      if (!this.myWall.has(ci) || (w.types[ci] !== B.METAL && w.types[ci] !== B.SANDBAG)) continue;
       const x = ci % w.X, r = (ci - x) / w.X, z = r % w.Z, y = (r - z) / w.Z;
       w.edit(x, y, z, 0); this.myWall.delete(ci);
     }
@@ -357,7 +360,7 @@ export class Skills {
         else if (vec3(d.p)) { this.rgrap = { x: d.p[0], y: d.p[1], z: d.p[2], end: now + dur(0.2, 2) }; this._snd('grapple', rp.x, rp.z); }
         break;
       case 'jet': this.jets.push({ me: false, end: now + 450 }); this._snd('jet', rp.x, rp.z); break;
-      case 'wall': if (Array.isArray(d.c) && d.c.length <= 40) this._placeWall(d.c, false); break;
+      case 'wall': if (Array.isArray(d.c) && d.c.length <= 40) this._placeWall(d.c, false, d.b === B.SANDBAG ? B.SANDBAG : B.METAL); break;
       case 'unwall': if (Array.isArray(d.c) && d.c.length <= 40) this._unwall(d.c); break;
       case 'stim': this._sparkle(rp.x, rp.y + 1, rp.z, 1.2, 6, 2); this._snd('stim', rp.x, rp.z); break;
       case 'scan': this.scannedEnd = now + dur(1, 6); g.sfx.skill('scan'); g.hud.feed('對手用透視脈衝掃到你了'); break;

@@ -52,6 +52,11 @@
   </div>
 
   <div id="oppbuild"></div>
+  <div id="hzinfo" class="hidden">
+    <div id="hz-line"></div>
+    <div id="hz-core" class="hzbar core hidden"><span>據點</span><div class="bar"><i id="hz-corebar"></i></div><b id="hz-corenum"></b></div>
+    <div id="hz-boss" class="hzbar boss hidden"><span>巨人</span><div class="bar"><i id="hz-bossbar"></i></div></div>
+  </div>
   <div id="status"></div>
   <div id="skills"></div>
   <div id="speed"><b id="speed-n">0.0</b><span>m/s</span></div>
@@ -79,6 +84,10 @@
         <select id="sel-pmap" title="練習地圖"></select>
       </div>
       <label class="check"><input id="chk-prog" type="checkbox"> 練習用 Roguelike 模式（每局選一張異能卡）</label>
+      <div class="grid2 hzrow">
+        <button id="btn-dm" class="btn" title="一大群機器人，可以選定點或來找你、會不會開槍">死鬥練習</button>
+        <button id="btn-def" class="btn" title="守住地圖中間的據點，擋下一波波機器人">守據點</button>
+      </div>
       <div class="grid2">
         <button id="btn-locker" class="btn ghost">造型 / 噴漆</button>
         <button id="btn-stats" class="btn ghost">戰績</button>
@@ -100,6 +109,11 @@
           <p>房主在大廳把「模式」改成 Roguelike。每一局開打前，雙方各從 3 張<b>異能卡</b>裡選 1 張，整場累積；<b>上一局輸的人有 4 張可以選</b>，也比較容易抽到稀有卡。</p>
           <p><b>被動</b>拿了就一直有效；<b>主動技能</b>最多帶兩個，用技能鍵施放（預設 E 和 4，可以改）。兩格都滿了再拿新技能，要挑一個換掉。</p>
           <p>你選好之前看不到對手這一局拿了什麼；選完才公開，接著買裝備——看對手的組合決定這一局怎麼打。不滿意可以花 $400 重抽，每局最多 2 次。</p>
+        </details>
+        <details><summary>死鬥練習、守據點</summary>
+          <p><b>死鬥練習</b>：場上同時有 4～16 個機器人，打倒會再補。可以選它們<b>定點不動、定點左右閃、主動來找你</b>或混合，也可以設成<b>不開槍</b>當靶子練槍。你自己無限重生，按商店鍵隨時換槍。</p>
+          <p><b>守據點</b>：守住地圖中間發光的據點，機器人一波一波從地圖邊緣殺過來（小地圖上的紅色箭頭是下一波的方向）。每一波之間休息時可以<b>選一張強化卡、換裝備、用技能鍵蓋沙包牆</b>；好的槍要撐到後面幾波才開放。每 5 波會來一隻巨人。據點被打爆就結束。</p>
+          <p>兩個人一起玩：建立房間，在大廳把「模式」改成<b>守據點</b>或<b>機器人死鬥</b>，朋友不用等，晚點進來也會直接加入。</p>
         </details>
         <details><summary>經濟與戰鬥規則</summary>
           <p>每局開打前用錢買裝備，買了就花掉；<b>商店每局都重置</b>，不會沿用上一局買的。開場 $800，<b>第 1 局只能買手槍</b>。</p>
@@ -123,13 +137,35 @@
         <div class="pl p1"><i></i><span id="lb-p1"></span></div>
       </div>
       <div class="settings">
-        <label class="wide">模式<select id="set-mode"><option value="classic">一般對戰</option><option value="rogue">Roguelike — 每局選一張異能卡，整場累積</option></select></label>
-        <label>獲勝分數<select id="set-target"><option value="3">搶 3</option><option value="5">搶 5</option><option value="7">搶 7</option><option value="10">搶 10</option></select></label>
-        <label>每局時間<select id="set-time"><option value="60">60 秒</option><option value="90">90 秒</option><option value="120">120 秒</option><option value="180">180 秒</option></select></label>
+        <label class="wide">模式<select id="set-mode"><option value="classic">一般對戰</option><option value="rogue">Roguelike — 每局選一張異能卡，整場累積</option><option value="defense">守據點 — 兩個人一起擋一波波機器人</option><option value="dm">機器人死鬥 — 兩個人一起打機器人，比誰打倒得多</option></select></label>
+        <label class="hzopt dmopt">機器人數量<select id="set-hzn"></select></label>
+        <label class="hzopt dmopt">機器人行為<select id="set-hzbeh"></select></label>
+        <label class="hzopt">難度<select id="set-hzlv"></select></label>
+        <label class="hzopt dmopt">時間<select id="set-hzt"></select></label>
+        <label class="duelopt">獲勝分數<select id="set-target"><option value="3">搶 3</option><option value="5">搶 5</option><option value="7">搶 7</option><option value="10">搶 10</option></select></label>
+        <label class="duelopt">每局時間<select id="set-time"><option value="60">60 秒</option><option value="90">90 秒</option><option value="120">120 秒</option><option value="180">180 秒</option></select></label>
         <label>地圖<select id="set-map"></select></label>
         <label>輸家補償<select id="set-buff"><option value="streak">強化：連敗累積，贏了清空</option><option value="single">強化：只維持下一局</option><option value="permanent">強化：整場保留</option><option value="off">不給強化（只靠多拿錢）</option></select></label>
       </div>
       <div class="actions"><button id="btn-leave" class="btn ghost">離開</button><button id="btn-warm" class="btn">熱身</button><button id="btn-start" class="btn primary">開始對戰</button></div>
+    </div>
+  </section>
+
+  <!-- 死鬥練習／守據點（自己玩）的設定 -->
+  <section id="scr-hz" class="screen hidden">
+    <div class="panel hzset">
+      <h2 id="hz-title">死鬥練習</h2>
+      <p class="hint" id="hz-desc"></p>
+      <div class="settings">
+        <label class="dmopt">機器人數量<select id="hz-n"></select></label>
+        <label class="dmopt">機器人行為<select id="hz-beh"></select></label>
+        <label class="dmopt">會不會開槍<select id="hz-atk"><option value="1">會開槍打你</option><option value="0">不開槍（當靶子練槍）</option></select></label>
+        <label>難度<select id="hz-lv"></select></label>
+        <label class="dmopt">時間<select id="hz-time"></select></label>
+        <label>地圖<select id="hz-map"></select></label>
+      </div>
+      <div class="hint" id="hz-best"></div>
+      <div class="actions"><button id="btn-hz-back" class="btn ghost">返回</button><button id="btn-hz-go" class="btn primary">開始</button></div>
     </div>
   </section>
 

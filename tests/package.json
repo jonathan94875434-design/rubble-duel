@@ -13,6 +13,8 @@
     "rogue": "node rogue.mjs shots",
     "rogue:duel": "node rogue-duel.mjs shots",
     "rogue:peer": "node rogue-duel.mjs shots peer",
+    "horde": "node horde.mjs shots",
+    "horde:peer": "node horde.mjs shots peer",
     "audio": "node audio-check.mjs"
   },
   "devDependencies": {

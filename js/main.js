@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { BS, NET, TEAM, TEAM_CSS, PLAYER, ROGUE } from './config.js';
-import { World, BLOCK } from './world.js';
+import { BS, NET, TEAM, TEAM_CSS, PLAYER, ROGUE, HORDE } from './config.js';
+import { World, BLOCK, B } from './world.js';
 import { Player } from './player.js';
 import * as RP from './remote.js';
 import { Combat } from './combat.js';
@@ -28,6 +28,7 @@ import { Voice } from './voice.js';
 import { Editor, PALETTE, SYM } from './editor.js';
 import { Skills } from './skills.js';
 import { CARDS, cardName } from './cards.js';
+import { Horde, MOBS, HZ_TIER, HZ_LEVELS } from './horde.js';
 
 const RemotePlayer = RP.RemotePlayer;
 // 表情動作的清單（角色模型那邊有定義就用它的）
@@ -39,7 +40,7 @@ const LOCAL = qs.get('local') === '1';    // 同一台電腦兩個分頁測試
 const NOLOCK = qs.get('nolock') === '1';  // 自動化測試用：不需要鎖定滑鼠
 const DEG = Math.PI / 180;
 const _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v2s = new THREE.Vector2(), _c1 = new THREE.Color();
-const ROUND_PHASES = ['countdown', 'playing', 'roundEnd', 'warmup'];
+const ROUND_PHASES = ['countdown', 'playing', 'roundEnd', 'warmup', 'horde'];
 const WARM_LOADOUT = { p: 'ar', s: 'pistol', armor: 1, he: 1, flash: 1, smoke: 1, molotov: 1 };
 // 音效模組還沒有的新聲音先當作沒事（舊版 audio.js 也能跑）
 const SFX_OPTIONAL = ['setEnv', 'ambient', 'stopLoops', 'loop', 'impact', 'whiz', 'knifeSwing', 'knifeHit', 'molotov', 'shell', 'spray', 'emote', 'respawn', 'roundStart', 'voiceBlip', 'duck', 'skill', 'card'];
@@ -53,6 +54,8 @@ class Game {
       wheel: store.get('wheel', true),          // 滾輪切槍（Magic Mouse 容易誤觸，可以關）
       bot: store.get('bot', 'normal'), pmap: store.get('pmap', 'random'),  // 練習模式的難度與地圖
       prog: store.get('prog', false),           // 練習時也用 Roguelike 模式
+      // 機器人模式（自己玩）的設定：死鬥的數量／行為／會不會開槍／難度／時間，守據點的難度，以及地圖
+      hzdm: { n: 8, beh: 'hunt', atk: true, lv: 'normal', time: 300, ...(store.get('hzdm', null) || {}) }, hzlv: store.get('hzlv', 'normal'), hzmap: store.get('hzmap', 'random'),
       skin: look.s, wskin: look.w,
       quality: store.get('quality', 'auto'),    // 畫質：auto / low / medium / high
       xh: { ...DEFAULT_XHAIR, ...(store.get('xh', null) || {}) },   // 準星
@@ -62,6 +65,7 @@ class Game {
     };
     this.sel = validLoadout(null);   // 這一局在商店選的裝備；每局都從「只有免費手槍」開始，不沿用上一局
     this.wsel = validLoadout(store.get('wsel', WARM_LOADOUT));   // 熱身用的裝備（免費，會記住）
+    this.hsel = { ...this.wsel };                                 // 機器人模式的裝備（守據點有些槍要撐到後面幾波才開放）
     this.binds = loadBinds(store.get('binds'));
     this.phase = 'menu'; this.gs = null; this.me = 0; this.round = 0; this.code = '';
     this.authority = null; this.bot = null; this.warmBot = false; this.locked = false; this.phaseEnd = 0;
@@ -89,6 +93,7 @@ class Game {
     this.pedestal.position.set(24, 14.93, 24); this.pedestal.visible = false; this.pedestal.receiveShadow = true; this.scene.add(this.pedestal);
     this.combat = new Combat(this);
     this.skills = new Skills(this);
+    this.horde = new Horde(this);
     this.net = new Net();
     this.replay = new Replay();
     this.stats = new Stats();
@@ -265,8 +270,8 @@ class Game {
     else if (code === b.knife) cb.switchTo(2);
     else if (code === b.swap) cb.switchLast();
     else if (code === b.reload) this.reloadPressed = true;
-    else if (code === b.buy) { if (this.phase === 'warmup') this.openBuy(); }
-    else if ((this.phase === 'playing' || this.phase === 'warmup') && this.meAlive()) {
+    else if (code === b.buy) { if (this.phase === 'warmup' || this.phase === 'horde') this.openBuy(); }
+    else if ((this.phase === 'playing' || this.phase === 'warmup' || this.phase === 'horde') && this.meAlive()) {
       const nade = NADE_IDS.find((k) => b[k] === code);
       if (code === b.skill1) this.skills.use(0);
       else if (code === b.skill2) this.skills.use(1);
@@ -286,6 +291,22 @@ class Game {
   meAlive() { return !!(this.gs && this.gs.p[this.me].al); }
   zoom() { const w = this.combat.w; return w ? lerp(1, w.def.zoom, this.combat.ads) : 1; }
   oppHas(id) { const o = this.gs && this.gs.p[1 - this.me]; return !!(o && o.bf && o.bf.includes(id)); }
+  coop() { return this.phase === 'horde' || !!(this.gs && this.gs.hz); }   // 機器人模式：另一位玩家是隊友
+
+  // 子彈打得到的目標：對戰時是對手；機器人模式是場上的機器人（打不到隊友）。回傳 { t, head, id }，id -1 = 對手
+  rayTarget(ox, oy, oz, dx, dy, dz) {
+    if (this.horde.on) return this.horde.rayHit(ox, oy, oz, dx, dy, dz);
+    const h = this.remote.rayHit(ox, oy, oz, dx, dy, dz);
+    return h ? { t: h.t, head: h.head, id: -1 } : null;
+  }
+  // 爆炸、火這類範圍傷害：每個能打的目標 fn(id, 腳底位置, 體型)
+  eachTarget(fn) { if (this.horde.on) this.horde.each(fn); else if (this.remote.alive) fn(-1, this.remote.pos, 1); }
+  targetYaw(id) { return id === -1 ? this.remote.yaw : this.horde.yawOf(id); }
+  // 打中了：對手走裁判的 'hit'；機器人走 'mobhit'（房主那邊扣它的血）
+  hitTarget(id, d, head, w, x) {
+    if (id !== -1) { this.auth('mobhit', { r: this.round, id, d, h: head, w }); this.horde.flash(id); return; }
+    this.auth('hit', { r: this.round, d, h: head, w, ...(x || {}) }); this.remote.hitFlash();
+  }
   // 戰績記在哪一邊：跟機器人打算練習
   mode() { return this.net.mode === 'bot' || this.warmBot ? 'practice' : 'duel'; }
 
@@ -338,7 +359,7 @@ class Game {
       this.voice.hangup();
       if (n.isHost) {
         this.hud.toast('對手離線了，房間還開著，可以重新邀請');
-        if (this.authority) { this.authority.setPresent(1, false); this.authority.toLobby(); }
+        if (this.authority) { this.authority.setPresent(1, false); if (this.authority.phase !== 'horde') this.authority.toLobby(); }   // 機器人模式：隊友走了，自己繼續打
       } else { this.leave(); this.hud.menuMsg('與房主的連線中斷了'); }
     });
     n.on('_error', (t) => { if (t !== 'peer-unavailable') this.hud.toast('網路狀況不穩（' + t + '）'); });
@@ -353,6 +374,10 @@ class Game {
     n.on('spray', (d) => { if (d && d.r === this.round && SPRAYS[d.id] && Array.isArray(d.p) && Array.isArray(d.n)) this.fx.spray(sprayTex(d.id), +d.p[0], +d.p[1], +d.p[2], +d.n[0], +d.n[1], +d.n[2], +d.y || 0, d.c | 0); });
     n.on('emote', (d) => { if (d && EMOTES[d.id] && this.remote.emote) this.remote.emote(d.id); });
     n.on('sk', (d) => this.skills.onNet(d));   // 對手施放了技能
+    // 機器人模式：房主傳來機器人的位置、開槍、巨人的砲擊預告
+    n.on('mobs', (d) => { if (!n.isHost) this.horde.onSnap(d); });
+    n.on('mfire', (d) => { if (!n.isHost) this.horde.onFire(d); });
+    n.on('mwarn', (d) => { if (!n.isHost) this.horde.onWarn(d); });
     // 房主選了自製地圖：把地圖資料傳過來，登記好之後才處理用到它的狀態
     n.on('map', async (d) => {
       if (n.isHost || !d || typeof d.code !== 'string' || d.code.length > 400000) return;
@@ -379,6 +404,7 @@ class Game {
     });
     this.authority.setName(0, this.myName());
     this.authority.handle(0, 'look', this.look());
+    this.authority.onMobHit = (i, d) => this.horde.hit(i, d);
   }
 
   async hostGame() {
@@ -422,6 +448,20 @@ class Game {
     this.authority.startMatch();
   }
 
+  // 自己一個人玩機器人模式：kind 'dm' 死鬥練習／'defense' 守據點
+  practiceHorde(kind) {
+    this.sfx.init(); this.me = 0; this.code = '';
+    this.net.close(); this.net.isHost = true;
+    this._mkAuthority();
+    const m = this.settings.hzmap, hz = kind === 'dm' ? this.settings.hzdm : { lv: this.settings.hzlv, atk: true };
+    this.authority.setSettings({ mode: kind, map: MAPS[m] ? m : 'random', hz });
+    this.authority.startMatch();
+  }
+  hzMode() { return !!this.authority && ['dm', 'defense'].includes(this.authority.settings.mode); }
+  // 守據點：現在開放到第幾波的槍（休息時算下一波）
+  hzTier() { const hz = this.gs && this.gs.hz; return !hz || hz.kind !== 'defense' ? 99 : hz.st === 'break' ? hz.wave + 1 : hz.wave; }
+  shopSel() { return this.phase === 'horde' ? this.hsel : this.phase === 'warmup' ? this.wsel : this.sel; }
+
   // 機器人需要問遊戲的事：視線有沒有被煙擋住、子彈會不會被能量護罩擋下
   _wireBot() {
     this.bot.blocked = (ax, ay, az, bx, by, bz) => this.fx.smokeBlocked(ax, ay, az, bx, by, bz);
@@ -446,7 +486,10 @@ class Game {
     this.warmBot = false; this.bot = null; this.net.detachBot();
     if (this.authority) { this.authority.setPresent(1, false); this.authority.setName(1, ''); }
   }
-  endWarmup() { if (!this.authority || this.phase !== 'warmup') return; this._dropWarmBot(); this.authority.toLobby(); }
+  endWarmup() {
+    if (this.authority && this.phase === 'horde') { this.authority.endHorde(); return; }   // 機器人模式：提早結束，看結算
+    if (!this.authority || this.phase !== 'warmup') return; this._dropWarmBot(); this.authority.toLobby();
+  }
 
   leave() {
     this.voice.close();
@@ -457,13 +500,14 @@ class Game {
     this.remote.alive = false; this.remote.group.visible = false; this.ghost.group.visible = false;
     this._endKillcam(); this.emote = null; this.editor.close(); this.hurtSrc = null; this.hud.hurtDir(0, 0);
     this.exitLock(); this.hud.showHud(false); this.hud.clearBanner(); this.hud.report(null); this.hud.show('menu'); this.hud.menuMsg('');
-    this.combat.clearProjectiles(); this.fx.clear(); this.skills.clear(); this.sfx.stopLoops(); this.sfx.ambient(null);
+    this.combat.clearProjectiles(); this.fx.clear(); this.skills.clear(); this.horde.stop(); this.sfx.stopLoops(); this.sfx.ambient(null);
     for (const m of this.pickMeshes) m.visible = false;
     if (!MAPS[this.world.mapId]) this.setMap('plaza');
   }
 
   changeSettings(s) { if (this.authority) { this.authority.setSettings(s); if (s.map) this._sendMap(s.map); } }
-  startMatch() { if (this.authority && this.gs && this.gs.here[1] && !this.warmBot) { this._sendMap(this.authority.settings.map); this.authority.startMatch(); } }
+  // 對戰要等對手進來；機器人模式可以先自己開打，朋友晚點進來也會直接加入
+  startMatch() { if (this.authority && this.gs && (this.gs.here[1] || this.hzMode()) && !this.warmBot) { this._sendMap(this.authority.settings.map); this.authority.startMatch(); } }
 
   // 對裁判提出請求：房主直接呼叫、訪客走網路
   auth(type, data) {
@@ -477,12 +521,14 @@ class Game {
   buy(kind, id) {
     const gs = this.gs;
     if (!gs) return;
-    if (gs.phase === 'warmup') {                       // 熱身：全部免費，愛拿什麼拿什麼
+    if (gs.phase === 'warmup' || gs.phase === 'horde') {   // 熱身、機器人模式：全部免費，愛拿什麼拿什麼
       if (!this.buyOpen) return;
-      const n = { ...this.wsel };
+      const horde = gs.phase === 'horde', n = { ...(horde ? this.hsel : this.wsel) };
+      if (kind === 'p' && n.p !== id && (HZ_TIER[id] || 1) > this.hzTier()) { this.sfx.deny(); this.hud.toast(`撐到第 ${HZ_TIER[id]} 波才開放`); return; }
       if (kind === 'p') n.p = n.p === id ? null : id; else if (kind === 's') n.s = id;
       else if (GEAR[kind]) n[kind] = n[kind] >= GEAR[kind].max ? 0 : n[kind] + 1; else return;
-      this.wsel = n; store.set('wsel', n); this.sfx.buy(); this.hud.onState(gs);
+      if (horde) this.hsel = n; else { this.wsel = n; store.set('wsel', n); }
+      this.sfx.buy(); this.hud.onState(gs);
       return;
     }
     if (gs.phase !== 'loadout') return;
@@ -503,7 +549,7 @@ class Game {
   }
   toggleReady() {
     if (!this.gs) return;
-    if (this.phase === 'warmup') { this.closeBuy(); return; }
+    if (this.phase === 'warmup' || this.phase === 'horde') { this.closeBuy(); return; }
     this.sfx.ui(); this.auth('ready', { v: !this.gs.p[this.me].rd });
   }
   // 選卡（一般模式的輸家強化也走這裡）。slot：兩格技能都滿了的時候，要換掉哪一格
@@ -516,11 +562,17 @@ class Game {
     this.sfx.buy(); this.auth('reroll', {});
   }
   // 熱身中的商店
-  openBuy() { if (this.phase !== 'warmup' || this.buyOpen) return; this.buyOpen = true; this.mouse.l = this.mouse.r = false; this.exitLock(); this.hud.show('loadout'); this.hud.onState(this.gs); }
+  openBuy() {
+    if ((this.phase !== 'warmup' && this.phase !== 'horde') || this.buyOpen) return;
+    const hz = this.gs && this.gs.hz;
+    if (this.phase === 'horde' && hz && hz.kind === 'defense' && hz.st !== 'break') { this.sfx.deny(); this.hud.toast('打完這一波、休息的時候才能換裝備'); return; }
+    this.buyOpen = true; this.mouse.l = this.mouse.r = false; this.exitLock(); this.hud.show('loadout'); this.hud.onState(this.gs);
+  }
   closeBuy() {
     if (!this.buyOpen) return;
     this.buyOpen = false; this.hud.show(null);
     if (this.phase === 'warmup') { this.auth('loadout', this.wsel); if (this.meAlive()) this.combat.setLoadout(this.wsel, []); this.requestLock(); }
+    else if (this.phase === 'horde') { this.auth('loadout', this.hsel); if (this.meAlive()) this.combat.setLoadout(this.hsel, this.gs.p[this.me].bf); this.requestLock(); }   // 換完裝備順便補滿彈藥
   }
 
   // ───────── 主機狀態 → 本機 ─────────
@@ -531,6 +583,11 @@ class Game {
     this.phaseEnd = performance.now() + gs.tLeft;
     const changed = !prev || prev.phase !== gs.phase || prev.round !== gs.round;
     if (changed) this.enterPhase(gs);
+    if (gs.hz && gs.hz.cp && this.horde.on) this.horde.setCore(gs.hz.cp);   // 據點的位置以房主算的為準
+    if (gs.phase === 'horde' && this.phase === 'horde') {                       // 守據點選到新的強化卡：馬上生效
+      const bk = gs.p[this.me].bf.join(',');
+      if (bk !== this.hzBf) { this.hzBf = bk; this.combat.applyMods(gs.p[this.me].bf); }
+    }
     const opp = gs.p[1 - this.me];
     const lk = opp.lk.s + '|' + opp.lk.w;
     if (lk !== this.oppLook) { this.oppLook = lk; this.remote.applySkin(opp.lk.s, TEAM[1 - this.me]); this.remote.setWeapon(this.remote.weapon, opp.lk.w); this.remote._lit(); }
@@ -551,11 +608,12 @@ class Game {
     this.phase = gs.phase;
     const h = this.hud;
     if (gs.phase !== 'roundEnd') { this._endKillcam(); h.report(null); }
-    if (gs.phase !== 'warmup') this.buyOpen = false;
+    if (gs.phase !== 'warmup' && gs.phase !== 'horde') this.buyOpen = false;
+    if (gs.phase !== 'horde') this.horde.stop();
     if (gs.phase === 'lobby') {
       this.exitLock(); h.showHud(false); h.clearBanner(); h.show('lobby'); this.emote = null; this.ghost.group.visible = false;
       this.sfx.stopLoops(); this.sfx.ambient(null); this.skills.clear();
-      if (from === 'warmup' || from === 'roundEnd' || from === 'playing' || from === 'countdown') { this.combat.clearProjectiles(); this.fx.clear(); }
+      if (from === 'warmup' || from === 'roundEnd' || from === 'playing' || from === 'countdown' || from === 'horde') { this.combat.clearProjectiles(); this.fx.clear(); }
     }
     else if (gs.phase === 'loadout') {
       this.exitLock(); h.showHud(false); h.clearBanner(); h.show('loadout'); this.emote = null; this.ghost.group.visible = false;
@@ -565,6 +623,17 @@ class Game {
       this.sfx.stopLoops(); this.skills.clear();
     } else if (gs.phase === 'countdown') this.startRound(gs);
     else if (gs.phase === 'warmup') { this.startRound(gs); h.banner('熱身', `不計分、無限重生　按 ${h.key('buy')} 換裝備`, 2600); this.auth('loadout', this.wsel); }
+    else if (gs.phase === 'horde') {
+      const def = gs.hz.kind === 'defense';
+      this.hsel = { ...this.wsel };
+      if ((HZ_TIER[this.hsel.p] || 1) > this.hzTier()) this.hsel.p = 'smg';   // 守據點一開始只有衝鋒槍和副武器
+      this.startRound(gs);
+      this.horde.begin(gs);
+      this.player.spawn(this.horde.playerSpawn());
+      this.auth('loadout', this.hsel);
+      if (def) h.banner('守據點', `守住中間的據點。第一波 ${HORDE.FIRST_BREAK} 秒後來　${h.key('skill1')} 蓋沙包牆　${h.key('buy')} 換裝備`, 4200);
+      else h.banner('死鬥練習', `無限重生　按 ${h.key('buy')} 換裝備`, 2600);
+    }
     else if (gs.phase === 'playing') {
       if (this.round !== gs.round) this.startRound(gs); // 保險：沒收到倒數階段也要先把這一局建好
       h.banner('開戰！', '', 800); this.sfx.beep(true); this.sfx.roundStart(); this.skills.go(performance.now());
@@ -574,20 +643,34 @@ class Game {
     }
     else if (gs.phase === 'matchEnd') {
       this.exitLock(); h.showHud(false); h.clearBanner(); h.show('end'); this.sfx.stopLoops(); this.skills.clear();
+      if (gs.hz) { this._hzRecord(gs); this.sfx.win(); return; }   // 機器人模式：結算畫面另外畫，也不記進對戰戰績
       if (gs.mw === this.me) this.sfx.win(); else this.sfx.lose();
       const me = gs.p[this.me], opp = gs.p[1 - this.me];
       this.stats.match(this.mode(), { win: gs.mw === this.me, my: me.sc, their: opp.sc, opp: opp.n, map: MAPS[gs.map].name });
     }
   }
 
+  // 機器人模式的最佳紀錄（這台電腦）：死鬥看同樣時間內擊倒最多幾隻，守據點看每種難度撐過幾波
+  _hzRecord(gs) {
+    const hz = gs.hz, best = store.get('hzbest', null) || {}, me = this.me;
+    const key = hz.kind === 'dm' ? `dm:${hz.cfg.time}:${hz.cfg.n}` : `def:${hz.cfg.lv}`, val = hz.kind === 'dm' ? hz.k[me] : hz.res ? hz.res.waves : 0;
+    this.hzPrev = best[key] || 0;
+    this.hzNew = val > this.hzPrev && (hz.kind !== 'dm' || !hz.res || hz.res.why === 'time');   // 死鬥提早結束不算紀錄
+    if (this.hzNew) { best[key] = val; store.set('hzbest', best); }
+    this.hzAcc = { shots: this.combat.shots - this.rs0, hits: this.combat.hits - this.rh0 };
+  }
+
   startRound(gs) {
-    const warm = gs.phase === 'warmup';
+    const warm = gs.phase === 'warmup', horde = gs.phase === 'horde';
     this.round = gs.round;
     this.setMap(gs.map); this._setPickups(gs.map); this.fx.clear(); this.sfx.stopLoops(); this.combat.clearProjectiles();
     const meS = gs.p[this.me], opp = gs.p[1 - this.me], sp = MAPS[gs.map].spawns;
     this.player.spawn(sp[(this.me + gs.round) % 2]);
-    this.combat.setLoadout(warm ? this.wsel : meS.lo, warm ? [] : meS.bf);
-    this.skills.setup(warm ? null : meS.sk);
+    this.combat.setLoadout(warm ? this.wsel : horde ? this.hsel : meS.lo, warm ? [] : meS.bf);
+    this.hzBf = meS.bf.join(',');
+    const def = horde && gs.hz && gs.hz.kind === 'defense';
+    this.skills.wallType = def ? B.SANDBAG : B.METAL;
+    this.skills.setup(warm ? null : meS.sk, def ? [HORDE.WALLS, 0] : undefined);
     this.player.maxAirJumps = this.combat.mods.airJumps;
     if (this.view.setLook) this.view.setLook(this.settings.skin, TEAM[this.me]);
     const os = sp[(1 - this.me + gs.round) % 2];
@@ -607,12 +690,15 @@ class Game {
     setTimeout(() => { if (this.inRound() && !this.locked && !NOLOCK && !this.buyOpen) this.hud.setPaused(true); }, 300);
   }
 
-  // 熱身中重生：挑離對手比較遠的出生點
+  // 熱身中重生：挑離對手比較遠的出生點（機器人模式：據點旁邊，或離機器人最遠的地方）
   respawn() {
     const gs = this.gs; if (!gs) return;
-    const sp = MAPS[gs.map].spawns, rp = this.remote.pos, d = (s) => Math.hypot(s.x - rp.x, s.z - rp.z);
-    this.player.spawn(d(sp[0]) > d(sp[1]) ? sp[0] : sp[1]);
-    this.combat.setLoadout(this.wsel, []);
+    if (this.phase === 'horde' && this.horde.on) { this.player.spawn(this.horde.playerSpawn()); this.combat.setLoadout(this.hsel, gs.p[this.me].bf); }
+    else {
+      const sp = MAPS[gs.map].spawns, rp = this.remote.pos, d = (s) => Math.hypot(s.x - rp.x, s.z - rp.z);
+      this.player.spawn(d(sp[0]) > d(sp[1]) ? sp[0] : sp[1]);
+      this.combat.setLoadout(this.wsel, []);
+    }
     this.deathT = 0; this.shake = 0; this.emote = null; this.ghost.group.visible = false;
     this.hud.clearFlash(); this.sfx.respawn();
   }
@@ -657,14 +743,39 @@ class Game {
       // 被槍或刀打中：記下對手當時的位置，畫面上會有一段紅色弧線指著那個方向（轉頭時它會跟著轉）。
       // 爆炸和火不指方向（傷害不是從對手站的地方來的）
       const wd = WEAPONS[e.w];
-      if (!e.self && wd && !wd.proj) this.hurtSrc = { x: this.remote.pos.x, z: this.remote.pos.z, t: performance.now() };
+      if (Array.isArray(e.src) && e.src.every(Number.isFinite)) this.hurtSrc = { x: e.src[0], z: e.src[1], t: performance.now() };   // 機器人打的：指向開槍的那一隻
+      else if (!e.self && wd && !wd.proj) this.hurtSrc = { x: this.remote.pos.x, z: this.remote.pos.z, t: performance.now() };
     } else if (e.t === 'pick' && e.by === this.me) this.sfx.pickup();
+    else if (e.t === 'mkill' && this.gs && MOBS[e.kind]) {             // 有人打倒一隻機器人
+      const mine = e.by === this.me;
+      this.hud.killfeed({ killer: this.gs.p[e.by] ? this.gs.p[e.by].n : '', victim: MOBS[e.kind].name, w: e.w, head: e.head, mine });
+      if (mine) this.sfx.kill();
+    } else if (e.t === 'hkill' && this.gs) {                            // 有玩家倒下（被機器人、或自己炸到自己）
+      const v = this.gs.p[e.victim]; if (!v) return;
+      this.hud.killfeed({ killer: e.reason === 'suicide' ? null : MOBS[e.mob] ? MOBS[e.mob].name : '機器人', victim: v.n, w: e.w, head: e.head, mine: false });
+    } else if (e.t === 'wave') this._hzWave(e);
+    else if (e.t === 'core') this.horde.coreHit();
     else if (e.t === 'phoenix') this.skills.phoenix(e.who);
     else if (e.t === 'respawn') this.respawn();
     else if (e.t === 'wkill' && this.gs) {
       const g = this.gs, mine = e.victim !== this.me;
       this.hud.killfeed({ killer: e.reason === 'suicide' ? null : g.p[1 - e.victim].n, victim: g.p[e.victim].n, w: e.w, head: e.head, wb: e.wb, bk: e.bk, mine });
       if (mine && e.reason === 'kill') this.sfx.kill(); else if (!mine) this.sfx.lose();
+    }
+  }
+
+  // 守據點：一波開始／打完
+  _hzWave(e) {
+    const h = this.hud, n = e.n | 0, gs = this.gs;
+    if (e.st === 'wave') {
+      if (this.buyOpen) this.closeBuy();
+      const dirs = this.hud.gateText(gs && gs.hz);
+      h.banner(`第 ${n} 波`, (n % 5 === 0 ? '巨人來了！　' : '') + (dirs ? `敵人從${dirs}來` : ''), 2400); this.sfx.roundStart();
+    } else {
+      h.banner('擋下來了！', `第 ${n} 波清光　休息 ${HORDE.BREAK} 秒：選強化卡、換裝備（${h.key('buy')}）、蓋沙包牆（${h.key('skill1')}）`, 3600); this.sfx.win();
+      this.skills.refill(0, HORDE.WALLS);
+      if (this.meAlive()) this.combat.setLoadout(this.hsel, gs ? gs.p[this.me].bf : []);   // 彈藥、投擲物補滿
+      setTimeout(() => { const me = this.gs && this.gs.p[this.me]; if (this.phase === 'horde' && me && me.ch && me.al) this.openBuy(); }, 900);
     }
   }
 
@@ -688,7 +799,7 @@ class Game {
       return;
     }
     this.sfx.shot(def.snd, Math.max(1, dist), this.panOf(rp.x, rp.z));
-    if (!this.oppHas('ghost')) this.mini.ping(now, rp.x, rp.z);   // 開槍會在小地圖上暴露位置（對手有「無聲步」就不會）
+    if (!this.oppHas('ghost') && !this.coop()) this.mini.ping(now, rp.x, rp.z);   // 開槍會在小地圖上暴露位置（對手有「無聲步」就不會；隊友不算）
     this.replay.event(now + NET.INTERP_MS, 'fire', { w: d.w, e: d.e });
     if (this.remote.fireKick) this.remote.fireKick();
     if (d.v) { this.combat.spawnProjectile(d.w, d.pid, d.o, d.v, false); return; }
@@ -764,6 +875,7 @@ class Game {
     } else this.fx.explosion(x, y, z, m.rad);
     this.sfx.explosion(dist, pan, m.fxk === 'orbital' ? 2.6 : m.rad / 4.5);
     this.shake = Math.min(1.5, this.shake + Math.max(0, 1.2 - dist / 14));
+    this.horde.kick(x, y, z, m.rad, m.k);                   // 機器人也會被炸飛（房主那邊算）
     if (this.inRound() && this.meAlive() && !(shock && m.own === this.me)) {   // 自己放的衝擊波不會震到自己
       const p = this.player, dx = p.pos.x - x, dy = p.pos.y + 0.9 - y, dz = p.pos.z - z, d = Math.hypot(dx, dy, dz);
       if (d < m.rad && d > 0.01) {
@@ -793,6 +905,7 @@ class Game {
     }
     this.sfx.flashbang(dist, this.panOf(x, z), dur);
     if (this.bot) this.bot.onFlash(x, y, z);
+    this.horde.onFlash(x, y, z);
   }
 
   // ───────── 噴漆、表情動作 ─────────
@@ -868,7 +981,7 @@ class Game {
 
     if (inRound) {
       const act = this.active();
-      const live = this.phase === 'playing' || this.phase === 'warmup';
+      const live = this.phase === 'playing' || this.phase === 'warmup' || this.phase === 'horde';
       const canMove = act && alive && this.phase !== 'countdown';
       const w = cb.w;
       const adsKey = this.mouse.r || this.held('ads');   // 右鍵，或你綁的瞄準鍵（預設左 Shift）
@@ -985,7 +1098,7 @@ class Game {
       this.mouse.dx = this.mouse.dy = 0;
 
       // 記錄給擊殺回放用；順便看對手有沒有在視線內（小地圖）
-      if (live && alive && this.remote.alive) {
+      if (live && alive && this.remote.alive && !this.coop()) {
         this.replay.rec(now, this.remote, p);
         if (now >= this.spotAt) {
           this.spotAt = now + 120;
@@ -1032,6 +1145,7 @@ class Game {
     }
 
     if (this.bot) this.bot.update(dt, now);
+    this.horde.update(dt, now);
     if (!this.kc) this.remote.update(dt);
     // 對手的腳步聲與落地聲（對手跑步、跳下來時聽得到位置）
     const rm = this.remote;
@@ -1055,7 +1169,7 @@ class Game {
         phase: this.phase, tLeft: this.phaseEnd - now, hp: meS.hp, mhp: meS.mhp, armor: meS.ar, buffs: meS.bf, alive,
         w, slot: cb.cur, slots: cb.slots, other: cb.slots[cb.last], reload: cb.reloadProgress(), scoped, third: !!this.emote || this.kc,
         gap: (Math.tan(cb.spread() * DEG) / Math.tan((cam.fov * DEG) / 2)) * (innerHeight / 2),
-        net: (this.net.mode === 'bot' || this.warmBot ? '練習模式' : `延遲 ${this.net.ping} ms`) + (this.settings.fps ? `　${this.fpsV} FPS` : ''),
+        net: (this.net.mode === 'bot' || this.warmBot ? '練習模式' : !this.net.connected ? '單人' : `延遲 ${this.net.ping} ms`) + (this.settings.fps ? `　${this.fpsV} FPS` : ''),
         spd: alive ? p.speed2d() : 0, crouch: p.crouched, nades: cb.nades, money: meS.$, sk: this.skills.hudState(now),
       });
       if (inRound && this.settings.minimap && now - this.miniAt > 50) {
@@ -1063,6 +1177,9 @@ class Game {
         this.mini.draw(now, {
           px: p.pos.x, pz: p.pos.z, yaw: p.yaw, alive, meColor: TEAM_CSS[this.me], oppColor: TEAM_CSS[1 - this.me],
           pickups: this.pickDefs.map((k, i) => ({ x: k.x, z: k.z, type: k.type, on: !!gs.pk[i] })), smokes: this.fx.clouds, fires: cb.fires,
+          // 機器人模式：所有機器人、據點、下一波從哪來、隊友
+          mobs: this.horde.on ? this.horde.mini() : null, core: this.horde.on ? this.horde.core : null, gates: gs.hz && gs.hz.st === 'break' ? gs.hz.gates : null,
+          ally: this.coop() && this.remote.alive ? { x: this.remote.pos.x, z: this.remote.pos.z } : null,
         });
       }
     }

@@ -72,5 +72,20 @@ export const ROGUE = {
   TIME: 45,          // 選卡＋買裝備的時間（比一般模式長，因為要看卡）
 };
 
+// 機器人模式（死鬥練習、守據點）。機器人的種類、難度、每一波有誰，寫在 horde.js
+export const HORDE = {
+  DM_RESPAWN: 2,     // 死鬥：玩家倒下幾秒後重生
+  DEF_RESPAWN: 8,    // 守據點：玩家倒下幾秒後重生（每一波打完也會直接復活）
+  BOT_RESPAWN: 2.5,  // 死鬥：機器人倒下幾秒後補一個新的
+  CORE_HP: 1500,     // 據點的血量
+  CORE_MUL: 0.09,    // 機器人的子彈打在據點上只算這個比例（不然幾個步兵站定掃一下就沒了）
+  CORE_REGEN: 0.15,  // 每一波打完，據點回復最大血量的這個比例
+  FIRST_BREAK: 25,   // 守據點：第一波來之前的準備時間（秒）
+  BREAK: 22,         // 每一波之間的休息時間
+  WALLS: 3,          // 守據點：每次休息可以蓋幾道沙包牆
+  MAX_ALIVE: 16,     // 場上同時最多幾個機器人（再多電腦會跑不動）
+  SNAP_HZ: 15,       // 機器人位置同步給訪客的頻率
+};
+
 export const TEAM = [0xff7a3c, 0x3cc8ff];      // 房主橘、訪客藍
 export const TEAM_CSS = ['#ff7a3c', '#3cc8ff'];

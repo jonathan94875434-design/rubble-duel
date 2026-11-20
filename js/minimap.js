@@ -60,6 +60,26 @@ export class Minimap {
       g.fillStyle = s.oppColor; g.strokeStyle = '#000'; g.lineWidth = 1.5;
       g.beginPath(); g.arc(this.seen.x * k, this.seen.z * k, 4.2, 0, 6.283); g.fill(); g.stroke(); g.globalAlpha = 1;
     }
+    // 機器人模式：據點（金色菱形）、下一波會從哪裡來（紅色箭頭）、每一隻機器人（紅點）、隊友
+    if (s.core) {
+      const x = s.core[0] * k, z = s.core[2] * k;
+      g.fillStyle = '#ffc640'; g.strokeStyle = '#000'; g.lineWidth = 1.5;
+      g.beginPath(); g.moveTo(x, z - 6); g.lineTo(x + 6, z); g.lineTo(x, z + 6); g.lineTo(x - 6, z); g.closePath(); g.fill(); g.stroke();
+    }
+    if (s.gates && s.core) {
+      const a = 0.55 + 0.45 * Math.sin(now * 0.008);
+      for (const q of s.gates) {
+        const x = q[0] * k, z = q[1] * k, ang = Math.atan2(s.core[2] * k - z, s.core[0] * k - x);
+        g.save(); g.translate(x, z); g.rotate(ang); g.globalAlpha = a; g.fillStyle = '#ff3a2a'; g.strokeStyle = '#000'; g.lineWidth = 1.2;
+        g.beginPath(); g.moveTo(9, 0); g.lineTo(-5, -6); g.lineTo(-2, 0); g.lineTo(-5, 6); g.closePath(); g.fill(); g.stroke(); g.restore();
+      }
+      g.globalAlpha = 1;
+    }
+    if (s.mobs) {
+      g.fillStyle = '#ff3a2a'; g.strokeStyle = '#000'; g.lineWidth = 1;
+      for (const m of s.mobs) { g.beginPath(); g.arc(m.x * k, m.z * k, m.big ? 5 : 2.8, 0, 6.283); g.fill(); g.stroke(); }
+    }
+    if (s.ally) { g.fillStyle = s.oppColor; g.strokeStyle = '#000'; g.lineWidth = 1.5; g.beginPath(); g.arc(s.ally.x * k, s.ally.z * k, 4, 0, 6.283); g.fill(); g.stroke(); }
     if (s.alive) {
       g.save(); g.translate(s.px * k, s.pz * k); g.rotate(-s.yaw);
       g.fillStyle = 'rgba(255,255,255,0.13)'; g.beginPath(); g.moveTo(0, 0); g.arc(0, 0, 34, -Math.PI / 2 - 0.62, -Math.PI / 2 + 0.62); g.fill();   // 視野扇形

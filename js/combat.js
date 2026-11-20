@@ -49,6 +49,13 @@ export class Combat {
     this.g.view.setWeapon(this.w.id, this.g.settings.wskin);
   }
 
+  // 卡片變了但槍不換（守據點一波打完選的、下一波開始時自動拿的）：倍率馬上生效，彈匣大小跟著改
+  applyMods(buffs) {
+    this.mods = cardMods(buffs);
+    for (const w of this.slots) if (w && !w.def.melee) { w.mag = Math.round(w.def.mag * this.mods.mag); w.ammo = Math.min(w.ammo, w.mag); }
+    this.g.player.maxAirJumps = this.mods.airJumps;
+  }
+
   // 丟投擲物：朝準星方向丟出去，帶一點往上的弧度和自己的移動速度
   throwNade(kind) {
     const g = this.g, now = performance.now(), def = THROWABLES[kind];
@@ -163,18 +170,18 @@ export class Combat {
     for (const [sx, sy] of MELEE_RAYS) {
       let dx = fx + rx * sx + ux * sy, dy = fy + ry * sx + uy * sy, dz = fz + rz * sx + uz * sy;
       const l = Math.hypot(dx, dy, dz); dx /= l; dy /= l; dz /= l;
-      const ph = g.remote.rayHit(ox, oy, oz, dx, dy, dz);
+      const ph = g.rayTarget(ox, oy, oz, dx, dy, dz);
       if (!ph || ph.t > reach || (best && ph.t >= best.t)) continue;
       if (g.world.raycast(ox, oy, oz, dx, dy, dz, ph.t)) continue;     // 中間隔著牆
-      best = { t: ph.t, dx, dy, dz };
+      best = { t: ph.t, dx, dy, dz, id: ph.id };
     }
     if (best) {
       // 背刺：對手的面向跟我差不多同方向 = 我在他背後
-      const ry2 = g.remote.yaw, fl = Math.hypot(fx, fz) || 1, back = (-Math.sin(ry2) * fx - Math.cos(ry2) * fz) / fl > 0.45;
+      const ry2 = g.targetYaw(best.id), fl = Math.hypot(fx, fz) || 1, back = (-Math.sin(ry2) * fx - Math.cos(ry2) * fz) / fl > 0.45;
       const dmg = (heavy ? (back ? def.back : def.heavy) : def.dmg) * this.dmgMul();
       g.fx.hitSpark(ox + best.dx * best.t, oy + best.dy * best.t, oz + best.dz * best.t, 0, 9);
-      g.auth('hit', { r: g.round, d: dmg, h: false, w: 'knife', bk: back ? 1 : 0 });
-      g.hud.hitmarker(back); g.sfx.knifeHit(true); g.remote.hitFlash();
+      g.hitTarget(best.id, dmg, false, 'knife', { bk: back ? 1 : 0 });
+      g.hud.hitmarker(back); g.sfx.knifeHit(true);
       g.shake = Math.min(1, g.shake + 0.25);
       return;
     }
@@ -210,7 +217,9 @@ export class Combat {
       // twin = 雙重射擊：每次多射一發，每發傷害打 65 折
       const twin = this.mods.twin, np = def.pellets * (twin ? 2 : 1), dm = this.dmgMul() * (twin ? 0.65 : 1);
       const ends = [], ends2 = [], pen = (def.pen || 0) * this.mods.pen, sk = g.skills;
-      let total = 0, head = false, hitAny = false, wb = false, snd = false, boom = null;
+      // 每個打中的目標各自累計（對戰只有對手一個；機器人模式一槍霰彈可能同時打到好幾隻）
+      const hits = new Map(), addHit = (id, d, h, w2) => { const o = hits.get(id) || { d: 0, head: false, wb: false }; o.d += d; o.head = o.head || h; o.wb = o.wb || w2; hits.set(id, o); };
+      let snd = false, boom = null;
       for (let i = 0; i < np; i++) {
         const ang = Math.tan(spr * Math.sqrt(Math.random()) + (twin && i >= def.pellets ? 0.012 : 0)), th = Math.random() * Math.PI * 2;
         const sx = ang * Math.cos(th), sy = ang * Math.sin(th);
@@ -218,15 +227,15 @@ export class Combat {
         const l = Math.hypot(dx, dy, dz); dx /= l; dy /= l; dz /= l;
         // 子彈一路穿過去：pr.hits 是沿途碰到的每一格方塊，pr.end 是最後停下來的距離
         const pr = g.world.pierce(ox, oy, oz, dx, dy, dz, 200, pen);
-        const ph = g.remote.rayHit(ox, oy, oz, dx, dy, dz);
+        const ph = g.rayTarget(ox, oy, oz, dx, dy, dz);
         const sd = sk.shieldDist(ox, oy, oz, dx, dy, dz);              // 能量護罩：子彈飛到這個距離就被擋下（沒有護罩 = Infinity）
         let end = Math.min(pr.end, sd), hitP = false;
         if (ph && ph.t < end) {
           let left = pen, walls = 0;
           for (const h of pr.hits) if (h.dist < ph.t && h.left >= 0) { left = h.left; walls++; }
           const mul = walls && pen > 0 ? Math.pow(Math.max(0.05, left / pen), 0.7) : 1;   // 穿牆之後傷害打折
-          total += def.dmg * falloff(def, ph.t) * (ph.head ? def.head * this.mods.head : 1) * dm * mul;
-          head = head || ph.head; hitAny = true; hitP = true; wb = wb || walls > 0; end = ph.t;
+          addHit(ph.id, def.dmg * falloff(def, ph.t) * (ph.head ? def.head * this.mods.head : 1) * dm * mul, ph.head, walls > 0);
+          hitP = true; end = ph.t;
           g.fx.hitSpark(ox + dx * end, oy + dy * end, oz + dz * end, 0, np > 1 ? 3 : 7);
         } else if (sd < pr.end) sk.shieldSpark(ox + dx * sd, oy + dy * sd, oz + dz * sd);
         let km = 1, stop = null;
@@ -258,12 +267,11 @@ export class Combat {
         if (this.mods.ricochet && stop && stop.first && !hitP && (stop.nx || stop.ny || stop.nz)) {   // stop.first：停在表面那一格才彈（先穿進牆裡才停的不算）
           const dn = 2 * (dx * stop.nx + dy * stop.ny + dz * stop.nz), bx = dx - dn * stop.nx, by = dy - dn * stop.ny, bz = dz - dn * stop.nz;
           const qx = _b.x + stop.nx * 0.03, qy = _b.y + stop.ny * 0.03, qz = _b.z + stop.nz * 0.03;
-          const bh = g.world.raycast(qx, qy, qz, bx, by, bz, 60), p2 = g.remote.rayHit(qx, qy, qz, bx, by, bz);
+          const bh = g.world.raycast(qx, qy, qz, bx, by, bz, 60), p2 = g.rayTarget(qx, qy, qz, bx, by, bz);
           let e2 = Math.min(bh ? bh.dist : 60, sk.shieldDist(qx, qy, qz, bx, by, bz));
           if (p2 && p2.t < e2) {
             e2 = p2.t;
-            total += def.dmg * falloff(def, end + e2) * (p2.head ? def.head * this.mods.head : 1) * dm * 0.7;
-            head = head || p2.head; hitAny = true;
+            addHit(p2.id, def.dmg * falloff(def, end + e2) * (p2.head ? def.head * this.mods.head : 1) * dm * 0.7, p2.head, false);
             g.fx.hitSpark(qx + bx * e2, qy + by * e2, qz + bz * e2, 0, 5);
           } else if (bh && bh.dist <= e2 + 0.01 && !bh.oob) {
             const d2 = Math.round(def.dmg * def.block * this.mods.block * 0.5), r2 = g.world.damage(bh.x, bh.y, bh.z, d2);
@@ -276,10 +284,11 @@ export class Combat {
         }
       }
       g.sendPeer('fire', ends2.length ? { w: w.id, e: ends, e2: ends2 } : { w: w.id, e: ends });
-      if (hitAny) {
+      if (hits.size) {
         this.hits++;
-        g.auth('hit', { r: g.round, d: total, h: head, w: w.id, wb: wb ? 1 : 0 });
-        g.hud.hitmarker(head); g.sfx.hit(head); g.remote.hitFlash();
+        let head = false;
+        for (const [id, o] of hits) { g.hitTarget(id, o.d, o.head, w.id, { wb: o.wb ? 1 : 0 }); head = head || o.head; }
+        g.hud.hitmarker(head); g.sfx.hit(head);
       }
       // 爆裂彈：這一槍打到的第一個方塊那裡小爆一下（連發時稍微限制頻率，免得特效塞滿）
       if (this.mods.explosive && boom && now >= this.boomAt) { this.boomAt = now + 70; this.miniBoom(boom, w.id); }
@@ -305,8 +314,9 @@ export class Combat {
   miniBoom(p, wid) {
     const g = this.g, msg = { r: g.round, pid: 0, p: [r3(p[0]), r3(p[1]), r3(p[2])], br: 1.15, bp: 120 * this.mods.block, rad: 1.8, k: 0, fxk: 'mini', own: g.me };
     g.sendPeer('expl', msg); g.doExplosion(msg);
-    const rp = g.remote.pos;
-    if (g.remote.alive && Math.hypot(p[0] - rp.x, p[1] - (rp.y + 0.9), p[2] - rp.z) < 1.8) { g.auth('hit', { r: g.round, d: 10 * this.dmgMul(), h: false, w: wid }); g.hud.hitmarker(false); }
+    let hit = false;
+    g.eachTarget((id, tp, sc) => { if (Math.hypot(p[0] - tp.x, p[1] - (tp.y + 0.9 * sc), p[2] - tp.z) < 1.8) { g.hitTarget(id, 10 * this.dmgMul(), false, wid); hit = true; } });
+    if (hit) g.hud.hitmarker(false);
   }
 
   // ───────── 拋射物 ─────────
@@ -337,9 +347,9 @@ export class Combat {
       if (sp > 0.01) {
         _d.copy(p.vel).multiplyScalar(1 / sp);
         const bh = g.world.raycast(p.pos.x, p.pos.y, p.pos.z, _d.x, _d.y, _d.z, len);
-        const ph = p.local && !p.def.kind ? g.remote.rayHit(p.pos.x, p.pos.y, p.pos.z, _d.x, _d.y, _d.z) : null; // 手榴彈不會砸到人就爆
+        const ph = p.local && !p.def.kind ? g.rayTarget(p.pos.x, p.pos.y, p.pos.z, _d.x, _d.y, _d.z) : null; // 手榴彈不會砸到人就爆
         if (ph && ph.t <= len && (!bh || ph.t < bh.dist)) {
-          p.pos.addScaledVector(_d, ph.t); this.explode(p, true); done = true;
+          p.pos.addScaledVector(_d, ph.t); this.explode(p, ph.id); done = true;
         } else if (bh) {
           p.pos.addScaledVector(_d, Math.max(0, bh.dist - 0.02));
           if (pr.bounce && bh.dist > 0) {
@@ -347,13 +357,13 @@ export class Combat {
             p.vel.addScaledVector(_n, -2 * p.vel.dot(_n)).multiplyScalar(pr.bounce);
             p.pos.addScaledVector(_n, 0.03);
             g.sfx.bounce(p.pos.distanceTo(g.camera.position));
-          } else if (p.local) { p.pos.addScaledVector(_d, -0.08); this.explode(p, false); done = true; }
+          } else if (p.local) { p.pos.addScaledVector(_d, -0.08); this.explode(p); done = true; }
           else { p.frozen = now; p.mesh.visible = false; }
         } else p.pos.addScaledVector(_d, len);
       }
       if (done) continue;
       if (pr.fuse && now - p.born >= pr.fuse * 1000) {
-        if (p.local) { this.explode(p, false); continue; }
+        if (p.local) { this.explode(p); continue; }
         p.frozen = now; p.mesh.visible = false; continue;
       }
       p.mesh.position.copy(p.pos);
@@ -368,6 +378,7 @@ export class Combat {
   }
 
   // 自己的彈爆炸：改地形、通知對手、算傷害（開槍方說了算）
+  // direct = 直接砸中的目標（沒有 = undefined）
   explode(p, direct) {
     const g = this.g, pr = p.def.proj, pos = p.pos;
     const pow = pr.blockPow * this.mods.block;
@@ -377,14 +388,12 @@ export class Combat {
     g.sendPeer('expl', msg);
     g.doExplosion(msg);
     if (msg.kind) return;
-    if (g.remote.alive) {
-      const d = direct ? 0 : Math.hypot(pos.x - g.remote.pos.x, pos.y - (g.remote.pos.y + 0.9), pos.z - g.remote.pos.z);
-      if (d < pr.radius) {
-        const dmg = p.def.dmg * (direct ? 1 : Math.max(0.15, 1 - d / pr.radius)) * this.dmgMul();
-        g.auth('hit', { r: g.round, d: dmg, h: false, w: p.id });
-        g.hud.hitmarker(false); g.sfx.hit(false); g.remote.hitFlash();
-      }
-    }
+    let hit = false;
+    g.eachTarget((id, tp, sc) => {
+      const d = direct === id ? 0 : Math.hypot(pos.x - tp.x, pos.y - (tp.y + 0.9 * sc), pos.z - tp.z);
+      if (d < pr.radius) { g.hitTarget(id, p.def.dmg * (d === 0 ? 1 : Math.max(0.15, 1 - d / pr.radius)) * this.dmgMul(), false, p.id); hit = true; }
+    });
+    if (hit) { g.hud.hitmarker(false); g.sfx.hit(false); }
     const me = g.player.pos, ds = Math.hypot(pos.x - me.x, pos.y - (me.y + 0.9), pos.z - me.z);
     if (ds < pr.radius) g.auth('self', { r: g.round, d: p.def.dmg * (1 - ds / pr.radius) * pr.self, w: p.id });
   }
@@ -408,8 +417,10 @@ export class Combat {
       if (!f.mine) continue;
       if (now >= f.next) {
         f.next += 250;
-        const rp = g.remote.pos, me = g.player.pos, d = def.dps * 0.25;
-        if (g.remote.alive && this.inFire(f, rp.x, rp.y, rp.z)) { g.auth('hit', { r: g.round, d: d * this.dmgMul(), h: false, w: 'molotov' }); g.hud.hitmarker(false); }
+        const me = g.player.pos, d = def.dps * 0.25;
+        let hit = false;
+        g.eachTarget((id, tp) => { if (this.inFire(f, tp.x, tp.y, tp.z)) { g.hitTarget(id, d * this.dmgMul(), false, 'molotov'); hit = true; } });
+        if (hit) g.hud.hitmarker(false);
         if (g.meAlive() && this.inFire(f, me.x, me.y, me.z)) g.auth('self', { r: g.round, d, w: 'molotov' });
       }
       if (now >= f.burnAt) {
