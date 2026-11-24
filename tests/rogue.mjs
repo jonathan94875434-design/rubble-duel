@@ -43,12 +43,14 @@ ok('還沒選卡時「準備」按不了', await ev(() => document.getElementByI
 
 // 重抽：第 1 局有 $800，重抽一次 $400
 const before = await ev(() => ({ ch: __game.gs.p[0].ch.slice(), $: __game.gs.p[0].$ }));
-await page.click('#btn-reroll'); await sleep(300);
+await page.$eval('#btn-reroll', (b) => b.click());   // 選卡畫面有動畫，直接按按鈕（不靠滑鼠座標）
+await page.waitForFunction(() => __game.gs.p[0].rr === 1, { timeout: 4000 }).catch(() => {}); await sleep(300);
 let after = await ev(() => ({ ch: __game.gs.p[0].ch.slice(), $: __game.gs.p[0].$, rr: __game.gs.p[0].rr }));
 const skip = await ev(() => { const el = document.querySelector('#lo-buff-cards .card:not(.up)'); if (!el) return 'all-up'; el.click(); return { up: document.querySelectorAll('#lo-buff-cards .card.up').length, ch: !!__game.gs.p[0].ch }; });
 ok('重抽後的新卡還沒翻開就點：全部直接翻開，不會選到卡', skip === 'all-up' || (skip.up === 3 && skip.ch), JSON.stringify(skip));
 ok('重抽：扣 $400、換一批完全不同的卡', after.$ === before.$ - 400 && after.rr === 1 && after.ch.every((id) => !before.ch.includes(id)), JSON.stringify([before, after]));
-await page.click('#btn-reroll'); await sleep(300);
+await page.$eval('#btn-reroll', (b) => b.click());   // 選卡畫面有動畫，直接按按鈕（不靠滑鼠座標）
+await page.waitForFunction(() => __game.gs.p[0].rr === 2, { timeout: 4000 }).catch(() => {}); await sleep(300);
 after = await ev(() => ({ $: __game.gs.p[0].$, rr: __game.gs.p[0].rr, dis: document.getElementById('btn-reroll').disabled }));
 ok('重抽兩次之後就不能再抽', after.rr === 2 && after.$ === before.$ - 800 && after.dis, JSON.stringify(after));
 
@@ -277,6 +279,12 @@ used = await ev(() => __game.skills.use(1)); await sleep(300);
 q1 = await ev(() => ({ me: [__game.player.pos.x, __game.player.pos.z], bot: [__game.bot.body.pos.x, __game.bot.body.pos.z] }));
 const near = (a, b, d) => Math.hypot(a[0] - b[0], a[1] - b[1]) < d;
 ok('換位：跟看得到的對手交換位置', used && near(q1.me, q0.bot, 1.5) && near(q1.bot, q0.me, 1.5), JSON.stringify([q0, q1]));
+st = await ev(() => { const g = __game, now = performance.now(), p = g.player, y0 = p.yaw, a = [p.pos.x, p.pos.y, p.pos.z], b = [g.remote.pos.x, g.remote.pos.y, g.remote.pos.z];
+  const bonus = g.skills.swapEnd > now;
+  g.skills.onNet({ r: g.round, id: 'swap', a, b });                         // 假裝被對手換位
+  const r = { bonus, turned: Math.abs(Math.abs(p.yaw - y0) - Math.PI) < 0.01, noFire: g.skills.noFire(), spd: g.skills.speedMul(g.gs.p[0]) };
+  g.skills.dazeEnd = g.skills.noFireEnd = 0; return r; });
+ok('換位的效果：自己有傷害加成；被換的人轉成背對、不能開槍、跑不快', st.bonus && st.turned && st.noFire && st.spd < 0.7, JSON.stringify(st));
 await setSkills('timestop', 'meteor');
 await place(SX, SZ, SX, SZ - 10, 0); await sleep(300);
 used = await ev(() => __game.skills.use(0)); await sleep(200);
@@ -291,6 +299,22 @@ used = await ev(() => __game.skills.use(1)); await sleep(4000);
 st = await ev((h0, s0) => ({ hp: __game.gs.p[1].hp, h0, dug: s0 - __game.world.types.reduce((n, t) => n + (t ? 1 : 0), 0), uses: __game.skills.uses[1] }), hpM0, solidM);
 ok('流星雨：隕石追著對手砸，打掉血、砸爛地形', used && st.hp < st.h0 - 50 && st.dug > 20, JSON.stringify(st));
 await page.screenshot({ path: OUT + '/r9-meteor.png' });
+// 回溯錨點：按一次放、再按一次回去；錨點還在時受到致命傷會被救回錨點
+await setSkills('anchor', 'stim');
+await place(SX, SZ, SX, SZ - 14, 0); await sleep(600);
+const anc0 = await ev(() => __game.player.pos.toArray());
+used = await ev(() => __game.skills.use(0)); await sleep(300);
+st = await ev(() => ({ placed: !!__game.skills.anchor, auth: __game.authority.players[0].anchor }));
+ok('回溯錨點：按一次在原地放下錨點，裁判也知道', used && st.placed && st.auth === true, JSON.stringify(st));
+await ev(() => { const p = __game.player; p.pos.set(p.pos.x + 6, p.pos.y, p.pos.z); p.prev.copy(p.pos); p.rpos.copy(p.pos); }); await sleep(800);
+used = await ev(() => __game.skills.use(0)); await sleep(300);
+st = await ev((a0) => { const p = __game.player.pos; return { d: Math.hypot(p.x - a0[0], p.z - a0[2]), left: __game.skills.hudState(performance.now()).slots[0].left, auth: __game.authority.players[0].anchor }; }, anc0);
+ok('回溯錨點：再按一次瞬間回到錨點，然後進入冷卻', used && st.d < 0.5 && st.left > 10 && st.auth === false, JSON.stringify(st));
+await ev(() => { __game.skills.ready = [0, 0]; __game.skills.use(0); const p = __game.player; p.pos.set(p.pos.x + 6, p.pos.y, p.pos.z); p.prev.copy(p.pos); p.rpos.copy(p.pos); }); await sleep(600);
+st = await ev(async (a0) => { const g = __game, a = g.authority, me = a.players[0]; me.inv = 0; a.handle(1, 'hit', { r: a.round, d: 400, h: false, w: 'knife' }); await new Promise((r) => setTimeout(r, 600)); const p = g.player.pos; return { al: me.alive, hp: me.hp, d: Math.hypot(p.x - a0[0], p.z - a0[2]) }; }, anc0);
+ok('回溯錨點：錨點還在時被砍死 → 傳回錨點、剩 50 血', st.al && st.hp === 50 && st.d < 0.5, JSON.stringify(st));
+await ev(() => { const a = __game.authority; a.players[0].maxHp = 900; a.players[0].hp = 900; a.dirty = true; a.flush(); });
+
 // 堡壘：在原地蓋城堡，自己站上哨塔頂
 await setSkills('fortress', 'stim');
 await place(SX, SZ, SX, SZ - 14, 0); await sleep(600);
@@ -321,7 +345,9 @@ ok('超頻：冷卻 −50%', st.left > 6 && st.left < 7.5, JSON.stringify(st));
 // 投資客：下一局開始多 $1500
 await healBot();
 const money0 = await ev(() => { const a = __game.authority; a.players[0].buffs.push('investor'); return a.players[0].money; });
-await ev(() => { const a = __game.authority; a.handle(0, 'hit', { r: a.round, d: 400, h: false, w: 'knife' }); });
+// 刀一定致命：就算對手疊滿減傷（硬皮、重裝巨人、天神下凡）、400 血、200 護甲也一樣
+const knifed = await ev(() => { const a = __game.authority, b = a.players[1]; b.buffs = ['tough', 'jugg', 'avatar', 'vital']; b.maxHp = 400; b.hp = 400; b.armor = 200; a.handle(0, 'hit', { r: a.round, d: 400, h: false, w: 'knife' }); return { al: b.alive, hp: b.hp }; });
+ok('刀一刀斃命：疊滿減傷、生命、護甲也砍得死', !knifed.al, JSON.stringify(knifed));
 await waitPhase('loadout', 20000); await sleep(300);
 st = await ev(() => ({ $: __game.gs.p[0].$, round: __game.gs.round }));
 ok('投資客：贏一局 $2000 之外，下一局開始再多 $1500', st.$ === Math.min(12000, money0 + 2000 + 1500), JSON.stringify([money0, st]));

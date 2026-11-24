@@ -55,6 +55,7 @@ export class Bot {
       else if (d.id === 'blackhole' && Array.isArray(d.p)) this.hole = { x: d.p[0], y: d.p[1], z: d.p[2], end: now + dur(1, 6) };
       else if (d.id === 'swap' && Array.isArray(d.a) && d.a.length === 3 && d.a.every(Number.isFinite)) {
         const b = this.body; b.pos.set(d.a[0], d.a[1], d.a[2]); b.prev.copy(b.pos); b.rpos.copy(b.pos); b.vel.set(0, 0, 0);
+        b.yaw += Math.PI; this.slowUntil = Math.max(this.slowUntil, now + SK.swap.daze * 1000); this.reactAt = now + SK.swap.noFire * 1000 + 300;   // 被轉過去、暈一下
         this.path = null; this.planAt = 0;
       }
     }
@@ -318,6 +319,6 @@ export class Bot {
     }
     this.send('fire', { w: this.weapon, e: ends });
     if (blk.length) this.send('blk', { r: this.round, h: blk });
-    if (total > 0) this.send('auth', { t: 'hit', r: this.round, d: head && this.mods.reaper ? 400 : total, h: head, w: this.weapon });
+    if (total > 0) this.send('auth', { t: 'hit', r: this.round, d: head && this.mods.reaper ? 400 : total, h: head, w: this.weapon, ...(head && this.mods.reaper ? { rp: 1 } : {}) });
   }
 }

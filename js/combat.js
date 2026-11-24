@@ -107,7 +107,7 @@ export class Combat {
   // 目前的傷害倍率：卡片的固定加成 × 狂戰士（血越少越高）× 透視中／獵人印記（只對對手）
   dmgMul() {
     const g = this.g, m = this.mods, me = m.berserk && g.gs ? g.gs.p[g.me] : null, now = performance.now();
-    const foe = g.horde && g.horde.on ? 1 : (now < g.skills.scanEnd ? SK.scan.dmg : 1) * (now < this.markUntil ? 1.2 : 1);
+    const foe = g.horde && g.horde.on ? 1 : (now < g.skills.scanEnd ? SK.scan.dmg : 1) * (now < this.markUntil ? 1.2 : 1) * (now < g.skills.swapEnd ? SK.swap.dmg : 1);
     return m.dmg * (me ? 1 + BERSERK.dmg * rage(me.hp, me.mhp) : 1) * foe;
   }
   // 獵人印記：打中對手之後 4 秒內標在小地圖上
@@ -291,7 +291,7 @@ export class Combat {
         this.hits++;
         let head = false;
         // 死神：爆頭直接給一個打不完的傷害（裁判那邊上限 400）
-        for (const [id, o] of hits) { g.hitTarget(id, o.head && this.mods.reaper ? 400 : o.d, o.head, w.id, { wb: o.wb ? 1 : 0 }); this._mark(id); head = head || o.head; }
+        for (const [id, o] of hits) { g.hitTarget(id, o.head && this.mods.reaper ? 400 : o.d, o.head, w.id, o.head && this.mods.reaper ? { wb: o.wb ? 1 : 0, rp: 1 } : { wb: o.wb ? 1 : 0 }); this._mark(id); head = head || o.head; }
         g.hud.hitmarker(head); g.sfx.hit(head);
       }
       // 爆裂彈：這一槍打到的第一個方塊那裡小爆一下（連發時稍微限制頻率，免得特效塞滿）

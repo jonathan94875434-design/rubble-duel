@@ -44,6 +44,8 @@ export class Skills {
     this.scanEnd = 0; this.scannedEnd = 0;        // 我在透視對手／我被透視
     this.slowEnd = 0; this.rSlowEnd = 0;          // 我被時間凝結／對手被凝結
     this.stopEnd = 0; this.rStopEnd = 0;          // 我被時間暫停／對手被暫停
+    this.dazeEnd = 0; this.noFireEnd = 0; this.swapEnd = 0;
+    this.anchor = null; this.rAnchor = null;      // 回溯錨點：我的／對手的（{x,y,z,yaw}）   // 我被換位之後暈多久、多久不能開槍；我換位之後的傷害加成到何時
     this.stimEnd = 0; this.inHole = false; this.radarAt = 0; this.markAt = 0; this.hid = false; this.btUsed = false;
     this.domes = []; this.holes = []; this.marks = []; this.jets = []; this.rains = [];
     this.myWall = new Set();                      // 這一局我立的鋼牆方塊（對手說「這格蓋在我身上」時，只有這些可以撤掉）
@@ -85,6 +87,8 @@ export class Skills {
     this.nnext = 0;
     // 技能用的一盞光（黑洞的紫光、護罩的藍光、光柱）。固定放一盞，數量不變著色器就不用重編
     this.light = new THREE.PointLight(0xffffff, 0, 26, 2); sc.add(this.light);
+    // 回溯錨點：地上一圈光 + 一根細光柱（0 = 我的、1 = 對手的）
+    this.anchorM = [0x5ff0d0, 0xff6a5a].map((c) => { const o = { ring: add(new THREE.Mesh(ringG, glow(c))), beam: add(new THREE.Mesh(cyl, glow(c))) }; o.ring.material.color.multiplyScalar(2.5); o.beam.material.color.multiplyScalar(2.5); return o; });
   }
 
   // ───────── 每一局 ─────────
@@ -94,10 +98,10 @@ export class Skills {
     this.slots = [0, 1].map((i) => (skills && CARDS[skills[i]] && CARDS[skills[i]].k === 'a' ? skills[i] : null));
     const extra = this.g.combat.mods.extraUses || 0;   // 超頻：有次數的技能每局多一次
     this.lim = this.slots.map((id, i) => !!id && ((uses && uses[i] !== undefined) || !!CARDS[id].uses));   // 這一格有沒有次數限制
-    this.ready = [0, 0]; this.uses = this.slots.map((id, i) => (uses && uses[i] !== undefined ? uses[i] : id && CARDS[id].uses ? CARDS[id].uses + extra : 0));
+    this.ready = [0, 0]; this.uses = this.slots.map((id, i) => (!id ? 0 : uses && uses[i] !== undefined ? uses[i] + extra : CARDS[id].uses ? CARDS[id].uses + extra : 0));
   }
   // 只補次數，不清掉場上的東西（守據點每一波休息時）
-  refill(i, n) { if (this.slots[i]) { this.uses[i] = n; this.ready[i] = 0; } }
+  refill(i, n) { if (this.slots[i]) { this.uses[i] = n + (this.g.combat.mods.extraUses || 0); this.ready[i] = 0; } }
   // 開打的瞬間：殺傷力大的技能要等幾秒才能用（不然一開局就能往對手的出生點丟）
   go(now) { this.slots.forEach((id, i) => { if (id && CARDS[id].lock) this.ready[i] = Math.max(this.ready[i], now + CARDS[id].lock * 1000); }); }
 
@@ -105,6 +109,7 @@ export class Skills {
     this._reset();
     for (const m of [...this.ropes, this.sil, ...this.domeM, ...this.holeM.map((h) => h.grp)]) m.visible = false;
     for (const m of this.markM) m.beam.visible = m.ring.visible = m.core.visible = false;
+    for (const m of this.anchorM) m.ring.visible = m.beam.visible = false;
     for (const n of this.novas) { n.life = 0; n.m.visible = false; }
     this.light.intensity = 0;
     if (this.g.sfx.loop) this.g.sfx.loop('void', 'void', 0);
@@ -117,11 +122,13 @@ export class Skills {
     const c = CARDS[id];
     if (now < this.ready[i] || (this.lim[i] && this.uses[i] <= 0)) { g.sfx.deny(); return false; }
     if (!this['_' + id](now)) { g.sfx.deny(); return false; }
-    this.ready[i] = now + c.cd * 1000 * (this.g.combat.mods.cd || 1);
+    this.ready[i] = id === 'anchor' && this.anchor ? now + 500 : now + c.cd * 1000 * (this.g.combat.mods.cd || 1);   // 錨點剛放下：半秒後就能按回去
     if (this.lim[i]) this.uses[i]--;
     return true;
   }
   frozen() { return performance.now() < this.stopEnd; }
+  // 不能開槍：被時間暫停，或剛被換位
+  noFire() { const now = performance.now(); return now < this.stopEnd || now < this.noFireEnd; }
   _send(d) { this.g.sendPeer('sk', { r: this.g.round, ...d }); }
   _aim() { const e = this.g.camera.matrixWorld.elements; return { ox: e[12], oy: e[13], oz: e[14], dx: -e[8], dy: -e[9], dz: -e[10], rx: e[0], ry: e[1], rz: e[2] }; }
   _snd(kind, x, z) { const g = this.g; g.sfx.skill(kind, Math.hypot(x - g.camera.position.x, z - g.camera.position.z), g.panOf(x, z)); }
@@ -217,6 +224,41 @@ export class Skills {
     this._send({ id: 'wall', c: cells, b: this.wallType });
     return true;
   }
+  // 回溯錨點：沒有錨點 → 在原地放一個；有錨點 → 瞬間回去
+  _anchor() {
+    const g = this.g, p = g.player;
+    if (!this.anchor) {
+      this.anchor = { x: r3(p.pos.x), y: r3(p.pos.y), z: r3(p.pos.z), yaw: p.yaw };
+      g.auth('skill', { r: g.round, id: 'anchor', on: 1 });
+      this._send({ id: 'anchor', p: [this.anchor.x, this.anchor.y, this.anchor.z] });
+      this.nova(this.anchor.x, this.anchor.y + 0.05, this.anchor.z, 0x5ff0d0, 1.6, 0.5); g.sfx.skill('mark');
+      return true;
+    }
+    g.auth('skill', { r: g.round, id: 'anchor', on: 0 });
+    return this._goAnchor();
+  }
+  // 傳回錨點（自己按、或被裁判從致命傷救回來）
+  _goAnchor() {
+    const g = this.g, p = g.player, a = this.anchor;
+    if (!a) return false;
+    this.anchor = null;
+    const from = [r3(p.pos.x), r3(p.pos.y + 0.9), r3(p.pos.z)], to = [a.x, r3(a.y + 0.9), a.z];
+    if (!p.collides(a.x, a.y, a.z)) { p.pos.set(a.x, a.y, a.z); p.prev.copy(p.pos); p.rpos.copy(p.pos); p.vel.set(0, 0, 0); p.stepSmooth = 0; }   // 錨點被蓋住了：留在原地
+    if (this.grap) this._dropGrap(false);
+    this._blinkFx(from, to); g.sfx.skill('blink');
+    this._send({ id: 'blink', a: from, b: to }); this._send({ id: 'anchor', off: 1 });
+    return true;
+  }
+  // 裁判通知：有人被錨點救回來（雙方都會收到）
+  recall(who) {
+    const g = this.g;
+    if (who === g.me) {
+      this._goAnchor();
+      const i = this.slots.indexOf('anchor'); if (i >= 0) this.ready[i] = performance.now() + CARDS.anchor.cd * 1000 * (g.combat.mods.cd || 1);
+      g.hud.banner('回溯錨點', '差點死掉，被拉回錨點了', 1200);
+    } else { this.rAnchor = null; g.hud.feed(`${g.gs ? g.gs.p[1 - g.me].n : '對手'} 被錨點救回去了`); }
+  }
+
   // 堡壘（神話）：在原地蓋一座小城堡，自己直接站上正中間的哨塔頂
   _fortress() {
     const g = this.g, p = g.player, w = g.world, F = SK.fortress, rm = g.remote;
@@ -405,6 +447,7 @@ export class Skills {
     p.pos.set(b[0], b[1], b[2]); p.prev.copy(p.pos); p.rpos.copy(p.pos); p.vel.set(0, 0, 0); p.stepSmooth = 0;
     rm.clearBuffer(); rm.pos.set(a[0], a[1], a[2]); if (rm.lastPos) rm.lastPos.copy(rm.pos);
     this._swapFx(a, b); g.sfx.skill('blink');
+    this.swapEnd = performance.now() + SK.swap.bonus * 1000;
     this._send({ id: 'swap', a, b });
     return true;
   }
@@ -501,6 +544,7 @@ export class Skills {
         else if (vec3(d.p)) { this.rgrap = { x: d.p[0], y: d.p[1], z: d.p[2], end: now + dur(0.2, 2) }; this._snd('grapple', rp.x, rp.z); }
         break;
       case 'jet': this.jets.push({ me: false, end: now + 450 }); this._snd('jet', rp.x, rp.z); break;
+      case 'anchor': if (d.off) this.rAnchor = null; else if (vec3(d.p)) { this.rAnchor = { x: d.p[0], y: d.p[1], z: d.p[2] }; this._snd('mark', d.p[0], d.p[2]); } break;
       case 'dash': this.jets.push({ me: false, end: now + 200, dash: true }); this._snd('jet', rp.x, rp.z); break;
       case 'wall': if (Array.isArray(d.c) && d.c.length <= 500) this._placeWall(d.c, false, d.b === B.SANDBAG ? B.SANDBAG : B.METAL); break;
       case 'unwall': if (Array.isArray(d.c) && d.c.length <= 2500) this._unwall(d.c); break;
@@ -532,7 +576,9 @@ export class Skills {
         p.pos.set(d.a[0], d.a[1], d.a[2]); p.prev.copy(p.pos); p.rpos.copy(p.pos); p.vel.set(0, 0, 0); p.stepSmooth = 0;
         g.remote.clearBuffer(); g.remote.pos.set(d.b[0], d.b[1], d.b[2]); if (g.remote.lastPos) g.remote.lastPos.copy(g.remote.pos);
         if (this.grap) this._dropGrap(false);
-        this._swapFx(d.a, d.b); g.sfx.skill('blink'); g.hud.banner('換位', '對手跟你交換了位置', 1100);
+        p.yaw += Math.PI;                                                        // 被轉成背對對手
+        this.dazeEnd = now + SK.swap.daze * 1000; this.noFireEnd = now + SK.swap.noFire * 1000;
+        this._swapFx(d.a, d.b); g.sfx.skill('blink'); g.hud.banner('換位', '你被轉過去了！', 1100); g.shake = Math.min(1.2, g.shake + 0.6);
         break;
       }
       case 'orbital': if (vec3(d.p)) this._addMark({ x: d.p[0], y: d.p[1], z: d.p[2], t0: now, at: now + dur(0.5, 3), mine: false, done: false, track: d.k !== 'm', s: d.k === 'm' ? 0.55 : 1, meteor: d.k === 'm' }); break;
@@ -594,6 +640,7 @@ export class Skills {
     const now = performance.now();
     let k = 1;
     if (now < this.stopEnd) return 0;
+    if (now < this.dazeEnd) k *= SK.swap.slow;
     if (now < this.stimEnd) k *= SK.stim.speed;
     if (now < this.slowEnd) k *= SK.chrono.move;
     if (me && me.fz) k *= 0.55;
@@ -751,6 +798,14 @@ export class Skills {
       if (fired) for (let n = 0; n < 4; n++) fx.glowP.spawn(m.x + (Math.random() - 0.5) * 3, m.y + Math.random() * 12, m.z + (Math.random() - 0.5) * 3, (Math.random() - 0.5) * 6, Math.random() * 8, (Math.random() - 0.5) * 6, 0.3, 0.04, 0.4, 5, 8, 10, 1 - post, 0, 1);
     });
 
+    // 回溯錨點：地上的光圈和細光柱，慢慢呼吸
+    [this.anchor, this.rAnchor].forEach((a, i) => {
+      const o = this.anchorM[i], on = !!a && !g.kc; o.ring.visible = o.beam.visible = on; if (!on) return;
+      const k = 0.6 + 0.4 * Math.sin(this.t * 4);
+      o.ring.position.set(a.x, a.y + 0.04, a.z); o.ring.scale.setScalar(0.7 + 0.08 * k); o.ring.material.opacity = 0.5 + 0.4 * k;
+      o.beam.position.set(a.x, a.y, a.z); o.beam.scale.set(0.05, 3.2, 0.05); o.beam.material.opacity = 0.35 + 0.3 * k;
+    });
+
     // 光圈
     for (const n of this.novas) {
       if (n.life <= 0) continue;
@@ -776,6 +831,7 @@ export class Skills {
     const left = (t) => ((t - now) / 1000).toFixed(1);
     if (now < this.cloakEnd) st.push(['cloak', '隱身中 ' + left(this.cloakEnd)]);
     if (now < this.stopEnd) st.push(['slow', '時間暫停 ' + left(this.stopEnd)]);
+    if (now < this.dazeEnd) st.push(['slow', '被換位，頭暈 ' + left(this.dazeEnd)]);
     if (now < this.slowEnd) st.push(['slow', '時間凝結 ' + left(this.slowEnd)]);
     if (me && me.fz) st.push(['slow', '被冰凍，跑不快']);
     if (me && me.bu) st.push(['burn', '著火了']);
@@ -786,7 +842,7 @@ export class Skills {
     if (now < this.rSlowEnd) st.push(['good', '對手被凝結 ' + left(this.rSlowEnd)]);
     if (now < this.rStopEnd) st.push(['good', '對手被暫停 ' + left(this.rStopEnd)]);
     const tint = ['slow', 'burn', 'hole', 'cloak', 'stim'].find((k) => st.some((s) => s[0] === k)) || '';
-    const on = { cloak: now < this.cloakEnd, grapple: !!this.grap, scan: now < this.scanEnd, stim: now < this.stimEnd };
+    const on = { cloak: now < this.cloakEnd, grapple: !!this.grap, scan: now < this.scanEnd, stim: now < this.stimEnd, anchor: !!this.anchor };
     return {
       status: st, tint,
       slots: this.slots.map((id, i) => (id ? { id, left: Math.max(0, (this.ready[i] - now) / 1000), cd: CARDS[id].cd, uses: this.lim[i] ? this.uses[i] : -1, on: !!on[id] } : null)),

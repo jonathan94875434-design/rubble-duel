@@ -769,6 +769,7 @@ class Game {
     else if (e.t === 'core') this.horde.coreHit();
     else if (e.t === 'phoenix') this.skills.phoenix(e.who);
     else if (e.t === 'medkit') this.skills.medkit(e.who);
+    else if (e.t === 'recall') this.skills.recall(e.who);
     else if (e.t === 'respawn') this.respawn();
     else if (e.t === 'wkill' && this.gs) {
       const g = this.gs, mine = e.victim !== this.me;
@@ -1002,7 +1003,7 @@ class Game {
         const mf = canMove ? (this.held('fwd') ? 1 : 0) - (this.held('back') ? 1 : 0) : 0, mr = canMove ? (this.held('right') ? 1 : 0) - (this.held('left') ? 1 : 0) : 0;
         if (this.emote && (mf || mr || this.mouse.l || now >= this.emote.end)) { this.emote = null; this.ghost.group.visible = false; }   // 一動就取消
         this.skills.pre(dt, now);                              // 鉤索、黑洞會改速度，要排在物理之前
-        p.update(dt, { f: mf, r: mr, jump: canMove && this.held('jump'), crouch: canMove && this.held('crouch'), speed: (w ? w.def.move : 1) * cb.mods.speed * lerp(1, 0.6, cb.ads) * this.skills.speedMul(meS), grav: cb.mods.grav });
+        p.update(dt, { f: mf, r: mr, jump: canMove && this.held('jump') && !this.skills.frozen(), crouch: canMove && this.held('crouch'), speed: (w ? w.def.move : 1) * cb.mods.speed * lerp(1, 0.6, cb.ads) * this.skills.speedMul(meS), grav: cb.mods.grav });
         const surf = this.surfaceAt(p.pos.x, p.pos.y, p.pos.z);
         if (p.justJumped) this.sfx.jump();
         if (p.justLanded) { this.sfx.land(surf); this.landDip = Math.min(0.24, p.landSpeed * 0.02); if (p.landSpeed > 7) this.fx.smoke(p.pos.x, p.pos.y + 0.05, p.pos.z, 2, 0.12); }
@@ -1071,7 +1072,7 @@ class Game {
       cam.updateMatrixWorld();
       this.skills.update(dt, now);
 
-      const canFire = act && alive && live && !this.emote && !this.kc && !this.skills.frozen();
+      const canFire = act && alive && live && !this.emote && !this.kc && !this.skills.noFire();
       cb.update(dt, { fire: this.mouse.l, firePressed: this.mouse.lp, ads: adsKey, reload: this.reloadPressed }, canFire);
       cb.updateProjectiles(dt);
       this.mouse.lp = false; this.reloadPressed = false;

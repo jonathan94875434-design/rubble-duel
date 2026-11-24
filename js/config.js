@@ -28,7 +28,7 @@ export const PLAYER = {
 
   MAX_HP: 100,
   MAX_ARMOR: 50,
-  ARMOR_ABSORB: 0.5, // 護甲吸收的傷害比例
+  ARMOR_ABSORB: 1,   // 受傷時有多少比例先扣護甲：1 = 全部先打護甲，護甲扣光了才扣血
 };
 
 export const NET = {

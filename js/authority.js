@@ -220,9 +220,10 @@ export class Authority {
     p.money -= ROGUE.REROLL; p.rr++; p.choices = next; this.dirty = true;
   }
   // 需要裁判動手的技能（目前只有腎上腺素要補血）
-  _skill(i, id) {
+  _skill(i, id, d = {}) {
     const p = this.players[i], now = Date.now();
     if (this.phase !== 'playing' || !p.alive || !p.skills.includes(id)) return;
+    if (id === 'anchor') { p.anchor = !!d.on; return; }          // 回溯錨點：放下／收回（放著的時候受到致命傷會被救回錨點）
     if (id === 'stim') {
       if (now - p.stimAt < CARDS.stim.cd * 1000 - 500) return;
       p.stimAt = now; p.hp = Math.min(p.maxHp, p.hp + SK.stim.heal); this.dirty = true; this.flush();
@@ -240,7 +241,7 @@ export class Authority {
       p.maxHp = maxHpOf(p.buffs);
       p.hp = p.maxHp; p.armor = (p.loadout.armor ? 50 : 0) + (has('plate') ? 100 : 0) + (has('arsenal') ? 50 : 0); p.alive = true; p.lastHurt = 0;   // 護甲片、軍火庫可以跟買的防彈衣疊加
       p.rHits = p.rDmg = p.rHead = 0;   // 這一局的傷害報告歸零
-      p.phx = false; p.aid = false; p.bt = false; p.inv = 0; p.slowT = 0; p.burnT = 0; p.stimAt = 0;
+      p.phx = false; p.aid = false; p.anchor = false; p.inv = 0; p.slowT = 0; p.burnT = 0; p.stimAt = 0;
     }
     this.pickups = MAPS[this.map].pickups.map(() => ({ on: true, at: 0 }));
     this.result = null;
@@ -281,7 +282,7 @@ export class Authority {
     else if (t === 'buff') { if (p.choices && p.choices.includes(d.id)) { this._take(p, d.id, d.slot | 0); if (this.phase === 'horde') this._hzApply(p); } }
     else if (t === 'mobhit') { if (d.r === this.round && this.phase === 'horde' && p.alive && this.onMobHit) this.onMobHit(i, d); }
     else if (t === 'reroll') this._reroll(p);
-    else if (t === 'skill') { if (d.r === this.round) this._skill(i, d.id); }
+    else if (t === 'skill') { if (d.r === this.round) this._skill(i, d.id, d); }
     else if (t === 'ready') { if (this.phase === 'loadout' && !p.choices) { p.ready = !!d.v; this.dirty = true; } }
     else if (t === 'hit') { if (d.r === this.round && this.phase !== 'horde') this.damage(1 - i, +d.d || 0, i, d.w, !!d.h, d); }   // 機器人模式是同一隊，打不到隊友
     else if (t === 'self') { if (d.r === this.round) this.damage(i, +d.d || 0, i, d.w, false); }
@@ -299,13 +300,18 @@ export class Authority {
     if (!T || !T.alive || !(dmg > 0)) return;
     if (now < T.inv) return;                                 // 不死鳥剛重生：短暫無敵
     dmg = Math.min(dmg, 400);
+    // 玩家的刀、死神的爆頭：一定致命（不吃減傷、護甲擋不住），只有不死鳥救得回來
+    const lethal = attacker >= 0 && (weapon === 'knife' || !!(x && x.rp));
     // 減傷：硬皮、重裝巨人、天神下凡；求生本能在血量低的時候再減
-    if (T.buffs.includes('tough')) dmg *= 0.75;
-    if (T.buffs.includes('jugg')) dmg *= 0.9;
-    if (T.buffs.includes('avatar')) dmg *= 0.8;
-    if (T.buffs.includes('survivor') && T.hp < T.maxHp * 0.35) dmg *= 0.6;
-    let toHp = dmg;
-    if (T.armor > 0) { const ab = Math.min(T.armor, dmg * PLAYER.ARMOR_ABSORB); T.armor -= ab; toHp = dmg - ab; }
+    if (!lethal) {
+      if (T.buffs.includes('tough')) dmg *= 0.75;
+      if (T.buffs.includes('jugg')) dmg *= 0.9;
+      if (T.buffs.includes('avatar')) dmg *= 0.8;
+      if (T.buffs.includes('survivor') && T.hp < T.maxHp * 0.35) dmg *= 0.6;
+    }
+    let toHp = lethal ? Math.max(dmg, T.hp) : dmg;
+    // 護甲：受傷先扣護甲（比例看 ARMOR_ABSORB），扣光了才扣血
+    if (T.armor > 0 && !lethal) { const ab = Math.min(T.armor, dmg * PLAYER.ARMOR_ABSORB); T.armor -= ab; toHp = dmg - ab; }
     const dealt = Math.min(T.hp, toHp);
     T.hp -= toHp; T.lastHurt = now;
     if (A && attacker !== target) {
@@ -328,7 +334,11 @@ export class Authority {
       T.aid = true; T.hp = Math.min(T.maxHp, T.hp + 50);
       this.out(0, 'ev', { t: 'medkit', who: target }); this.out(1, 'ev', { t: 'medkit', who: target });
     }
-    if (T.hp <= 0 && !warm && T.buffs.includes('phoenix') && !T.phx) {
+    if (T.hp <= 0 && !warm && T.anchor) {
+      // 回溯錨點：這一下本來會死，改成傳回錨點（錨點用掉）
+      T.anchor = false; T.hp = Math.min(T.maxHp, SK.anchor.hp); T.inv = now + SK.anchor.inv * 1000; T.burnT = 0; T.slowT = 0;
+      this.out(0, 'ev', { t: 'recall', who: target }); this.out(1, 'ev', { t: 'recall', who: target });
+    } else if (T.hp <= 0 && !warm && T.buffs.includes('phoenix') && !T.phx) {
       // 不死鳥：這一下本來會死，改成原地重生
       T.phx = true; T.hp = Math.min(T.maxHp, 70); T.inv = now + 2000; T.burnT = 0; T.slowT = 0;
       this.out(0, 'ev', { t: 'phoenix', who: target }); this.out(1, 'ev', { t: 'phoenix', who: target });
