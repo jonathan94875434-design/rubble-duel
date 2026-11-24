@@ -5,6 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>tay is gay</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27%3E%3Crect width=%2716%27 height=%2716%27 rx=%273%27 fill=%27%23ffb238%27/%3E%3Crect x=%273%27 y=%273%27 width=%275%27 height=%275%27 fill=%27%231b1405%27/%3E%3Crect x=%278%27 y=%278%27 width=%275%27 height=%275%27 fill=%27%231b1405%27/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<!-- 字型：中文 Noto Sans TC、數字與標題 Saira Condensed、標誌 Saira Stencil One。連不上就用系統字型，遊戲照常運作 -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=Saira+Condensed:wght@500;600;700;800&family=Saira+Stencil+One&display=swap">
 <link rel="stylesheet" href="css/style.css">
 <script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js" } }</script>
 </head>
@@ -20,6 +24,7 @@
   <div id="hurt-arc"><svg viewBox="-200 -200 400 400" aria-hidden="true"><path class="glow" d="M -103 -147 A 180 180 0 0 1 103 -147"/><path class="arc" d="M -103 -147 A 180 180 0 0 1 103 -147"/><path class="tip" d="M 0 -214 L 17 -192 L -17 -192 Z"/></svg></div>
   <div id="crosshair"><i class="t"></i><i class="b"></i><i class="l"></i><i class="r"></i><i class="dot"></i><i class="ring"></i></div>
   <div id="hitmarker"></div>
+  <div id="killmark" aria-live="polite"><span class="km-ico"></span><b></b></div>
 
   <div id="top">
     <div class="side me"><span class="nm" id="nm-me"></span><span class="sc" id="sc-me">0</span></div>
@@ -28,7 +33,7 @@
   </div>
 
   <div id="tl">
-    <canvas id="minimap" width="188" height="188"></canvas>
+    <div class="mmwrap"><canvas id="minimap" width="188" height="188"></canvas></div>
     <div id="netinfo"></div>
     <div id="voicebar"><span id="v-tx" class="hidden"></span><span id="v-rx" class="hidden"></span></div>
   </div>
@@ -71,7 +76,7 @@
   <section id="scr-menu" class="screen">
     <div class="home">
       <header class="home-head">
-        <div class="brand"><h1>tay is gay</h1><p class="tagline">把牆打穿，把朋友打爆。</p></div>
+        <div class="brand"><h1>tay is gay</h1><i class="tape" aria-hidden="true"></i><p class="tagline">把牆打穿，把朋友打爆。</p></div>
         <label class="field namefield"><span>你的名字</span><input id="in-name" maxlength="14" placeholder="玩家" autocomplete="off"></label>
       </header>
 
@@ -183,7 +188,7 @@
       <div class="hint" id="lb-hint"></div>
       <div class="players">
         <div class="pl p0"><i></i><span id="lb-p0"></span></div>
-        <div class="vs">VS</div>
+        <div class="vs">vs</div>
         <div class="pl p1"><i></i><span id="lb-p1"></span></div>
       </div>
       <div class="mtiles" id="lb-modes">
@@ -293,8 +298,10 @@
   <!-- 比賽結束 -->
   <section id="scr-end" class="screen hidden">
     <div class="panel end">
-      <h1 id="end-title">勝利</h1>
+      <div class="end-band"><h1 id="end-title">勝利</h1></div>
       <div id="end-score" class="bigscore"></div>
+      <div id="end-rounds" class="rounds"></div>
+      <div id="end-cmp" class="cmp"></div>
       <table id="end-stats"></table>
       <div class="actions"><button id="btn-end-leave" class="btn ghost">離開</button><button id="btn-rematch" class="btn primary">再來一場</button></div>
       <div id="end-wait" class="hint"></div>
@@ -305,19 +312,35 @@
   <button id="btn-gear" class="gear" title="設定">⚙ 設定</button>
   <div id="pause" class="hidden">
     <div class="panel pausebox">
-      <h2 id="pause-title">設定</h2>
-      <div class="setgrid">
-        <label>滑鼠靈敏度 <output id="out-sens"></output><input id="rng-sens" type="range" min="0.2" max="3" step="0.05"></label>
-        <label>視野 FOV <output id="out-fov"></output><input id="rng-fov" type="range" min="65" max="105" step="1"></label>
-        <label>音量 <output id="out-vol"></output><input id="rng-vol" type="range" min="0" max="1" step="0.05"></label>
-        <label>畫質 <output id="out-quality"></output><select id="sel-quality"><option value="auto">自動</option><option value="low">低</option><option value="medium">中</option><option value="high">高</option></select></label>
-        <label>語音 <output id="out-voice"></output><select id="sel-voice"><option value="off">關閉</option><option value="ptt">按住說話</option><option value="open">一直開著麥克風</option></select></label>
-        <label>對方語音音量 <output id="out-vvol"></output><input id="rng-vvol" type="range" min="0" max="1" step="0.05"></label>
-        <label class="check"><input id="chk-wheel" type="checkbox"> 滾輪切槍（Magic Mouse 容易誤觸可以關）</label>
-        <label class="check"><input id="chk-minimap" type="checkbox"> 顯示小地圖</label>
-        <label class="check"><input id="chk-fps" type="checkbox"> 顯示 FPS</label>
+      <div class="set-head">
+        <h2 id="pause-title">設定</h2>
+        <div class="settabs" role="tablist">
+          <button class="settab on" data-tab="play" role="tab">遊戲操作</button>
+          <button class="settab" data-tab="av" role="tab">畫面與聲音</button>
+          <button class="settab" data-tab="xh" role="tab">準星</button>
+          <button class="settab" data-tab="keys" role="tab">按鍵</button>
+        </div>
       </div>
-      <h3>準星</h3>
+      <section class="setpage" data-tab="play">
+        <div class="setgrid">
+          <label>滑鼠靈敏度 <output id="out-sens"></output><input id="rng-sens" type="range" min="0.2" max="3" step="0.05"></label>
+          <label>視野 FOV <output id="out-fov"></output><input id="rng-fov" type="range" min="65" max="105" step="1"></label>
+        </div>
+        <div class="setchecks">
+          <label class="check"><input id="chk-wheel" type="checkbox"> 滾輪切槍（Magic Mouse 容易誤觸可以關）</label>
+          <label class="check"><input id="chk-minimap" type="checkbox"> 顯示小地圖</label>
+          <label class="check"><input id="chk-fps" type="checkbox"> 顯示 FPS</label>
+        </div>
+      </section>
+      <section class="setpage hidden" data-tab="av">
+        <div class="setgrid">
+          <label>畫質 <output id="out-quality"></output><select id="sel-quality"><option value="auto">自動</option><option value="low">低</option><option value="medium">中</option><option value="high">高</option></select></label>
+          <label>音量 <output id="out-vol"></output><input id="rng-vol" type="range" min="0" max="1" step="0.05"></label>
+          <label>語音 <output id="out-voice"></output><select id="sel-voice"><option value="off">關閉</option><option value="ptt">按住說話</option><option value="open">一直開著麥克風</option></select></label>
+          <label>對方語音音量 <output id="out-vvol"></output><input id="rng-vvol" type="range" min="0" max="1" step="0.05"></label>
+        </div>
+      </section>
+      <section class="setpage hidden" data-tab="xh">
       <div class="xhbox">
         <div id="xh-preview"><div class="xh"><i class="t"></i><i class="b"></i><i class="l"></i><i class="r"></i><i class="dot"></i><i class="ring"></i></div></div>
         <div class="xhgrid">
@@ -333,15 +356,29 @@
           <button id="xh-reset" class="btn ghost small">準星恢復預設</button>
         </div>
       </div>
-      <h3>按鍵（點一下再按你要的鍵；Esc 取消）</h3>
-      <div id="keybinds" class="keybinds"></div>
-      <div class="hint">左鍵開火、右鍵瞄準是固定的。滑鼠中鍵、側鍵也可以綁。不建議綁 Ctrl：在 Windows 上 Ctrl+W 會關掉分頁。</div>
+      </section>
+      <section class="setpage hidden" data-tab="keys">
+        <p class="hint">點一下再按你要的鍵，Esc 取消。左鍵開火、右鍵瞄準是固定的；滑鼠中鍵、側鍵也可以綁。不建議綁 Ctrl：在 Windows 上 Ctrl+W 會關掉分頁。</p>
+        <div id="keybinds" class="keybinds"></div>
+      </section>
       <div class="actions"><button id="btn-quit" class="btn ghost small">離開對戰</button><button id="btn-endwarm" class="btn ghost small hidden">結束熱身</button><button id="btn-reset-binds" class="btn ghost small">按鍵恢復預設</button><button id="btn-resume" class="btn primary">繼續</button></div>
     </div>
   </div>
   <div id="toast"></div>
 </div>
 
+<!-- 載入畫面：下載模組、算材質的時候顯示；第一格畫面畫好就淡出（main.js 最後面） -->
+<div id="boot" role="status" aria-live="polite">
+  <div class="boot-in">
+    <div class="boot-logo">tay is gay</div>
+    <div class="boot-bar"><i></i></div>
+    <p id="boot-msg">正在把牆砌起來…</p>
+  </div>
+</div>
+<script>
+  // 載入失敗（瀏覽器不支援 WebGL、檔案下載不完整）：把原因寫在載入畫面上，不要一直停在那裡
+  addEventListener('error', (e) => { const m = document.getElementById('boot-msg'); if (m && document.getElementById('boot')) { m.textContent = '載入失敗：' + (e.message || '請重新整理'); m.classList.add('bad'); } });
+</script>
 <script src="vendor/peerjs.min.js"></script>
 <script type="module" src="js/main.js"></script>
 </body>

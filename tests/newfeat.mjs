@@ -93,7 +93,7 @@ await page.click('#btn-bot'); await start();
   ok('武器欄有三格：主槍、副槍、刀；拿刀跑比較快', r.slots === 'ar,pistol,knife' && r.cur === 'knife' && r.move > 1.1, `${r.slots} ${r.move}`);
   ok('刀：太遠砍不到、突刺搆得比快砍遠、Q 切回上一把', r.slash === 0 && r.far === 0 && r.last === 'ar', `${r.slash} ${r.far} ${r.last}`);
   ok('刀：砍到就一刀斃命（滿血加護甲也一樣）', r.phase === 'roundEnd' && r.res && r.res.w === 'knife' && r.res.winner === 0, JSON.stringify(r.res));
-  ok('回合結束有傷害報告和擊倒訊息', !!r.report && r.report.includes('傷害報告') && r.report.includes('發命中') && r.banner.includes('戰術刀'), `${r.report} | ${r.banner}`);
+  ok('回合結束有傷害報告和擊倒訊息', !!r.report && r.report.includes('傷害報告') && r.report.includes('命中') && r.report.includes('傷害') && r.banner.includes('戰術刀'), `${r.report} | ${r.banner}`);
   ok('對手倒下後屍體留在場上', r.dead && r.vis);
   await page.screenshot({ path: OUT + '/x1-knife-report.png' });
 }

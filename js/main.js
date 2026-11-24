@@ -729,12 +729,15 @@ class Game {
       win: r.winner === me, kill: r.reason === 'kill' && r.victim === 1 - me, died: r.victim === me, head: !!r.head, wb: !!r.wb, weapon: r.w,
       shots: this.combat.shots - this.rs0, hits: this.combat.hits - this.rh0, dmg: my.rdm,
     });
+    // 每局結果（比賽結束畫面的時間軸用）：誰贏、怎麼贏的
+    if (gs.round === 1 || !this.roundLog) this.roundLog = [];
+    this.roundLog[gs.round - 1] = { w: r.winner === -1 ? -1 : r.winner === me ? 0 : 1, how: r.reason === 'time' ? 'time' : r.head ? 'head' : 'kill' };
     // 傷害報告：這一局雙方各打中幾發、多少血
     this.hud.report({ me: my, opp });
-    if (r.winner === -1) { this.hud.banner('平手', '時間到，雙方血量相同' + inc, 0); return; }
+    if (r.winner === -1) { this.hud.banner('平手', '時間到，雙方血量相同' + inc, 0, 'draw'); return; }
     const sub = r.reason === 'time' ? '時間到，血量較多的一方獲勝' : this._killText(r, r.winner === me);
-    if (r.winner === me) { this.hud.banner('拿下這一局', sub + inc, 0); this.sfx.kill(); }
-    else { this.hud.banner('這局輸了', sub + inc, 0); this.sfx.lose(); }
+    if (r.winner === me) { this.hud.banner('拿下這一局', sub + inc, 0, 'win'); this.sfx.kill(); if (r.reason === 'kill') this.hud.killMark(r.head); }
+    else { this.hud.banner('這局輸了', sub + inc, 0, 'lose'); this.sfx.lose(); }
     if (r.reason !== 'time') this.hud.killfeed({ killer: r.reason === 'suicide' ? null : gs.p[1 - r.victim].n, victim: gs.p[r.victim].n, w: r.w, head: r.head, wb: r.wb, bk: r.bk, mine: r.victim !== me });
     // 被擊倒 → 過一秒播擊殺回放
     if (r.reason === 'kill' && r.victim === me) { this.kcDeath = now; this.kcAt = now + 1100; }
@@ -761,7 +764,7 @@ class Game {
     else if (e.t === 'mkill' && this.gs && MOBS[e.kind]) {             // 有人打倒一隻機器人
       const mine = e.by === this.me;
       this.hud.killfeed({ killer: this.gs.p[e.by] ? this.gs.p[e.by].n : '', victim: MOBS[e.kind].name, w: e.w, head: e.head, mine });
-      if (mine) this.sfx.kill();
+      if (mine) { this.sfx.kill(); this.hud.killMark(e.head); }
     } else if (e.t === 'hkill' && this.gs) {                            // 有玩家倒下（被機器人、或自己炸到自己）
       const v = this.gs.p[e.victim]; if (!v) return;
       this.hud.killfeed({ killer: e.reason === 'suicide' ? null : MOBS[e.mob] ? MOBS[e.mob].name : '機器人', victim: v.n, w: e.w, head: e.head, mine: false });
@@ -774,7 +777,7 @@ class Game {
     else if (e.t === 'wkill' && this.gs) {
       const g = this.gs, mine = e.victim !== this.me;
       this.hud.killfeed({ killer: e.reason === 'suicide' ? null : g.p[1 - e.victim].n, victim: g.p[e.victim].n, w: e.w, head: e.head, wb: e.wb, bk: e.bk, mine });
-      if (mine && e.reason === 'kill') this.sfx.kill(); else if (!mine) this.sfx.lose();
+      if (mine && e.reason === 'kill') { this.sfx.kill(); this.hud.killMark(e.head); } else if (!mine) this.sfx.lose();
     }
   }
 
@@ -1206,3 +1209,8 @@ class Game {
 }
 
 window.__game = new Game();
+// 第一格畫面畫好之後才把載入畫面淡掉（著色器在第一次畫的時候才編譯）
+requestAnimationFrame(() => requestAnimationFrame(() => {
+  const b = document.getElementById('boot'); if (!b) return;
+  b.classList.add('done'); setTimeout(() => b.remove(), 700);
+}));

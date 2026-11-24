@@ -40,11 +40,18 @@ const ICON = {
 const css = (c) => `rgb(${c.map((v) => Math.round(Math.pow(v, 0.45) * 255)).join(',')})`;
 
 // 所有 DOM 介面：選單、大廳、選槍、結算、戰績、編輯器面板、對戰中的 HUD
+const syncRange = (el) => { const lo = +el.min || 0, hi = +el.max || 100; el.style.setProperty('--v', ((+el.value - lo) / (hi - lo || 1)) * 100 + '%'); };
+
 export class Hud {
   constructor(g) {
     this.g = g; this.cache = {}; this.bannerT = 0; this.toastT = 0; this.buffKey = ''; this.hurtT = 0;
     this.capture = null; this.setMode = null; this.flashT = 0; this.icons = null; this.iconSkin = ''; this.statMode = 'duel';
     $('ico-hp').innerHTML = ICON.hp; $('ico-armor').innerHTML = ICON.armor;
+    document.querySelectorAll('.mode').forEach((m) => { const s = m.querySelector('.mi svg'); if (!s) return; const c = s.cloneNode(true); c.classList.add('mart'); c.setAttribute('aria-hidden', 'true'); m.prepend(c); });
+    // 設定的分頁：記得上次開到哪一頁
+    document.querySelectorAll('.settab').forEach((b) => b.addEventListener('click', () => { g.sfx.ui(); this.setTab(b.dataset.tab); }));
+    // 滑桿已拉的那一段要畫成主色：把目前的比例寫進 --v
+    addEventListener('input', (e) => { if (e.target.type === 'range') syncRange(e.target); }, true);
     this._buildWeapons();
     this._buildLocker();
     this._buildEditor();
@@ -108,16 +115,25 @@ export class Hud {
     this.setMode = mode; this.capture = null;
     $('pause').classList.toggle('hidden', !mode);
     if (!mode) return;
+    requestAnimationFrame(() => document.querySelectorAll('#pause input[type=range]').forEach(syncRange));
     const g = this.g;
-    $('pause-title').textContent = mode === 'pause' ? '暫停 — 點空白處或按「繼續」回到遊戲' : '設定';
+    $('pause-title').textContent = mode === 'pause' ? '暫停' : '設定';
     $('btn-resume').textContent = mode === 'pause' ? '繼續' : '完成';
     $('btn-quit').classList.toggle('hidden', mode !== 'pause');
     $('btn-endwarm').classList.toggle('hidden', !(mode === 'pause' && (g.phase === 'warmup' || g.phase === 'horde') && g.net.isHost));
     $('btn-endwarm').textContent = g.phase === 'horde' ? '結束這一場（看結算）' : '結束熱身';
     this.syncSettings();
     this.renderBinds();
+    this.setTab(this.tab || 'play');
   }
   openSettings() { this._settings('menu'); }
+  setTab(t) {
+    this.tab = t;
+    document.querySelectorAll('.settab').forEach((b) => { b.classList.toggle('on', b.dataset.tab === t); b.setAttribute('aria-selected', b.dataset.tab === t); });
+    document.querySelectorAll('.setpage').forEach((p) => p.classList.toggle('hidden', p.dataset.tab !== t));
+    $('btn-reset-binds').classList.toggle('hidden', t !== 'keys');                 // 「按鍵恢復預設」只在按鍵分頁出現
+    requestAnimationFrame(() => document.querySelectorAll('#pause input[type=range]').forEach(syncRange));
+  }
   setPaused(v) { if (v) this._settings('pause'); else if (this.setMode === 'pause') this._settings(null); }
 
   // 把設定值填回各個控制項
@@ -327,7 +343,7 @@ export class Hud {
     });
     $('ed-exit').addEventListener('click', () => g.closeEditor());
   }
-  _miniVis() { $('minimap').classList.toggle('hidden', !this.g.settings.minimap); }
+  _miniVis() { const off = !this.g.settings.minimap; $('minimap').classList.toggle('hidden', off); $('minimap').parentElement.classList.toggle('hidden', off); }
 
   show(name) {
     for (const s of SCREENS) $('scr-' + s).classList.toggle('hidden', s !== name);
@@ -373,9 +389,11 @@ export class Hud {
     clearTimeout(this.toastT); this.toastT = setTimeout(() => t.classList.remove('show'), ms);
   }
 
-  banner(big, sub = '', ms = 1600) {
+  // tone：'win' 贏了（琥珀色帶）、'lose' 輸了（紅色帶）、'draw' 平手；不給就是一般提示
+  banner(big, sub = '', ms = 1600, tone = '') {
     const b = $('banner');
     b.querySelector('.big').textContent = big; b.querySelector('.sub').textContent = sub;
+    b.className = tone ? 'tone ' + tone : '';
     b.classList.remove('show'); void b.offsetWidth; b.classList.add('show');      // 每次都重播進場動畫
     clearTimeout(this.bannerT);
     if (ms > 0) this.bannerT = setTimeout(() => b.classList.remove('show'), ms);
@@ -409,6 +427,12 @@ export class Hud {
     setTimeout(() => d.remove(), 5200);
   }
   // 擊倒訊息：誰 [用什麼] 擊倒誰，附帶爆頭／穿牆／背刺的小圖示
+  // 自己擊倒人：準星下方跳出骷髏和「擊倒」，一秒後淡掉
+  killMark(head) {
+    const el = $('killmark');
+    el.querySelector('.km-ico').innerHTML = ICON.head; el.querySelector('b').textContent = head ? '爆頭擊倒' : '擊倒';
+    el.classList.toggle('head', !!head); el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
+  }
   killfeed(k) {
     const d = document.createElement('div'); d.className = 'kf' + (k.mine ? ' mine' : ' theirs');
     const ic = this.icons && this.icons[k.w], wn = itemName(k.w) || cardName(k.w);
@@ -422,9 +446,10 @@ export class Hud {
   report(d) {
     const el = $('report');
     el.classList.toggle('hidden', !d);
+    $('hud').classList.toggle('rend', !!d);                                       // 一局結束：把準星收起來，不要壓在報告上
     if (!d) return;
-    const row = (a, b, who, cls) => `<div class="rp ${cls}"><span>${who}</span><b>${a.rh} 發命中</b><b>${a.rdm} 傷害</b><span>${a.rhs ? '爆頭 ' + a.rhs : ''}</span></div>`;
-    el.innerHTML = `<h4>傷害報告</h4>${row(d.me, d.opp, `你 → ${esc(d.opp.n)}`, 'out')}${row(d.opp, d.me, `${esc(d.opp.n)} → 你`, 'in')}`
+    const row = (a, who, cls) => `<div class="rp ${cls}"><span>${who}</span><b>${a.rh}</b><b>${a.rdm}</b><b>${a.rhs || '—'}</b></div>`;
+    el.innerHTML = `<h4>傷害報告</h4><div class="rp hd"><span></span><i>命中</i><i>傷害</i><i>爆頭</i></div>${row(d.me, `你 → ${esc(d.opp.n)}`, 'out')}${row(d.opp, `${esc(d.opp.n)} → 你`, 'in')}`
       + `<div class="rp left">${d.opp.al ? `${esc(d.opp.n)} 還剩 <b>${d.opp.hp}</b> 血${d.opp.ar ? `、<b>${d.opp.ar}</b> 護甲` : ''}` : d.me.al ? `你還剩 <b>${d.me.hp}</b> 血` : ''}</div>`;
   }
 
@@ -513,7 +538,7 @@ export class Hud {
     const r1 = !warm && gs.round <= 1, sel = g.shopSel(), money = warm ? 99999 : me.$, cost = warm ? 0 : loadoutCost(sel);
     const hz = gs.phase === 'horde' ? gs.hz : null, tier = g.hzTier();
     this._cls('scr-loadout', 'warm', !!warm);
-    this._set('lo-title', hz ? (hz.kind === 'defense' ? `守據點 — 第 ${hz.wave + (hz.st === 'break' ? 1 : 0)} 波之前　全部免費（好槍撐到後面幾波才開放）` : '死鬥練習 — 全部免費，隨便拿') : warm ? '熱身 — 全部免費，隨便拿' : r1 ? '第 1 局 — 手槍局（只能買副武器和裝備）' : `第 ${gs.round} 局 — 購買裝備`);
+    this._set('lo-title', hz ? (hz.kind === 'defense' ? `守據點：第 ${hz.wave + (hz.st === 'break' ? 1 : 0)} 波之前，全部免費（好槍撐到後面幾波才開放）` : '死鬥練習：全部免費，隨便拿') : warm ? '熱身：全部免費，隨便拿' : r1 ? '第 1 局：手槍局，只能買副武器和裝備' : `第 ${gs.round} 局：買裝備`);
     this._set('lo-map', `地圖：${MAPS[gs.map].name}　${MAPS[gs.map].desc}`);
     const mk = warm ? 'warm' : `${money}:${cost}`;
     if (this.cache.loMoney !== mk) { this.cache.loMoney = mk; $('lo-money').innerHTML = warm ? '' : `<b>$${money}</b><span>本局花費 $${cost}　剩下 $${money - cost}</span>`; }
@@ -528,6 +553,8 @@ export class Hud {
       const rest = cost - (isP ? (sel.p ? WEAPONS[sel.p].price : 0) : WEAPONS[sel.s].price);   // 這一格以外已經花掉的
       const lockW = isP && (HZ_TIER[el.dataset.id] || 1) > tier;
       el.classList.toggle('sel', on); el.classList.toggle('locked', isP && (r1 || lockW)); el.classList.toggle('poor', !warm && !on && rest + d.price > money);
+      const lk = isP && r1 ? '手槍局只能買副武器' : isP && lockW ? `第 ${HZ_TIER[el.dataset.id]} 波開放` : '';   // 鎖住的原因直接寫在卡片上
+      if (el.dataset.lock !== lk) el.dataset.lock = lk;
       const pr = el.querySelector('.price'), pt = hz ? (lockW ? `第 ${HZ_TIER[el.dataset.id]} 波開放` : '免費') : d.price ? '$' + d.price : '免費';
       if (pr.textContent !== pt) pr.textContent = pt;
     });
@@ -567,7 +594,7 @@ export class Hud {
       if (draft) this._draftStart(box);
     }
     if (key) {
-      this._set('lo-buff-title', hz ? `第 ${hz.cleared} 波擋下來了 — 選一張強化卡` : rogue ? `第 ${gs.round} 局 — 選一張異能卡` : '上一局落敗補償 — 選一個強化');
+      this._set('lo-buff-title', hz ? `第 ${hz.cleared} 波擋下來了：選一張強化卡` : rogue ? `第 ${gs.round} 局：選一張異能卡` : '上一局輸了：選一個強化');
       this._set('lo-buff-sub', hz ? '下一波開始前沒選，會自動拿第一張' : !rogue ? '' : me.lu ? '上一局落敗：多一張可以選，手氣也比較好。你選好之前看不到對手拿了什麼' : '你選好之前看不到對手這一局拿了什麼');
       const left = ROGUE.REROLLS - (me.rr || 0), rb = $('btn-reroll');
       rb.classList.toggle('hidden', !rogue);
@@ -638,9 +665,16 @@ export class Hud {
     const g = this.g, me = gs.p[g.me], opp = gs.p[1 - g.me], win = gs.mw === g.me;
     this._set('btn-rematch', '再來一場');
     const t = $('end-title'); t.textContent = win ? '勝利' : '落敗'; t.className = win ? 'win' : 'lose';
-    $('end-score').innerHTML = `<span class="me">${me.sc}</span> ： <span class="opp">${opp.sc}</span>`;
-    $('end-stats').innerHTML = `<tr><th></th><th>拿下局數</th><th>總傷害</th><th>爆頭擊殺</th></tr>`
-      + [me, opp].map((p) => `<tr><td>${esc(p.n)}</td><td>${p.sc}</td><td>${p.dmg}</td><td>${p.hs}</td></tr>`).join('');
+    $('scr-end').querySelector('.end').className = 'panel end ' + (win ? 'won' : 'lost');
+    // 比分：兩邊的名字在數字底下
+    $('end-score').innerHTML = `<div class="bs me"><b>${me.sc}</b><span>${esc(me.n)}</span></div><i>:</i><div class="bs opp"><b>${opp.sc}</b><span>${esc(opp.n)}</span></div>`;
+    // 每局結果：一局一格，贏的那一邊的隊色；擊倒、爆頭、時間到、平手各有記號
+    const log = (g.roundLog || []).filter(Boolean), mark = { kill: ICON.head, head: ICON.head, time: '時' };
+    $('end-rounds').innerHTML = log.length ? `<span class="rl">每一局</span><div class="rr">${log.map((x, i) => `<div class="rd ${x.w === 0 ? 'me' : x.w === 1 ? 'opp' : 'draw'}${x.how === 'head' ? ' hs' : ''}" title="第 ${i + 1} 局：${x.w === -1 ? '平手' : (x.w === 0 ? '你' : esc(opp.n)) + (x.how === 'time' ? '（時間到）' : x.how === 'head' ? '（爆頭）' : '')}"><small>${i + 1}</small><em>${x.w === -1 ? '平' : mark[x.how]}</em></div>`).join('')}</div>` : '';
+    // 數據對比：左邊是你、右邊是對手，長條按比例分
+    const bar = (label, a, b) => { const s = a + b || 1; return `<div class="cr"><b>${a}</b><div><span>${label}</span><div class="cb"><i class="me" style="width:${(a / s) * 100}%"></i><i class="opp" style="width:${(b / s) * 100}%"></i></div></div><b>${b}</b></div>`; };
+    $('end-cmp').innerHTML = bar('拿下局數', me.sc, opp.sc) + bar('總傷害', me.dmg, opp.dmg) + bar('爆頭擊殺', me.hs, opp.hs);
+    $('end-stats').innerHTML = '';
     $('btn-rematch').classList.toggle('hidden', !g.net.isHost);
     $('end-wait').textContent = g.net.isHost ? '' : '等房主決定要不要再來一場…';
   }
@@ -650,6 +684,8 @@ export class Hud {
     const g = this.g, hz = gs.hz, res = hz.res || {}, dm = hz.kind === 'dm', me = g.me;
     const t = $('end-title');
     t.textContent = dm ? (res.why === 'time' ? '時間到' : '結束') : res.why === 'core' ? '據點被攻陷' : '結束'; t.className = dm || res.why !== 'core' ? 'win' : 'lose';
+    $('scr-end').querySelector('.end').className = 'panel end ' + (dm || res.why !== 'core' ? 'won' : 'lost');
+    $('end-rounds').innerHTML = ''; $('end-cmp').innerHTML = '';
     const sec = Math.round((res.t || 0) / 1000), mmss = `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
     const acc = g.hzAcc && g.hzAcc.shots ? Math.round((g.hzAcc.hits / g.hzAcc.shots) * 100) + '%' : '—';
     $('end-score').innerHTML = dm ? `<span class="me">${hz.k[me]}</span><small>擊倒　${mmss}</small>` : `<span class="me">${res.waves || 0}</span><small>撐過的波數　${mmss}</small>`;
@@ -688,7 +724,7 @@ export class Hud {
     const s = Math.ceil(tl / 1000);
     const hz = d.phase === 'horde' && g.gs ? g.gs.hz : null;
     const clock = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-    this._set('timer', hz ? (hz.kind === 'dm' ? (hz.cfg.time ? clock : '∞') : hz.st === 'break' ? clock : `第 ${hz.wave} 波`) : d.phase === 'playing' ? clock : d.phase === 'warmup' ? '熱身' : '--:--');
+    this._set('timer', hz ? (hz.kind === 'dm' ? (hz.cfg.time ? clock : '∞') : hz.st === 'break' ? clock : `第 ${hz.wave} 波`) : d.phase === 'playing' ? clock : d.phase === 'warmup' ? '熱身' : d.phase === 'countdown' ? '準備' : '結束');
     this._cls('timer', 'low', (d.phase === 'playing' || (hz && hz.kind === 'dm' && hz.cfg.time)) && s <= 15);
     if (hz) this._hzFrame(g.gs, tl);
 

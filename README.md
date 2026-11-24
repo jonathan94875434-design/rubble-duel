@@ -106,6 +106,8 @@
 - 畫面：`textures.js` 方塊材質、`light.js` 天光（室內變暗）、`env.js` 天空與天氣、`post.js` 光暈與調色、`skylit.js` 讓角色和碎屑也吃到天光、`fx.js` 粒子／彈孔／爆炸／煙／火／噴漆
 - 模型：`gunmodel.js` 槍與投擲物、`viewmodel.js` 第一人稱的槍和手、`remote.js` 角色（對手、造型預覽、擊殺回放裡的自己）、`icons.js` 把槍拍成商店用的小圖
 - `hud.js` 介面；`minimap.js` 小地圖；`replay.js` 擊殺回放；`stats.js` 戰績；`audio.js` 合成音效
+- 介面樣式全在 `css/style.css`，最上面的 `:root` 是設計基礎（字型、顏色、斜切角、警示帶）。字型從 Google Fonts 載入（中文 Noto Sans TC、數字 Saira Condensed、標誌 Saira Stencil One），連不上就用系統字型，遊戲照常運作；repo 裡沒有字型檔。
+  HUD 在畫面高度 900px、1300px 以上會放大（`zoom`），準星不放大。小地圖的 canvas 本身要保留圓角和邊框（樣式表裡有註解說明原因）。
 - `dev/` 是開發時看模型、聽音效用的預覽頁，遊戲本身不會用到
 
 連線模型：房主管回合、血量與金錢；命中由開槍方判定（打到就算）；
