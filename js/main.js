@@ -394,7 +394,7 @@ class Game {
     // kind 'dig' = 只挖地形、沒有爆炸特效；fxk = 技能的爆炸要用哪一種特效
     const kind = ['flash', 'smoke', 'molotov', 'dig'].includes(d.kind) ? d.kind : undefined;
     const fxk = ['mini', 'shock', 'orbital', 'void'].includes(d.fxk) ? d.fxk : undefined;
-    return { r: d.r, pid: d.pid | 0, p: [d.p[0], d.p[1], d.p[2]], kind, fxk, br: num(d.br, 3), bp: num(d.bp, 1500), rad: num(d.rad, 9), k: num(d.k, 22), cloud: num(d.cloud, 4.5) || undefined, dur: num(d.dur, 15) || undefined, own: d.own === 0 || d.own === 1 ? d.own : -1 };
+    return { r: d.r, pid: d.pid | 0, p: [d.p[0], d.p[1], d.p[2]], kind, fxk, br: num(d.br, 6), bp: num(d.bp, 1500), rad: num(d.rad, 18), k: num(d.k, 32), cloud: num(d.cloud, 4.5) || undefined, dur: num(d.dur, 15) || undefined, own: d.own === 0 || d.own === 1 ? d.own : -1 };
   }
   _sendMap(id) { const m = MAPS[id]; if (m && m.custom && this.net.isHost && this.net.connected) this.net.send('map', { id, code: m.code }); }
 

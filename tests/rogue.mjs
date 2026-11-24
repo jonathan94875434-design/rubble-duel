@@ -76,7 +76,7 @@ await sleep(400);
 // ── 對戰中的 HUD ──
 st = await ev(() => { const g = __game; return { slots: g.skills.slots, tiles: document.querySelectorAll('#skills .sk').length, buffs: document.querySelectorAll('#buffs .glyph').length, mhp: g.gs.p[0].mhp, opp: document.getElementById('oppbuild').children.length, aj: g.player.maxAirJumps, mods: g.combat.mods }; });
 ok('HUD 有兩個技能格、被動圖示、對手的異能', st.tiles === 2 && st.buffs === 13 && st.opp >= 2, JSON.stringify(st));
-ok('重裝巨人：最大生命 190', st.mhp === 190, String(st.mhp));
+ok('重裝巨人：最大生命 200', st.mhp === 200, String(st.mhp));
 ok('被動換算成本機倍率（三段跳、月球靴、射速、雙重射擊…）', st.aj === 2 && st.mods.grav === 0.5 && st.mods.rpm === 1.35 && st.mods.twin && st.mods.explosive && st.mods.ricochet && st.mods.head === 1.6, JSON.stringify(st.mods));
 
 // 把玩家和機器人擺到廣場中間的空地，面對面
@@ -104,7 +104,7 @@ await place(SX, SZ, SX, SZ - 11, 0); await sleep(200);
 const metal0 = await ev(() => { window.__before = __game.world.types.slice(); return __game.world.types.reduce((n, t) => n + (t === 6 ? 1 : 0), 0); });
 used = await ev(() => __game.skills.use(1)); await sleep(200);
 st = await ev((m0) => { const g = __game, p = g.player; return { added: g.world.types.reduce((n, t) => n + (t === 6 ? 1 : 0), 0) - m0, hit: !!g.world.raycast(p.pos.x, p.pos.y + 1, p.pos.z, 0, 0, -1, 4), stuck: p.collides(p.pos.x, p.pos.y, p.pos.z), uses: g.skills.uses[1] }; }, metal0);
-ok('鋼牆：面前多出一道 7×5 的鋼板，不會把自己埋住，次數扣一', used && st.added === 35 && st.hit && !st.stuck && st.uses === 2, JSON.stringify(st));
+ok('鋼牆：面前多出一大片 21×10 的鋼板，不會把自己埋住，沒有次數限制', used && st.added === 210 && st.hit && !st.stuck && (await ev(() => __game.skills.hudState(performance.now()).slots[1].uses)) === -1, JSON.stringify(st));
 await page.screenshot({ path: OUT + '/r3-wall.png' });
 // 把牆拆掉，後面的測試才不會被它擋住
 const unwall = () => ev(() => { const w = __game.world, b = window.__before; for (let i = 0; i < b.length; i++) if (w.types[i] !== b[i] && w.types[i] === 6) { const x = i % w.X, r = (i - x) / w.X, z = r % w.Z, y = (r - z) / w.Z; w.edit(x, y, z, 0); } });
@@ -220,10 +220,10 @@ ok('冰凍彈＋燃燒彈：被打中的人緩速、著火', st.fz === 1 && st.b
 await sleep(1700);
 const burned = await ev(() => __game.gs.p[1].hp + __game.gs.p[1].ar);
 ok('著火會持續扣血，緩速 1.6 秒後解除', burned < st.hp && (await ev(() => __game.gs.p[1].fz)) === 0, JSON.stringify([st.hp, burned]));
-// 荊棘：玩家被打，45% 彈回去
+// 荊棘：玩家被打，30% 彈回去
 await ev(() => { const a = __game.authority; a.players[1].hp = 100; a.players[1].armor = 0; a.players[0].hp = 100; a.players[0].armor = 0; a.players[1].burnT = 0; a.handle(1, 'hit', { r: a.round, d: 40, h: false, w: 'ar' }); }); await sleep(200);
 st = await ev(() => ({ me: __game.gs.p[0].hp, bot: __game.gs.p[1].hp }));
-ok('荊棘：受到 40 傷害，反彈 18 給對手', st.me === 60 && st.bot === 82, JSON.stringify(st));
+ok('荊棘：受到 40 傷害，反彈 12 給對手', st.me === 60 && st.bot === 88, JSON.stringify(st));
 // 不死鳥：致命傷 → 回到 70 血、短暫無敵；同一局第二次就真的死
 await ev(() => { const a = __game.authority; a.handle(1, 'hit', { r: a.round, d: 400, h: false, w: 'knife' }); a.handle(1, 'hit', { r: a.round, d: 400, h: false, w: 'knife' }); }); await sleep(250);
 st = await ev(() => ({ hp: __game.gs.p[0].hp, al: __game.gs.p[0].al, phase: __game.phase }));
@@ -287,7 +287,7 @@ const hpM0 = await ev(() => __game.gs.p[1].hp), solidM = await ev(() => __game.w
 await ev(() => { __game.player.yaw = 0; __game.player.pitch = -0.17; });
 used = await ev(() => __game.skills.use(1)); await sleep(4000);
 st = await ev((h0, s0) => ({ hp: __game.gs.p[1].hp, h0, dug: s0 - __game.world.types.reduce((n, t) => n + (t ? 1 : 0), 0), uses: __game.skills.uses[1] }), hpM0, solidM);
-ok('流星雨：隕石追著對手砸，打掉血、砸爛地形，每局一次', used && st.hp < st.h0 - 50 && st.dug > 20 && st.uses === 0, JSON.stringify(st));
+ok('流星雨：隕石追著對手砸，打掉血、砸爛地形', used && st.hp < st.h0 - 50 && st.dug > 20, JSON.stringify(st));
 await page.screenshot({ path: OUT + '/r9-meteor.png' });
 await setSkills('orbital', 'stim');
 await place(SX, SZ, SX + 6, SZ - 10, 0); await sleep(300);
@@ -303,8 +303,9 @@ ok('急救包：血掉到 35 以下自動補 50', st === 80, String(st));
 st = await ev(() => { const a = __game.authority, p = a.players[0]; p.hp = 30; p.buffs = ['survivor']; a.handle(1, 'hit', { r: a.round, d: 20, h: false, w: 'ar' }); return p.hp; });
 ok('求生本能：血少的時候受到的傷害 −40%', Math.abs(st - 18) < 0.01, String(st));
 await ev(() => { const a = __game.authority, p = a.players[0]; p.maxHp = 900; p.hp = 900; p.buffs = []; a.dirty = true; a.flush(); });
-st = await ev(() => { const g = __game; g.combat.mods = { ...g.combat.mods, cd: 0.6, extraUses: 1 }; g.skills.setup(['wall', 'stim']); const u = g.skills.uses[0]; g.skills.use(1); const left = g.skills.hudState(performance.now()).slots[1].left; g.combat.mods = { ...g.combat.mods, cd: 1, extraUses: 0 }; return { u, left }; });
-ok('超頻：冷卻 −40%、有次數的技能多一次', st.u === 4 && st.left > 7.5 && st.left < 9, JSON.stringify(st));
+st = await ev(() => { const g = __game; g.combat.mods = { ...g.combat.mods, cd: 0.5, extraUses: 1 }; g.skills.setup(['wall', 'stim']); g.skills.use(1); const left = g.skills.hudState(performance.now()).slots[1].left; g.combat.mods = { ...g.combat.mods, cd: 1, extraUses: 0 }; return { left }; });
+ok('超頻：冷卻 −50%', st.left > 6 && st.left < 7.5, JSON.stringify(st));
+
 
 // 投資客：下一局開始多 $1500
 await healBot();
@@ -315,9 +316,10 @@ st = await ev(() => ({ $: __game.gs.p[0].$, round: __game.gs.round }));
 ok('投資客：贏一局 $2000 之外，下一局開始再多 $1500', st.$ === Math.min(12000, money0 + 2000 + 1500), JSON.stringify([money0, st]));
 
 // 沒選卡就讓時間跑完：自動拿一張，不會擠掉現有的技能
-await ev(() => { const a = __game.authority, p = a.players[0]; p.skills = ['blink', 'wall']; p.choices = ['orbital', 'vital', 'cloak']; a.tEnd = Date.now() + 300; a.dirty = true; a.flush(); });
+await ev(() => { const a = __game.authority, p = a.players[0]; p.skills = ['blink', 'wall']; p.choices = ['orbital', 'vital', 'cloak']; p.buffs = ['plate', 'arsenal']; p.money = 9000; p.loadout = { ...p.loadout, armor: 1 }; a.tEnd = Date.now() + 300; a.dirty = true; a.flush(); });
 await waitPhase('countdown', 8000); await sleep(200);
 st = await ev(() => ({ sk: __game.gs.p[0].sk, bf: __game.gs.p[0].bf }));
+ok('護甲片、軍火庫跟買的防彈衣疊加：50 + 100 + 50', (await ev(() => __game.gs.p[0].ar)) === 200, String(await ev(() => __game.gs.p[0].ar)));
 ok('時間到沒選：自動拿被動，不動到已經帶的技能', st.sk[0] === 'blink' && st.sk[1] === 'wall' && st.bf.includes('vital'), JSON.stringify(st));
 
 // ── 音效：每一種技能音都烘得出來、沒有壞掉的數值 ──

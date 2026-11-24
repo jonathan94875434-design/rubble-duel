@@ -24,7 +24,8 @@ export const SK = {
   stim:      { heal: 60, speed: 1.35, time: 4 },
   scan:      { time: 6, dmg: 1.2 },                 // dmg：透視中打對手的傷害倍率
   dome:      { r: 3.8, time: 7 },
-  shock:     { rad: 8, min: 30, max: 75, k: 20 },     // 傷害 = min + (max - min) × 靠近程度
+  shock:     { rad: 16, min: 50, max: 120, k: 30, br: 4.5, bp: 650 },   // 傷害 = min + (max - min) × 靠近程度；br／bp 震碎方塊的範圍和力道
+  wall:      { half: 10, h: 10 },                     // 鋼牆：寬 2×half+1 格、高 h 格（一格 0.5 公尺）；守據點的沙包牆維持 7×5
   chrono:    { time: 4.5, move: 0.3, look: 0.3 },
   timestop:  { time: 2.5 },
   orbital:   { delay: 1.0, track: 7.5, trackR: 14, full: 3, fade: 4.5, dmg: 200 },   // track：光柱追人的速度（公尺/秒），trackR 多遠內會追
@@ -46,20 +47,20 @@ export const CARDS = {
   ghost:      P('c', '靜', '無聲步', '你的腳步沒有聲音、跑速 +8%，開槍也不會出現在對手的小地圖上', { bot: false }),
   moon:       P('c', '月', '月球靴', '重力減半、跑速 +10%：跳得又高又遠，還能在空中慢慢飄'),
   investor:   P('c', '財', '投資客', '馬上拿 $1500，之後每一局開始都多拿 $1500'),
-  arsenal:    P('c', '庫', '軍火庫', '每局免費多送防彈衣、兩顆手榴彈、閃光彈、煙霧彈', { bot: false }),
+  arsenal:    P('c', '庫', '軍火庫', '每局免費多送 50 護甲（可以跟買的防彈衣疊加）、兩顆手榴彈、閃光彈、煙霧彈', { bot: false }),
   survivor:   P('c', '存', '求生本能', '血量低於 35% 時，受到的傷害 −40%'),
   medkit:     P('c', '醫', '急救包', '每局一次：血量掉到 35 以下時自動回復 50 生命'),
   // ── 被動：稀有 ──
   frenzy:     P('r', '狂', '扳機狂熱', '射速 +35%、換彈快 25%'),
   glass:      P('r', '玻', '玻璃大砲', '傷害 +65%，但最大生命 −30'),
-  jugg:       P('r', '巨', '重裝巨人', '最大生命 +90、受到的傷害 −10%，移動速度 −8%'),
+  jugg:       P('r', '巨', '重裝巨人', '最大生命 +100、受到的傷害 −10%，但移動速度 −30%'),
   berserk:    P('r', '怒', '狂戰士', '血越少越強：最多傷害 +60%、速度 +25%'),
-  thorns:     P('r', '棘', '荊棘', '你受到的傷害有 45% 反彈給打你的人（不會把人彈死）'),
+  thorns:     P('r', '棘', '荊棘', '你受到的傷害有 30% 反彈給打你的人（不會把人彈死）'),
   cryo:       P('r', '冰', '冰凍彈', '被你打中的人緩速 45%，持續 1.6 秒'),
   incendiary: P('r', '焰', '燃燒彈', '被你打中的人著火 4 秒，每秒燒掉 12 血'),
   explosive:  P('r', '炸', '爆裂彈', '子彈打到東西會小爆炸：拆牆飛快，2.4 公尺內的敵人吃濺射傷害', { bot: false }),
   ricochet:   P('r', '彈', '跳彈', '子彈撞上打不穿的牆會反彈一次（傷害剩 90%），可以打轉角後面的人', { bot: false }),
-  overclock:  P('r', '頻', '超頻', '主動技能冷卻 −40%，有次數限制的技能每局多一次'),
+  overclock:  P('r', '頻', '超頻', '主動技能冷卻 −50%'),
   hunter:     P('r', '獵', '獵人印記', '打中的對手會被標在小地圖上 4 秒，期間你對他的傷害 +20%', { bot: false }),
   // ── 被動：傳說 ──
   twin:       P('l', '雙', '雙重射擊', '每次開槍都多射一發（每發傷害 80%）→ 火力 +60%、拆牆也更快', { bot: false }),
@@ -74,21 +75,21 @@ export const CARDS = {
   grapple:    A('c', '鉤', '鉤索', '射出鉤索把自己拉向瞄準的地方（40 公尺內，拉得很快）；途中按跳可以提早放開、把速度甩出去', 4, { bot: false }),
   jet:        A('c', '噴', '噴射背包', '往上噴射約 6.5 公尺高，順便往前衝', 5, { bot: false }),
   dash:       A('c', '衝', '衝刺', '往移動的方向（沒按方向就往前）瞬間衝出一大段，衝完速度不會掉', 3.5, { bot: false }),
-  wall:       A('c', '牆', '鋼牆', '在面前升起一道 3.5 公尺寬、2.5 公尺高的鋼板牆', 2, { uses: 3, bot: false }),
+  wall:       A('c', '牆', '鋼牆', '在面前升起一大片鋼板牆（10 公尺寬、5 公尺高），沒有次數限制', 2, { bot: false }),
   stim:       A('c', '針', '腎上腺素', '立刻回復 60 生命，並加速 35% 持續 4 秒', 14),
   scan:       A('c', '視', '透視脈衝', '6 秒內隔著牆也看得到對手（隱身的也會現形），而且你對他的傷害 +20%', 12, { bot: false }),
   // ── 主動技能：稀有 ──
   cloak:      A('r', '隱', '光學迷彩', '隱身 5 秒，開槍、出刀或丟東西就會現形', 18),
   dome:       A('r', '罩', '能量護罩', '原地放出半徑 3.8 公尺的護罩 7 秒：子彈打不進也打不出，人可以走進去', 16),
-  shock:      A('r', '震', '震地衝擊波', '震碎身邊的掩體，把 8 公尺內的對手震飛，造成 30～75 傷害', 9),
+  shock:      A('r', '震', '震地衝擊波', '超大範圍：震碎身邊一大片地形，把 16 公尺內的對手震飛，造成 50～120 傷害', 9),
   // ── 主動技能：傳說 ──
   chrono:     A('l', '時', '時間凝結', '對手的時間變慢 4.5 秒：移動和轉頭都只剩三成', 18, { lock: 3 }),
-  orbital:    A('l', '軌', '軌道砲', '標記你瞄準的地方，1 秒後打下一道光柱（200 傷害）；附近的對手會被光柱追著跑，幾乎躲不掉', 8, { uses: 2, lock: 4 }),
-  blackhole:  A('l', '洞', '黑洞', '打開黑洞 4.5 秒：14 公尺內的對手被強力吸過去、跑不動，靠太近一直扣血，最後大爆炸', 6, { uses: 2, lock: 4, bot: false }),
+  orbital:    A('l', '軌', '軌道砲', '標記你瞄準的地方，1 秒後打下一道光柱（200 傷害）；附近的對手會被光柱追著跑，幾乎躲不掉', 8, { lock: 4 }),
+  blackhole:  A('l', '洞', '黑洞', '打開黑洞 4.5 秒：14 公尺內的對手被強力吸過去、跑不動，靠太近一直扣血，最後大爆炸', 8, { lock: 4, bot: false }),
   swap:       A('l', '換', '換位', '跟看得到的對手（45 公尺內）瞬間交換位置', 10, { bot: false }),
   // ── 主動技能：神話 ──
   timestop:   A('m', '停', '時間暫停', '對手完全靜止 2.5 秒：不能動、不能轉頭、不能開槍', 20, { lock: 3 }),
-  meteor:     A('m', '隕', '流星雨', '在瞄準的地方降下 7 顆隕石，會追著附近的對手砸，每顆 60 傷害、把地形砸得稀爛', 10, { uses: 1, lock: 4, bot: false }),
+  meteor:     A('m', '隕', '流星雨', '在瞄準的地方降下 7 顆隕石，會追著附近的對手砸，每顆 60 傷害、把地形砸得稀爛', 14, { lock: 4, bot: false }),
 };
 export const CARD_IDS = Object.keys(CARDS);
 // 傷害來源的名字（擊倒訊息用）：技能、灼燒、反彈都不是武器
@@ -124,7 +125,7 @@ export function cardMods(ids = []) {
   return {
     dmg: (has('power') ? 1.25 : 1) * (has('glass') ? 1.65 : 1) * (has('avatar') ? 1.3 : 1),
     head: has('deadeye') ? 1.6 : 1,
-    speed: (has('swift') ? 1.2 : 1) * (has('jugg') ? 0.92 : 1) * (has('moon') ? 1.1 : 1) * (has('ghost') ? 1.08 : 1),
+    speed: (has('swift') ? 1.2 : 1) * (has('jugg') ? 0.7 : 1) * (has('moon') ? 1.1 : 1) * (has('ghost') ? 1.08 : 1),
     airJumps: has('hop') ? 2 : 0,
     handling: (has('hands') ? 0.5 : 1) * (has('frenzy') ? 0.75 : 1),
     mag: has('mag') ? 1.75 : 1,
@@ -134,7 +135,7 @@ export function cardMods(ids = []) {
     rpm: has('frenzy') ? 1.35 : 1,
     pen: has('ap') ? 2.5 : 1,
     grav: has('moon') ? 0.5 : 1,
-    cd: has('overclock') ? 0.6 : 1, extraUses: has('overclock') ? 1 : 0,
+    cd: has('overclock') ? 0.5 : 1, extraUses: has('overclock') ? 1 : 0,   // extraUses：守據點的沙包牆多一道
     twin: has('twin'), explosive: has('explosive'), ricochet: has('ricochet'), berserk: has('berserk'),
     arsenal: has('arsenal'), radar: has('radar'), ghost: has('ghost'), hunter: has('hunter'), bullet: has('bullet'), reaper: has('reaper'),
   };
@@ -142,7 +143,7 @@ export function cardMods(ids = []) {
 // 被動卡影響的最大生命（裁判端用）
 export function maxHpOf(buffs = []) {
   const has = (b) => buffs.includes(b);
-  return Math.max(40, 100 + (has('vital') ? 50 : 0) + (has('jugg') ? 90 : 0) + (has('avatar') ? 100 : 0) - (has('glass') ? 30 : 0));
+  return Math.max(40, 100 + (has('vital') ? 100 : 0) + (has('jugg') ? 100 : 0) + (has('avatar') ? 100 : 0) - (has('glass') ? 30 : 0));
 }
 // 狂戰士：血越少越強。回傳 0..1（滿血 0、剩三成以下 1）
 export const rage = (hp, maxHp) => Math.max(0, Math.min(1, (1 - hp / Math.max(1, maxHp)) / 0.7));

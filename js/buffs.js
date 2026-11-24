@@ -1,9 +1,9 @@
 // 輸家補償 buff。每個只能拿一次；哪裡生效寫在註解。
 export const BUFFS = {
-  vital:  { glyph: '血', name: '厚血',     desc: '最大生命 +50' },                 // 主機
-  plate:  { glyph: '甲', name: '護甲片',   desc: '每局自帶 100 護甲（是防彈衣的兩倍）' },             // 主機
+  vital:  { glyph: '血', name: '厚血',     desc: '最大生命 +100' },                 // 主機
+  plate:  { glyph: '甲', name: '護甲片',   desc: '每局多 100 護甲（可以跟買的防彈衣疊加）' },             // 主機
   regen:  { glyph: '癒', name: '再生',     desc: '3 秒沒受傷後，每秒回 10 生命' },   // 主機
-  leech:  { glyph: '吸', name: '吸血',     desc: '造成傷害的 35% 轉成自己的生命' }, // 主機
+  leech:  { glyph: '吸', name: '吸血',     desc: '造成傷害的 50% 轉成自己的生命' }, // 主機
   tough:  { glyph: '硬', name: '硬皮',     desc: '受到的傷害 −25%' },              // 主機
   power:  { glyph: '重', name: '重彈',     desc: '傷害 +25%' },                    // 開槍方
   swift:  { glyph: '疾', name: '疾走',     desc: '移動速度 +20%' },                // 本機

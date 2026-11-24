@@ -250,7 +250,7 @@ export class Bot {
     const S = SK.shock;
     if (can('shock') && dist < S.rad - 1.5) {
       used('shock');
-      this.send('expl', { r, pid: 0, p: [r3(b.pos.x), r3(b.pos.y + 1), r3(b.pos.z)], br: 2.6, bp: 340, rad: S.rad, k: S.k, fxk: 'shock', own: 1 });
+      this.send('expl', { r, pid: 0, p: [r3(b.pos.x), r3(b.pos.y + 1), r3(b.pos.z)], br: S.br, bp: S.bp, rad: S.rad, k: S.k, fxk: 'shock', own: 1 });
       this.send('auth', { t: 'hit', r, d: S.min + (S.max - S.min) * (1 - dist / S.rad), h: false, w: 'shock' });
     }
     if (can('orbital') && los && dist > 7) {

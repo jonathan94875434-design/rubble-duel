@@ -174,7 +174,7 @@ export class Authority {
   hzHit(by, dealt) {
     const A = this.players[by]; if (!A || this.phase !== 'horde') return;
     A.dmg += dealt; A.rDmg += dealt; A.rHits++;
-    if (A.buffs.includes('leech') && A.alive) A.hp = Math.min(A.maxHp, A.hp + dealt * 0.35);
+    if (A.buffs.includes('leech') && A.alive) A.hp = Math.min(A.maxHp, A.hp + dealt * 0.5);
   }
   hzCore(d) {
     const hz = this.hz, now = Date.now();
@@ -238,7 +238,7 @@ export class Authority {
       p.spent = loadoutCost(p.loadout); p.money -= p.spent;
       const has = (b) => p.buffs.includes(b);
       p.maxHp = maxHpOf(p.buffs);
-      p.hp = p.maxHp; p.armor = has('plate') ? 100 : p.loadout.armor || has('arsenal') ? 50 : 0; p.alive = true; p.lastHurt = 0;
+      p.hp = p.maxHp; p.armor = (p.loadout.armor ? 50 : 0) + (has('plate') ? 100 : 0) + (has('arsenal') ? 50 : 0);   // 護甲片、軍火庫可以跟買的防彈衣疊加 p.alive = true; p.lastHurt = 0;
       p.rHits = p.rDmg = p.rHead = 0;   // 這一局的傷害報告歸零
       p.phx = false; p.aid = false; p.bt = false; p.inv = 0; p.slowT = 0; p.burnT = 0; p.stimAt = 0;
     }
@@ -310,13 +310,13 @@ export class Authority {
     T.hp -= toHp; T.lastHurt = now;
     if (A && attacker !== target) {
       A.dmg += dealt; A.rDmg += dealt; A.rHits++; if (head) A.rHead++;
-      if (A.buffs.includes('leech') && A.alive) A.hp = Math.min(A.maxHp, A.hp + dealt * 0.35);
+      if (A.buffs.includes('leech') && A.alive) A.hp = Math.min(A.maxHp, A.hp + dealt * 0.5);
       // 以下只有「真的被對手的槍或刀打中」才算（灼燒、反彈這類後續傷害不會再觸發一輪）
       if (WEAPONS[weapon]) {
         if (A.buffs.includes('cryo')) T.slowT = now + 1600;
         if (A.buffs.includes('incendiary')) { if (now >= T.burnT) T.burnNext = now + 500; T.burnT = now + 4000; T.burnBy = attacker; }
         if (T.buffs.includes('thorns') && A.alive && A.hp > 1) {
-          const back = Math.min(A.hp - 1, dealt * 0.45);
+          const back = Math.min(A.hp - 1, dealt * 0.3);
           if (back >= 1) { A.hp -= back; A.lastHurt = now; this.out(attacker, 'ev', { t: 'hurt', d: Math.round(back), self: true, h: false, w: 'thorns' }); }
         }
       }

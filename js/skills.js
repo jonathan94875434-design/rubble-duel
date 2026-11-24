@@ -32,7 +32,7 @@ void main() {
 export class Skills {
   constructor(g) {
     this.g = g; this.t = 0;
-    this.slots = [null, null]; this.ready = [0, 0]; this.uses = [0, 0];
+    this.slots = [null, null]; this.ready = [0, 0]; this.uses = [0, 0]; this.lim = [false, false];
     this.wallType = B.METAL;                       // 鋼牆技能用什麼方塊（守據點蓋的是沙包，機器人打得爛）
     this._reset();
     this._build();
@@ -93,6 +93,7 @@ export class Skills {
     this.clear();
     this.slots = [0, 1].map((i) => (skills && CARDS[skills[i]] && CARDS[skills[i]].k === 'a' ? skills[i] : null));
     const extra = this.g.combat.mods.extraUses || 0;   // 超頻：有次數的技能每局多一次
+    this.lim = this.slots.map((id, i) => !!id && ((uses && uses[i] !== undefined) || !!CARDS[id].uses));   // 這一格有沒有次數限制
     this.ready = [0, 0]; this.uses = this.slots.map((id, i) => (uses && uses[i] !== undefined ? uses[i] : id && CARDS[id].uses ? CARDS[id].uses + extra : 0));
   }
   // 只補次數，不清掉場上的東西（守據點每一波休息時）
@@ -114,10 +115,10 @@ export class Skills {
     const g = this.g, id = this.slots[i], now = performance.now();
     if (!id || (g.phase !== 'playing' && g.phase !== 'horde') || !g.meAlive() || g.kc || g.emote || this.frozen()) return false;
     const c = CARDS[id];
-    if (now < this.ready[i] || (c.uses && this.uses[i] <= 0)) { g.sfx.deny(); return false; }
+    if (now < this.ready[i] || (this.lim[i] && this.uses[i] <= 0)) { g.sfx.deny(); return false; }
     if (!this['_' + id](now)) { g.sfx.deny(); return false; }
     this.ready[i] = now + c.cd * 1000 * (this.g.combat.mods.cd || 1);
-    if (c.uses) this.uses[i]--;
+    if (this.lim[i]) this.uses[i]--;
     return true;
   }
   frozen() { return performance.now() < this.stopEnd; }
@@ -196,7 +197,7 @@ export class Skills {
     return true;
   }
 
-  // 鋼牆：面前 2.1 公尺處，沿著跟視線垂直的方向立一道 7 格寬、5 格高的鋼板；不會把任何一個人埋進去
+  // 鋼牆：面前 2.1 公尺處，沿著跟視線垂直的方向立一大片鋼板（守據點的沙包牆是 7×5）；不會把任何一個人埋進去
   _wall() {
     const g = this.g, p = g.player, w = g.world, fx = -Math.sin(p.yaw), fz = -Math.cos(p.yaw);
     const alongX = Math.abs(fz) >= Math.abs(fx);
@@ -204,8 +205,8 @@ export class Skills {
     let by = Math.floor((p.pos.y + 0.05) / BS);
     for (let k = 0; k < 4 && w.get(cx, by, cz); k++) by++;                       // 前面是台階：從台階上面開始蓋
     for (let k = 0; k < 6 && !w.get(cx, by - 1, cz); k++) by--;                  // 前面是懸空：往下找到地面
-    const cells = [];
-    for (let i = -3; i <= 3; i++) for (let j = 0; j < 5; j++) {
+    const cells = [], big = this.wallType === B.METAL, half = big ? SK.wall.half : 3, hgt = big ? SK.wall.h : 5;
+    for (let i = -half; i <= half; i++) for (let j = 0; j < hgt; j++) {
       const x = alongX ? cx + i : cx, z = alongX ? cz : cz + i, y = by + j;
       if (!w.inb(x, y, z) || w.types[w.idx(x, y, z)]) continue;
       if (this._boxHits(x, y, z, p.pos, 0.36, p.h) || (g.remote.alive && this._boxHits(x, y, z, g.remote.pos, 0.45, 1.85)) || (g.horde.on && g.horde.blocks(x, y, z))) continue;
@@ -231,8 +232,8 @@ export class Skills {
       if (mine) this.myWall.add(ci);
       const wx = (x + 0.5) * BS, wy = (y + 0.5) * BS, wz = (z + 0.5) * BS;
       sx += wx; sy += wy; sz += wz; n++;
-      if (n % 3 === 0) g.fx.smoke(wx, wy, wz, 1, 0.16);
-      if (n % 5 === 0) g.fx.glowP.spawn(wx, wy, wz, (Math.random() - 0.5) * 3, Math.random() * 3, (Math.random() - 0.5) * 3, 0.1, 0.02, 0.3, 6, 5, 3, 1, 9);
+      if (n % (cells.length > 60 ? 9 : 3) === 0) g.fx.smoke(wx, wy, wz, 1, 0.16);
+      if (n % (cells.length > 60 ? 12 : 5) === 0) g.fx.glowP.spawn(wx, wy, wz, (Math.random() - 0.5) * 3, Math.random() * 3, (Math.random() - 0.5) * 3, 0.1, 0.02, 0.3, 6, 5, 3, 1, 9);
     }
     if (n) this._snd('wall', sx / n, sz / n);
     if (skipped.length) this._send({ id: 'unwall', c: skipped });
@@ -312,7 +313,7 @@ export class Skills {
   // 震地衝擊波：爆炸中心放在腰的高度，腳下的地板大致留著，身邊的掩體會碎
   _shock() {
     const g = this.g, p = g.player.pos, rp = g.remote.pos, S = SK.shock;
-    const msg = { r: g.round, pid: 0, p: [r3(p.x), r3(p.y + 1.0), r3(p.z)], br: 2.6, bp: 340, rad: S.rad, k: S.k, fxk: 'shock', own: g.me };
+    const msg = { r: g.round, pid: 0, p: [r3(p.x), r3(p.y + 1.0), r3(p.z)], br: S.br, bp: S.bp, rad: S.rad, k: S.k, fxk: 'shock', own: g.me };
     g.sendPeer('expl', msg); g.doExplosion(msg);
     const d = Math.hypot(rp.x - p.x, rp.y - p.y, rp.z - p.z);
     if (g.remote.alive && d < S.rad) this._hit(S.min + (S.max - S.min) * (1 - d / S.rad), 'shock');
@@ -450,8 +451,8 @@ export class Skills {
         break;
       case 'jet': this.jets.push({ me: false, end: now + 450 }); this._snd('jet', rp.x, rp.z); break;
       case 'dash': this.jets.push({ me: false, end: now + 200, dash: true }); this._snd('jet', rp.x, rp.z); break;
-      case 'wall': if (Array.isArray(d.c) && d.c.length <= 40) this._placeWall(d.c, false, d.b === B.SANDBAG ? B.SANDBAG : B.METAL); break;
-      case 'unwall': if (Array.isArray(d.c) && d.c.length <= 40) this._unwall(d.c); break;
+      case 'wall': if (Array.isArray(d.c) && d.c.length <= 500) this._placeWall(d.c, false, d.b === B.SANDBAG ? B.SANDBAG : B.METAL); break;
+      case 'unwall': if (Array.isArray(d.c) && d.c.length <= 500) this._unwall(d.c); break;
       case 'stim': this._sparkle(rp.x, rp.y + 1, rp.z, 1.2, 6, 2); this._snd('stim', rp.x, rp.z); break;
       case 'scan': this.scannedEnd = now + dur(1, 6); g.sfx.skill('scan'); g.hud.feed('對手用透視脈衝掃到你了'); break;
       case 'cloak': this.rCloakEnd = d.d > 0 ? now + dur(0.5, 8) : 0; this._puff(rp.x, rp.y + 1, rp.z); this._snd('cloak', rp.x, rp.z); break;
@@ -732,7 +733,7 @@ export class Skills {
     const on = { cloak: now < this.cloakEnd, grapple: !!this.grap, scan: now < this.scanEnd, stim: now < this.stimEnd };
     return {
       status: st, tint,
-      slots: this.slots.map((id, i) => (id ? { id, left: Math.max(0, (this.ready[i] - now) / 1000), cd: CARDS[id].cd, uses: CARDS[id].uses ? this.uses[i] : -1, on: !!on[id] } : null)),
+      slots: this.slots.map((id, i) => (id ? { id, left: Math.max(0, (this.ready[i] - now) / 1000), cd: CARDS[id].cd, uses: this.lim[i] ? this.uses[i] : -1, on: !!on[id] } : null)),
     };
   }
 }
