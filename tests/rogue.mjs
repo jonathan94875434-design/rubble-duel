@@ -375,6 +375,26 @@ ok('技能音效都正常', snd === 'ok', snd);
 // ── 大地圖：換到城堡要塞時世界變大，換回來恢復 ──
 st = await ev(() => { const g = __game; g.setMap('castle'); const a = { X: g.world.X, Z: g.world.Z, half: g.env.half }; g.setMap('plaza'); a.back = g.world.X; return a; });
 ok('城堡要塞是 72×72 公尺的大地圖，換回一般地圖會恢復', st.X === 144 && st.Z === 144 && st.half === 36 && st.back === 96, JSON.stringify(st));
+// 大地圖：每座塔頂、屋頂、點位從出生點都走得上去（用機器人的尋路檢查）；出生點、補給品沒有卡在方塊裡
+st = await ev(async () => {
+  const { Nav } = await import('./js/nav.js'); const { MAPS } = await import('./js/maps.js');
+  const g = __game, bad = [];
+  const spots = {
+    castle: [['哨塔頂', 16, 21, 16], ['民房屋頂', 9.5, 14, 43.5], ['城堡屋頂', 60, 17, 60], ['平房屋頂', 89, 10, 13]],
+    valley: [['側塔頂', 29, 18, 40], ['主塔頂', 63, 24, 17], ['河床', 45, 2, 63], ['對面出生點', 64, 6, 123]],
+    dust: [['A點高台', 9, 6, 109], ['B點樓頂', 114, 15, 110], ['B地道中段', 108, 3, 61], ['對面出生點', 64, 3, 121]],
+  };
+  const solid = (q) => g.world.boxSolid(q.x - 0.3, q.y + 0.01, q.z - 0.3, q.x + 0.3, q.y + 1.8, q.z + 0.3);
+  const floor = (q) => g.world.boxSolid(q.x - 0.3, q.y - 0.4, q.z - 0.3, q.x + 0.3, q.y - 0.01, q.z + 0.3);
+  for (const id of Object.keys(spots)) {
+    g.setMap(id); const nav = new Nav(g.world), sp = MAPS[id].spawns[0];
+    for (const [n, bx, by, bz] of spots[id]) if (!nav.path(sp.x, sp.y, sp.z, (bx + 0.5) * 0.5, by * 0.5, (bz + 0.5) * 0.5)) bad.push(id + ' ' + n);
+    for (const q of [...MAPS[id].spawns, ...MAPS[id].pickups]) if (solid(q) || !floor(q)) bad.push(id + ' 卡住 ' + q.x + ',' + q.z);
+  }
+  g.setMap('plaza');
+  return bad.join('、') || 'ok';
+});
+ok('城堡要塞、雙塔河谷、沙城兩路：塔頂和點位都走得上去，出生點和補給品正常', st === 'ok', st);
 
 // ── 一般模式不受影響 ──
 await ev(() => __game.leave()); await sleep(300);
