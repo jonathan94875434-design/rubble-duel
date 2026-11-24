@@ -192,11 +192,13 @@ input[type=color] { width: 100%; height: 30px; padding: 0; border: 1px solid var
 .dr-head h3 { margin: 0; color: var(--acc); white-space: nowrap; }
 .dr-sub { flex: 1; font-size: 12px; color: var(--dim); }
 .buffcards { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; perspective: 900px; }
-/* 異能卡：顏色看稀有度（普通灰藍、稀有藍紫、傳說金橘）；主動技能的圖示是圓的 */
+/* 異能卡：顏色看稀有度（普通灰藍、稀有藍紫、傳說金橘、神話紅紫）；主動技能的圖示是圓的 */
 .card, .chip, .sk, .r-c { --rc: #9fb4c8; --rc2: #5d7183; }
 .r-r { --rc: #6aa9ff; --rc2: #7b5cff; }
 .r-r .glyph, .glyph.r-r { color: #fff !important; }
 .r-l { --rc: #ffc24a; --rc2: #ff5a3c; }
+.r-m { --rc: #ff3d7f; --rc2: #a030ff; }
+.r-m .glyph, .glyph.r-m { color: #fff !important; }
 .card { position: relative; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 6px; padding: 14px 12px; border-radius: 8px; background: linear-gradient(180deg, color-mix(in srgb, var(--rc) 17%, #0c0e12), #0c0e12 72%); border: 1px solid color-mix(in srgb, var(--rc) 55%, transparent); cursor: pointer; overflow: hidden; transition: transform 0.12s, box-shadow 0.2s, border-color 0.2s; animation: cardIn 0.45s cubic-bezier(0.2, 0.9, 0.25, 1) both; animation-delay: calc(var(--i, 0) * 70ms); }
 .card:hover { transform: translateY(-5px); border-color: var(--rc); box-shadow: 0 10px 34px color-mix(in srgb, var(--rc) 35%, transparent), inset 0 0 0 1px var(--rc); }
 .card .rar { font-size: 11px; letter-spacing: 0.14em; font-weight: 800; color: var(--rc); }
@@ -210,6 +212,73 @@ input[type=color] { width: 100%; height: 30px; padding: 0; border: 1px solid var
 .card.ask { border-color: var(--acc); } .card.ask .rep { display: flex; }
 @keyframes cardIn { from { opacity: 0; transform: translateY(18px) rotateX(40deg) scale(0.94); } }
 @keyframes shine { 0%, 55% { transform: translateX(-120%); } 100% { transform: translateX(120%); } }
+.card.r-m { box-shadow: 0 0 22px color-mix(in srgb, var(--rc) 35%, transparent); }
+.card.r-m .glyph, .chip.r-m .glyph, .sk.r-m .glyph { animation: mythic 3s linear infinite; }
+@keyframes mythic { 0%, 100% { filter: hue-rotate(0deg) brightness(1.1); } 50% { filter: hue-rotate(-50deg) brightness(1.35); } }
+
+/* 選卡動畫（Roguelike）：整個畫面暗下來，卡片背面朝上飛進來，再一張一張翻開。
+   背面的光已經是稀有度的顏色，翻開前就知道有沒有好東西；時間跟 hud.js 的 DRAFT 對上 */
+#lo-buff.draft { position: fixed; inset: 0; z-index: 60; margin: 0; border: 0; border-radius: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; padding: 24px 16px; overflow-y: auto;
+  background: radial-gradient(ellipse at 50% 46%, rgba(34, 26, 56, 0.96), rgba(4, 5, 9, 0.985) 72%); animation: drFade 0.3s ease both; }
+#lo-buff.draft .dr-head { flex-direction: column; gap: 8px; margin: 0; text-align: center; }
+#lo-buff.draft .dr-head h3 { font-size: 28px; letter-spacing: 0.06em; text-shadow: 0 0 24px rgba(255, 178, 56, 0.45); }
+#lo-buff.draft .dr-sub { flex: none; font-size: 13px; }
+#lo-buff.draft .buffcards { display: flex; flex-wrap: wrap; justify-content: center; gap: 24px; perspective: 1400px; }
+.draft .card { flex: none; width: 220px; display: flex; flex-direction: column; align-items: stretch; padding: 0; background: none; border: 0; overflow: visible; box-shadow: none; animation: deal 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.15) both; animation-delay: calc(var(--i, 0) * 110ms); }
+.draft .card:hover { transform: none; box-shadow: none; }
+.draft .card.up:hover .front { transform: translateY(-8px); box-shadow: 0 16px 46px color-mix(in srgb, var(--rc) 50%, transparent), inset 0 0 0 1px var(--rc); }
+.draft .card::after { display: none; }
+.draft .flip { flex: 1; display: flex; flex-direction: column; position: relative; transform-style: preserve-3d; transform: rotateY(180deg); transition: transform 0.56s cubic-bezier(0.3, 1.35, 0.5, 1); }
+.draft .card.turn .flip { transform: rotateY(0deg); }
+.draft .face { backface-visibility: hidden; -webkit-backface-visibility: hidden; border-radius: 12px; }
+.draft .front { flex: 1; position: relative; min-height: 330px; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 16px 16px 16px; overflow: hidden;
+  background:
+    radial-gradient(ellipse 90% 45% at 50% 0%, color-mix(in srgb, var(--rc) 38%, transparent), transparent 70%),
+    repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.022) 0 2px, transparent 2px 7px),
+    linear-gradient(180deg, color-mix(in srgb, var(--rc) 16%, #0d1016), #090b0f 80%);
+  border: 2px solid color-mix(in srgb, var(--rc) 85%, transparent);
+  box-shadow: 0 0 30px color-mix(in srgb, var(--rc) 32%, transparent), inset 0 0 0 4px #0a0c10, inset 0 0 0 5px color-mix(in srgb, var(--rc) 30%, transparent);
+  transition: transform 0.15s, box-shadow 0.2s; }
+/* 稀有度的小旗子、四個角的寶石 */
+.draft .front .rar { padding: 4px 12px; border-radius: 999px; color: #0c0e12; background: linear-gradient(90deg, var(--rc), var(--rc2)); letter-spacing: 0.18em; box-shadow: 0 2px 12px color-mix(in srgb, var(--rc) 45%, transparent); }
+.draft .front::before { content: ""; position: absolute; inset: 9px; pointer-events: none; border-radius: 8px;
+  background: radial-gradient(circle, var(--rc) 0 2.5px, transparent 3.5px) 0 0 / 100% 100% no-repeat, radial-gradient(circle at 0 0, var(--rc) 0 3px, transparent 4px), radial-gradient(circle at 100% 0, var(--rc) 0 3px, transparent 4px), radial-gradient(circle at 0 100%, var(--rc) 0 3px, transparent 4px), radial-gradient(circle at 100% 100%, var(--rc) 0 3px, transparent 4px); opacity: 0.85; }
+/* 圖示：後面一圈慢慢轉的光環 */
+.draft .front .glyph { position: relative; width: 78px; height: 78px; font-size: 40px; margin: 12px 0 6px; box-shadow: 0 0 0 3px #0a0c10, 0 0 0 5px color-mix(in srgb, var(--rc) 70%, transparent), 0 6px 26px color-mix(in srgb, var(--rc) 60%, transparent); }
+.draft .front .glyph::before { content: ""; position: absolute; inset: -22px; border-radius: 50%; z-index: -1;
+  background: conic-gradient(from 0deg, transparent, color-mix(in srgb, var(--rc) 55%, transparent), transparent 30%, color-mix(in srgb, var(--rc2) 45%, transparent), transparent 60%, color-mix(in srgb, var(--rc) 55%, transparent), transparent);
+  -webkit-mask: radial-gradient(circle, transparent 46%, #000 48%, #000 70%, transparent 72%); mask: radial-gradient(circle, transparent 46%, #000 48%, #000 70%, transparent 72%); animation: spin 7s linear infinite; }
+.draft .front .t { font-size: 21px; letter-spacing: 0.04em; text-shadow: 0 0 18px color-mix(in srgb, var(--rc) 55%, transparent); }
+.draft .front .t::after { content: ""; display: block; width: 64px; height: 2px; margin: 8px auto 0; background: linear-gradient(90deg, transparent, var(--rc), transparent); }
+.draft .front .d { font-size: 13px; line-height: 1.6; }
+.draft .front .meta { padding: 4px 10px; border-radius: 6px; background: color-mix(in srgb, var(--rc) 14%, transparent); border: 1px solid color-mix(in srgb, var(--rc) 40%, transparent); }
+@keyframes spin { to { transform: rotate(360deg); } }
+.draft .r-l .front::after, .draft .r-m .front::after { content: ""; position: absolute; inset: 0; background: linear-gradient(115deg, transparent 35%, rgba(255, 255, 255, 0.18) 50%, transparent 65%); transform: translateX(-120%); animation: shine 2.4s ease-in-out infinite; pointer-events: none; }
+.draft .r-m .front { border-color: var(--rc); background: linear-gradient(180deg, rgba(255, 61, 127, 0.3), rgba(160, 48, 255, 0.16) 45%, #0c0e12 80%); }
+.draft .back { position: absolute; inset: 0; transform: rotateY(180deg); display: grid; place-items: center;
+  background: repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.035) 0 8px, transparent 8px 16px), radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--rc) 45%, #10131a), #0b0d12 70%);
+  border: 2px solid color-mix(in srgb, var(--rc) 75%, transparent); box-shadow: 0 0 34px color-mix(in srgb, var(--rc) 45%, transparent), inset 0 0 40px color-mix(in srgb, var(--rc) 25%, transparent); }
+.draft .back i { width: 86px; height: 86px; border-radius: 50%; border: 2px solid color-mix(in srgb, var(--rc) 85%, transparent); box-shadow: 0 0 26px var(--rc); animation: pulse 1s ease-in-out infinite alternate; }
+.draft .back i::after { content: "?"; display: grid; place-items: center; height: 100%; font-size: 46px; font-weight: 900; font-style: normal; color: var(--rc); }
+.draft .r-l .back, .draft .r-m .back { animation: rumble 0.12s linear infinite; animation-delay: calc(var(--i, 0) * 110ms + 0.5s); }
+/* 翻開時從卡片後面爆出一圈稀有度顏色的光；越稀有越大 */
+.draft .card::before { content: ""; position: absolute; left: 50%; top: 50%; width: 260px; height: 260px; margin: -130px 0 0 -130px; border-radius: 50%; pointer-events: none; z-index: -1; opacity: 0;
+  background: radial-gradient(circle, color-mix(in srgb, var(--rc) 70%, transparent), transparent 66%); }
+.draft .card.turn::before { animation: burst 1s ease-out forwards; }
+.draft .card.r-l.turn::before { width: 380px; height: 380px; margin: -190px 0 0 -190px; }
+.draft .card.r-m.turn::before { width: 520px; height: 520px; margin: -260px 0 0 -260px; animation: burst 1.6s ease-out forwards; }
+.draft .card.r-m.up::before { animation: aura 2.2s ease-in-out infinite; opacity: 0.35; }
+/* 翻開之後背面的動畫就停掉；光環只在傳說、神話卡上轉 */
+.draft .card.turn .back, .draft .card.turn .back i { animation: none; }
+.draft .r-c .front .glyph::before, .draft .r-r .front .glyph::before { animation: none; }
+.skip .card, .skip .flip, .skip .card::before, .skip .back { animation: none !important; transition: none !important; }
+@keyframes drFade { from { opacity: 0; } }
+@keyframes deal { from { opacity: 0; transform: translateY(70px) scale(0.6) rotate(calc((var(--i, 0) - 1) * 8deg)); } }
+@keyframes burst { 0% { opacity: 0; transform: scale(0.3); } 25% { opacity: 1; } 100% { opacity: 0; transform: scale(1.3); } }
+@keyframes aura { 0%, 100% { opacity: 0.2; transform: scale(0.9); } 50% { opacity: 0.45; transform: scale(1.05); } }
+@keyframes pulse { to { transform: scale(1.08); box-shadow: 0 0 40px var(--rc); } }
+@keyframes rumble { 0% { transform: rotateY(180deg) translate(0, 0); } 25% { transform: rotateY(180deg) translate(1px, -1px); } 50% { transform: rotateY(180deg) translate(-1px, 1px); } 75% { transform: rotateY(180deg) translate(1px, 1px); } }
+@media (prefers-reduced-motion: reduce) { .draft .card, .draft .flip, .draft .card::before, .draft .back { animation: none !important; transition: none !important; } }
 #lo-builds { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
 #lo-builds > div { padding: 8px 10px; border-radius: var(--r); background: rgba(0, 0, 0, 0.28); border: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12px; color: var(--dim); min-height: 42px; }
 #lo-builds b { color: var(--me); margin-right: 4px; font-size: 13px; } #lo-build-opp b { color: var(--opp); } #lo-builds i { font-style: normal; }

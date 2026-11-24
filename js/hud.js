@@ -1,6 +1,9 @@
 import { WEAPONS, PRIMARIES, SECONDARIES, GEAR, GEAR_IDS, NADE_IDS, loadoutCost, weaponBars, itemName } from './weapons.js';
 import { BIND_ACTIONS, BIND_LABELS, keyName } from './binds.js';
-import { CARDS, RARITY, cardName } from './cards.js';
+import { CARDS, RARITY, RARITY_IDS, cardName } from './cards.js';
+
+// 選卡動畫（毫秒）：第一張開始翻的時間、每張間隔、翻一張要多久（css 的 .flip 動畫要對上）
+const DRAFT = { FLIP0: 520, GAP: 360, DUR: 560 };
 import { TEAM_CSS, ROGUE, HORDE } from './config.js';
 import { MOBS, HZ_LEVELS, HZ_BEH, HZ_TIER } from './horde.js';
 import { MAPS, MAP_IDS, customIds, deleteMap } from './maps.js';
@@ -539,15 +542,21 @@ export class Hud {
     if (key !== this.buffKey) {
       this.buffKey = key;
       const box = $('lo-buff-cards'); box.innerHTML = '';
+      this._draftStop();
+      // Roguelike：整個畫面暗下來，卡片背面朝上飛進來再一張一張翻開（背面的光已經是稀有度的顏色）
+      const draft = !!key && rogue;
       $('lo-buff').classList.toggle('hidden', !key);
+      $('lo-buff').classList.toggle('draft', draft);
       (key ? me.ch : []).forEach((id, i) => {
         const c = CARDS[id]; if (!c) return;
         const el = document.createElement('div'), act = c.k === 'a', full = act && !mySk.includes(null);
         el.className = `buffcard card r-${c.r}${act ? ' act' : ''}`; el.dataset.id = id; el.style.setProperty('--i', i);
-        el.innerHTML = `<div class="rar">${RARITY[c.r].name}・${act ? '主動技能' : '被動'}</div><div class="glyph">${c.glyph}</div><div class="t">${esc(c.name)}</div><div class="d">${esc(c.desc)}</div>`
+        const body = `<div class="rar">${RARITY[c.r].name}・${act ? '主動技能' : '被動'}</div><div class="glyph">${c.glyph}</div><div class="t">${esc(c.name)}</div><div class="d">${esc(c.desc)}</div>`
           + (act ? `<div class="meta">${c.uses ? `每局 ${c.uses} 次` : `冷卻 ${c.cd} 秒`}${c.lock ? `・開打 ${c.lock} 秒後才能用` : ''}</div>` : '')
           + (full ? `<div class="rep"><span>技能格滿了，要換掉哪一個？</span>${[0, 1].map((n) => `<button class="btn small" data-slot="${n}">${esc(this.key(n ? 'skill2' : 'skill1'))}　${esc(CARDS[mySk[n]].name)}</button>`).join('')}</div>` : '');
+        el.innerHTML = draft ? `<div class="flip"><div class="face back"><i></i></div><div class="face front">${body}</div></div>` : body;
         el.addEventListener('click', (e) => {
+          if (draft && !el.classList.contains('up')) { this._draftReveal(true); return; }   // 還沒翻開就點：直接全部翻開，不會盲選
           const b = e.target.closest('[data-slot]');
           if (b) g.pickBuff(id, +b.dataset.slot);
           else if (full) { box.querySelectorAll('.card.ask').forEach((o) => o !== el && o.classList.remove('ask')); el.classList.toggle('ask'); }
@@ -555,6 +564,7 @@ export class Hud {
         });
         box.appendChild(el);
       });
+      if (draft) this._draftStart(box);
     }
     if (key) {
       this._set('lo-buff-title', hz ? `第 ${hz.cleared} 波擋下來了 — 選一張強化卡` : rogue ? `第 ${gs.round} 局 — 選一張異能卡` : '上一局落敗補償 — 選一個強化');
@@ -595,6 +605,32 @@ export class Hud {
     rb.disabled = !warm && !!me.ch;
     this._set('btn-ready', warm ? (hz && me.ch ? `先不選，繼續（${this.key('buy')}）` : `拿好了，繼續（${this.key('buy')}）`) : me.ch ? (rogue ? '先選一張異能卡' : '先選一個強化') : me.rd ? '已準備 ✓（再按取消）' : '準備');
     this._cls('btn-ready', 'on', !warm && !!me.rd);
+  }
+
+  // 選卡動畫的時間表：第 i 張在 FLIP0 + i × FLIP_GAP 毫秒開始翻，翻完（FLIP_DUR）才能點
+  _draftStart(box) {
+    const g = this.g, cards = [...box.querySelectorAll('.card')];
+    const reduce = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduce) { this._draftReveal(false); return; }
+    cards.forEach((el, i) => {
+      const t0 = DRAFT.FLIP0 + i * DRAFT.GAP;
+      this.draftT.push(setTimeout(() => {
+        const r = CARDS[el.dataset.id] ? CARDS[el.dataset.id].r : 'c';
+        el.classList.add('turn');
+        if (r === 'c') g.sfx.ui(); else g.sfx.card(r);
+      }, t0));
+      this.draftT.push(setTimeout(() => el.classList.add('up'), t0 + DRAFT.DUR));
+    });
+  }
+  _draftStop() { (this.draftT || []).forEach(clearTimeout); this.draftT = []; }
+  // 直接全部翻開（點了還沒翻開的卡、或系統設定要少動畫）
+  _draftReveal(snd) {
+    this._draftStop();
+    const box = $('lo-buff-cards'); box.classList.add('skip');
+    let best = '';
+    box.querySelectorAll('.card').forEach((el) => { el.classList.add('turn', 'up'); const r = CARDS[el.dataset.id] && CARDS[el.dataset.id].r; if (RARITY_IDS.indexOf(r) > RARITY_IDS.indexOf(best)) best = r; });
+    if (snd && best) { if (best === 'c') this.g.sfx.ui(); else this.g.sfx.card(best); }
+    requestAnimationFrame(() => requestAnimationFrame(() => box.classList.remove('skip')));
   }
 
   _end(gs) {

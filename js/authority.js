@@ -1,9 +1,9 @@
 import { MATCH, PLAYER, ECON, ROGUE, HORDE } from './config.js';
 import { rollBuffChoices } from './buffs.js';
-import { CARDS, CARD_IDS, rollCards } from './cards.js';
+import { CARDS, CARD_IDS, SK, rollCards, maxHpOf } from './cards.js';
 
 // 守據點每一波打完可以選的強化卡：只有對機器人也有效的被動（跟對手互動的、跟錢有關的、主動技能都不放）
-const HZ_NO_CARDS = CARD_IDS.filter((id) => CARDS[id].k === 'a' || ['plate', 'arsenal', 'radar', 'ghost', 'investor', 'thorns', 'cryo', 'incendiary'].includes(id));
+const HZ_NO_CARDS = CARD_IDS.filter((id) => CARDS[id].k === 'a' || ['plate', 'arsenal', 'radar', 'ghost', 'investor', 'thorns', 'cryo', 'incendiary', 'bullet', 'hunter'].includes(id));
 const HZ_BEHS = ['hold', 'strafe', 'hunt', 'mix'], HZ_LVS = ['easy', 'normal', 'hard'];
 import { WEAPONS, validLoadout, fitLoadout, loadoutCost } from './weapons.js';
 import { MAPS, MAP_IDS } from './maps.js';
@@ -105,10 +105,18 @@ export class Authority {
   }
   // 卡片影響的血量上限（守據點每一波選的卡）
   _hzApply(p) {
-    const has = (b) => p.buffs.includes(b), old = p.maxHp;
-    p.maxHp = Math.max(40, PLAYER.MAX_HP + (has('vital') ? 35 : 0) + (has('jugg') ? 60 : 0) - (has('glass') ? 35 : 0));
+    const old = p.maxHp;
+    p.maxHp = maxHpOf(p.buffs);
     if (p.alive) p.hp = Math.max(1, Math.min(p.maxHp, p.hp + (p.maxHp - old)));
     this.dirty = true;
+  }
+  // 每次 tick（每秒 20 次）的回血：再生（3 秒沒受傷後每秒 10）、天神下凡（一直每秒 4）
+  _regen(p, now) {
+    if (!p.alive || p.hp >= p.maxHp) return;
+    let r = 0;
+    if (p.buffs.includes('regen') && now - p.lastHurt > 3000) r += 10;
+    if (p.buffs.includes('avatar')) r += 4;
+    if (r) p.hp = Math.min(p.maxHp, p.hp + r * 0.05);
   }
   _hordeTick(now) {
     const hz = this.hz;
@@ -118,7 +126,7 @@ export class Authority {
         p.hp = p.maxHp; p.armor = PLAYER.MAX_ARMOR; p.alive = true; p.inv = now + 1500; p.burnT = p.slowT = 0;   // 剛重生有 1.5 秒無敵
         this.out(i, 'ev', { t: 'respawn' }); this.dirty = true;
       }
-      if (p.alive && p.buffs.includes('regen') && p.hp < p.maxHp && now - p.lastHurt > 4000) p.hp = Math.min(p.maxHp, p.hp + 6 * 0.05);
+      this._regen(p, now);
     });
     this.pickups.forEach((pk) => { if (!pk.on && now >= pk.at) { pk.on = true; this.dirty = true; } });
     if (hz.kind === 'dm') { if (hz.end && now >= hz.end) this._hordeEnd('time'); return; }
@@ -133,7 +141,7 @@ export class Authority {
       hz.core = Math.min(hz.coreMax, hz.core + hz.coreMax * HORDE.CORE_REGEN);
       this.players.forEach((p, i) => {
         if (!this.present[i]) return;
-        p.respawnAt = 0; p.phx = false;
+        p.respawnAt = 0; p.phx = false; p.aid = false;
         const c = rollCards({ owned: p.buffs, n: 3, exclude: HZ_NO_CARDS });
         p.choices = c.length ? c : null;
       });
@@ -166,7 +174,7 @@ export class Authority {
   hzHit(by, dealt) {
     const A = this.players[by]; if (!A || this.phase !== 'horde') return;
     A.dmg += dealt; A.rDmg += dealt; A.rHits++;
-    if (A.buffs.includes('leech') && A.alive) A.hp = Math.min(A.maxHp, A.hp + dealt * 0.25);
+    if (A.buffs.includes('leech') && A.alive) A.hp = Math.min(A.maxHp, A.hp + dealt * 0.35);
   }
   hzCore(d) {
     const hz = this.hz, now = Date.now();
@@ -185,7 +193,7 @@ export class Authority {
       p.ready = false; p.loadout = validLoadout(null);   // 商店重置：沒買就是只有免費手槍
       if (!rogue) return;
       // Roguelike：每個人每局都抽卡；上一局輸的人多一張、手氣也比較好
-      if (this.round > 1 && p.buffs.includes('investor')) p.money = Math.min(ECON.MAX, p.money + 1000);
+      if (this.round > 1 && p.buffs.includes('investor')) p.money = Math.min(ECON.MAX, p.money + 1500);
       p.rr = 0; p.lucky = this.lastLoser === i;
       p.choices = this._roll(p);
     });
@@ -202,7 +210,7 @@ export class Authority {
     p.choices = null; this.dirty = true;
     if (!c) return;
     if (c.k === 'a') { let s = p.skills.indexOf(null); if (s < 0) s = slot === 1 ? 1 : 0; p.skills[s] = id; }
-    else if (!p.buffs.includes(id)) p.buffs.push(id);
+    else if (!p.buffs.includes(id)) { p.buffs.push(id); if (id === 'investor' && this.phase === 'loadout') p.money = Math.min(ECON.MAX, p.money + 1500); }
   }
   _reroll(p) {
     if (this.settings.mode !== 'rogue' || this.phase !== 'loadout' || !p.choices || p.rr >= ROGUE.REROLLS) return;
@@ -217,7 +225,7 @@ export class Authority {
     if (this.phase !== 'playing' || !p.alive || !p.skills.includes(id)) return;
     if (id === 'stim') {
       if (now - p.stimAt < CARDS.stim.cd * 1000 - 500) return;
-      p.stimAt = now; p.hp = Math.min(p.maxHp, p.hp + 40); this.dirty = true; this.flush();
+      p.stimAt = now; p.hp = Math.min(p.maxHp, p.hp + SK.stim.heal); this.dirty = true; this.flush();
     }
   }
 
@@ -229,10 +237,10 @@ export class Authority {
       p.loadout = fitLoadout(p.loadout, p.money, this.round);
       p.spent = loadoutCost(p.loadout); p.money -= p.spent;
       const has = (b) => p.buffs.includes(b);
-      p.maxHp = Math.max(40, PLAYER.MAX_HP + (has('vital') ? 35 : 0) + (has('jugg') ? 60 : 0) - (has('glass') ? 35 : 0));
-      p.hp = p.maxHp; p.armor = p.loadout.armor || has('plate') || has('arsenal') ? 50 : 0; p.alive = true; p.lastHurt = 0;
+      p.maxHp = maxHpOf(p.buffs);
+      p.hp = p.maxHp; p.armor = has('plate') ? 100 : p.loadout.armor || has('arsenal') ? 50 : 0; p.alive = true; p.lastHurt = 0;
       p.rHits = p.rDmg = p.rHead = 0;   // 這一局的傷害報告歸零
-      p.phx = false; p.inv = 0; p.slowT = 0; p.burnT = 0; p.stimAt = 0;
+      p.phx = false; p.aid = false; p.bt = false; p.inv = 0; p.slowT = 0; p.burnT = 0; p.stimAt = 0;
     }
     this.pickups = MAPS[this.map].pickups.map(() => ({ on: true, at: 0 }));
     this.result = null;
@@ -291,29 +299,38 @@ export class Authority {
     if (!T || !T.alive || !(dmg > 0)) return;
     if (now < T.inv) return;                                 // 不死鳥剛重生：短暫無敵
     dmg = Math.min(dmg, 400);
-    if (T.buffs.includes('tough')) dmg *= 0.85;
+    // 減傷：硬皮、重裝巨人、天神下凡；求生本能在血量低的時候再減
+    if (T.buffs.includes('tough')) dmg *= 0.75;
+    if (T.buffs.includes('jugg')) dmg *= 0.9;
+    if (T.buffs.includes('avatar')) dmg *= 0.8;
+    if (T.buffs.includes('survivor') && T.hp < T.maxHp * 0.35) dmg *= 0.6;
     let toHp = dmg;
     if (T.armor > 0) { const ab = Math.min(T.armor, dmg * PLAYER.ARMOR_ABSORB); T.armor -= ab; toHp = dmg - ab; }
     const dealt = Math.min(T.hp, toHp);
     T.hp -= toHp; T.lastHurt = now;
     if (A && attacker !== target) {
       A.dmg += dealt; A.rDmg += dealt; A.rHits++; if (head) A.rHead++;
-      if (A.buffs.includes('leech') && A.alive) A.hp = Math.min(A.maxHp, A.hp + dealt * 0.25);
+      if (A.buffs.includes('leech') && A.alive) A.hp = Math.min(A.maxHp, A.hp + dealt * 0.35);
       // 以下只有「真的被對手的槍或刀打中」才算（灼燒、反彈這類後續傷害不會再觸發一輪）
       if (WEAPONS[weapon]) {
-        if (A.buffs.includes('cryo')) T.slowT = now + 1200;
-        if (A.buffs.includes('incendiary')) { if (now >= T.burnT) T.burnNext = now + 500; T.burnT = now + 3000; T.burnBy = attacker; }
+        if (A.buffs.includes('cryo')) T.slowT = now + 1600;
+        if (A.buffs.includes('incendiary')) { if (now >= T.burnT) T.burnNext = now + 500; T.burnT = now + 4000; T.burnBy = attacker; }
         if (T.buffs.includes('thorns') && A.alive && A.hp > 1) {
-          const back = Math.min(A.hp - 1, dealt * 0.3);
+          const back = Math.min(A.hp - 1, dealt * 0.45);
           if (back >= 1) { A.hp -= back; A.lastHurt = now; this.out(attacker, 'ev', { t: 'hurt', d: Math.round(back), self: true, h: false, w: 'thorns' }); }
         }
       }
     }
     const src = x && Array.isArray(x.src) && x.src.length === 2 ? x.src : undefined;
     this.out(target, 'ev', { t: 'hurt', d: Math.round(toHp), self: attacker === target, h: head, w: weapon, src });
+    // 急救包：每局一次，血掉到 35 以下（但還沒死）自動補 50
+    if (T.hp > 0 && T.hp < 35 && !warm && T.buffs.includes('medkit') && !T.aid) {
+      T.aid = true; T.hp = Math.min(T.maxHp, T.hp + 50);
+      this.out(0, 'ev', { t: 'medkit', who: target }); this.out(1, 'ev', { t: 'medkit', who: target });
+    }
     if (T.hp <= 0 && !warm && T.buffs.includes('phoenix') && !T.phx) {
       // 不死鳥：這一下本來會死，改成原地重生
-      T.phx = true; T.hp = Math.min(T.maxHp, 40); T.inv = now + 1200; T.burnT = 0; T.slowT = 0;
+      T.phx = true; T.hp = Math.min(T.maxHp, 70); T.inv = now + 2000; T.burnT = 0; T.slowT = 0;
       this.out(0, 'ev', { t: 'phoenix', who: target }); this.out(1, 'ev', { t: 'phoenix', who: target });
     } else if (T.hp <= 0) {
       T.hp = 0; T.alive = false;
@@ -353,9 +370,9 @@ export class Authority {
     } else if (this.phase === 'playing') {
       for (let i = 0; i < 2; i++) {
         const p = this.players[i];
-        if (p.alive && p.buffs.includes('regen') && p.hp < p.maxHp && now - p.lastHurt > 4000) { p.hp = Math.min(p.maxHp, p.hp + 6 * 0.05); }
+        this._regen(p, now);
         // 著火（對手的燃燒彈）：每半秒燒 4 血
-        if (p.alive && now < p.burnT && now >= p.burnNext && this.phase === 'playing') { p.burnNext = now + 500; this.damage(i, 4, p.burnBy, 'incendiary', false); }
+        if (p.alive && now < p.burnT && now >= p.burnNext && this.phase === 'playing') { p.burnNext = now + 500; this.damage(i, 6, p.burnBy, 'incendiary', false); }
       }
       this.pickups.forEach((pk) => { if (!pk.on && now >= pk.at) { pk.on = true; this.dirty = true; } });
       if (this.phase === 'playing' && now >= this.tEnd) {

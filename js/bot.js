@@ -1,7 +1,7 @@
 import { PLAYER } from './config.js';
 import { Player } from './player.js';
 import { WEAPONS, falloff, loadoutCost, validLoadout } from './weapons.js';
-import { CARDS, cardMods, rage } from './cards.js';
+import { CARDS, SK, BERSERK, cardMods, rage } from './cards.js';
 import { MAPS } from './maps.js';
 import { BLOCK } from './world.js';
 import { Nav } from './nav.js';
@@ -36,7 +36,7 @@ export class Bot {
     this.shield = null;                          // shield(ox..dz)：子彈飛多遠會被能量護罩擋下（main.js 會接上）
     // Roguelike：自己的技能與冷卻、玩家對它放的控場效果、排定要打下來的軌道砲
     this.sk = [null, null]; this.skAt = {}; this.skUses = {}; this.liveAt = 0; this.cloakEnd = 0;
-    this.slowUntil = 0; this.noSeeUntil = 0; this.hole = null; this.strikes = []; this.me = null;
+    this.slowUntil = 0; this.stopUntil = 0; this.noSeeUntil = 0; this.hole = null; this.strikes = []; this.me = null;
   }
   get L() { return BOT_LEVELS[this.level]; }
   send(type, data) { if (this.link) this.link([type, data]); }
@@ -46,12 +46,17 @@ export class Bot {
     if (type === 'gs') this.onGs(d);
     else if (type === 'ev') { if (d.t === 'respawn') this._respawn(); }
     else if (type === 'sk') {
-      // 玩家放的技能裡，會影響機器人的：時間凝結（變慢）、迷彩（看不到人）、黑洞（被吸過去）
+      // 玩家放的技能裡，會影響機器人的：時間凝結（變慢）、時間暫停（不能動）、迷彩（看不到人）、黑洞（被吸過去）、換位
       if (!d || d.r !== this.round) return;
-      const now = performance.now();
-      if (d.id === 'chrono') { this.slowUntil = now + 3000; this.reactAt = now + 700; }
+      const now = performance.now(), dur = (lo, hi) => Math.max(lo, Math.min(hi, +d.d || 0)) * 1000;
+      if (d.id === 'chrono') { this.slowUntil = now + dur(0.5, 6); this.reactAt = now + 700; }
+      else if (d.id === 'timestop') { this.stopUntil = now + dur(0.5, 3.5); this.reactAt = this.stopUntil + 400; }
       else if (d.id === 'cloak') this.noSeeUntil = d.d > 0 ? now + d.d * 1000 : 0;
-      else if (d.id === 'blackhole' && Array.isArray(d.p)) this.hole = { x: d.p[0], y: d.p[1], z: d.p[2], end: now + (d.d || 4) * 1000 };
+      else if (d.id === 'blackhole' && Array.isArray(d.p)) this.hole = { x: d.p[0], y: d.p[1], z: d.p[2], end: now + dur(1, 6) };
+      else if (d.id === 'swap' && Array.isArray(d.a) && d.a.length === 3 && d.a.every(Number.isFinite)) {
+        const b = this.body; b.pos.set(d.a[0], d.a[1], d.a[2]); b.prev.copy(b.pos); b.rpos.copy(b.pos); b.vel.set(0, 0, 0);
+        this.path = null; this.planAt = 0;
+      }
     }
     else if (type === 'st') {
       this.tx = d[0]; this.ty = d[1]; this.tz = d[2]; this.tcr = !!(d[6] & 1);
@@ -100,7 +105,7 @@ export class Bot {
       this.body.maxAirJumps = this.mods.airJumps;
       this.ammo = Math.round(WEAPONS[this.weapon].mag * this.mods.mag);
       this.sk = me.sk || [null, null]; this.skAt = {}; this.skUses = {}; this.liveAt = 0; this.cloakEnd = 0;
-      this.slowUntil = 0; this.noSeeUntil = 0; this.hole = null; this.strikes = [];
+      this.slowUntil = 0; this.stopUntil = 0; this.noSeeUntil = 0; this.hole = null; this.strikes = [];
       this.nextShot = 0; this.blindUntil = 0; this.noLos = 0; this.holdT = 0; this.path = null; this.planAt = 0; this.stuckN = 0; this.breachT = 0; this.chkAt = 0;
     }
   }
@@ -165,11 +170,13 @@ export class Bot {
     if (ph === 'playing' && !this.liveAt) this.liveAt = now;
     this._strikes(now, ph === 'playing');
     // 被控場：時間凝結、冰凍彈、黑洞
-    const slowed = now < this.slowUntil, sm = (slowed ? 0.33 : 1) * (me.fz ? 0.65 : 1) * (this.mods.berserk ? 1 + 0.2 * rage(me.hp, me.mhp) : 1);
+    const stopped = now < this.stopUntil, slowed = stopped || now < this.slowUntil;
+    const sm = stopped ? 0 : (slowed ? SK.chrono.move : 1) * (me.fz ? 0.55 : 1) * (this.mods.berserk ? 1 + BERSERK.speed * rage(me.hp, me.mhp) : 1);
+    if (stopped) { b.vel.x = 0; b.vel.z = 0; if (b.vel.y > 0) b.vel.y = 0; }
     if (this.hole && me.al) {
       const h = this.hole, hx = h.x - b.pos.x, hy = h.y - (b.pos.y + 0.9), hz = h.z - b.pos.z, hd = Math.hypot(hx, hy, hz);
       if (now >= h.end) this.hole = null;
-      else if (hd < 9 && hd > 0.3) { const a = ((6 + 34 * (1 - hd / 9)) * dt) / hd; b.vel.x += hx * a; b.vel.y += hy * a; b.vel.z += hz * a; }
+      else if (hd < SK.blackhole.pull && hd > 0.3) { const H = SK.blackhole, a = ((H.base + H.str * (1 - hd / H.pull)) * dt) / hd; b.vel.x += hx * a; b.vel.y += hy * a; b.vel.z += hz * a; }
     }
     if ((ph === 'playing' || ph === 'warmup') && me.al && !L.still) {
       const ex = b.pos.x, ey = b.pos.y + PLAYER.EYE, ez = b.pos.z;
@@ -180,7 +187,7 @@ export class Bot {
       const smoked = !wall && !!this.blocked && this.blocked(ex, ey, ez, this.tx, this.ty + 1, this.tz);
       const shielded = !wall && !!this.shield && this.shield(ex, ey, ez, dx, dy, dz) < dist;   // 中間隔著能量護罩：打不到，當作看不到 → 會走過去
       const los = !wall && !smoked && !shielded && now >= this.blindUntil && now >= this.noSeeUntil;   // 被煙擋住、被閃到、玩家開了迷彩 → 當作看不到
-      if (ph === 'playing') this._skills(now, me, foe, los, dist);
+      if (ph === 'playing' && !stopped) this._skills(now, me, foe, los, dist);
       this.noLos = los ? 0 : this.noLos + dt;
       if (this.noLos > 0.4) this.reactAt = now + L.react; // 短暫被柱子擋一下不算，不重置反應時間
       this.holdT = Math.max(0, this.holdT - dt); this.breachT = Math.max(0, this.breachT - dt);
@@ -213,14 +220,14 @@ export class Bot {
       }
 
       // 身體朝向：看得到就看著玩家，看不到就看著前進方向
-      const turn = Math.min(1, dt * (slowed ? 4 : 12));
+      const turn = stopped ? 0 : Math.min(1, dt * (slowed ? 4 : 12));
       b.yaw = lerpAngle(b.yaw, facing !== null ? facing : Math.atan2(-dx, -dz), turn);
       b.pitch = lerp(b.pitch, facing !== null ? 0 : Math.asin(dy), turn);
       const wl = Math.hypot(wx, wz), s = Math.sin(b.yaw), c = Math.cos(b.yaw);
       const f = wl > 0 ? (-wx * s - wz * c) / wl : 0, r = wl > 0 ? (wx * c - wz * s) / wl : 0;
       b.update(dt, { f, r, jump, crouch: false, speed: def.move * this.mods.speed * L.speed * sm, grav: this.mods.grav });
 
-      if (foe.al && now >= this.nextShot && ((los && now >= this.reactAt) || shootWall)) this.fire(def, now, dx, dy, dz);
+      if (!stopped && foe.al && now >= this.nextShot && ((los && now >= this.reactAt) || shootWall)) this.fire(def, now, dx, dy, dz);
     } else b.update(dt, { f: 0, r: 0, jump: false, crouch: false, speed: 1 });
 
     this.sendAcc += dt;
@@ -233,30 +240,40 @@ export class Bot {
   // ───────── Roguelike：機器人會用的幾個技能 ─────────
   _skills(now, me, foe, los, dist) {
     const b = this.body, r = this.round;
-    const can = (id) => this.sk.includes(id) && now >= (this.skAt[id] || 0) && now - this.liveAt >= (CARDS[id].lock || 0) * 1000 && (!CARDS[id].uses || (this.skUses[id] || 0) < CARDS[id].uses);
-    const used = (id) => { this.skAt[id] = now + CARDS[id].cd * 1000; this.skUses[id] = (this.skUses[id] || 0) + 1; };
-    if (can('stim') && me.hp < me.mhp - 45) { used('stim'); this.send('auth', { t: 'skill', r, id: 'stim' }); this.send('sk', { r, id: 'stim' }); }
+    const extra = this.mods.extraUses || 0;
+    const can = (id) => this.sk.includes(id) && now >= (this.skAt[id] || 0) && now - this.liveAt >= (CARDS[id].lock || 0) * 1000 && (!CARDS[id].uses || (this.skUses[id] || 0) < CARDS[id].uses + extra);
+    const used = (id) => { this.skAt[id] = now + CARDS[id].cd * 1000 * (this.mods.cd || 1); this.skUses[id] = (this.skUses[id] || 0) + 1; };
+    if (can('stim') && me.hp < me.mhp - 55) { used('stim'); this.send('auth', { t: 'skill', r, id: 'stim' }); this.send('sk', { r, id: 'stim' }); }
     if (!foe.al) return;
-    if (can('chrono') && los && dist < 28) { used('chrono'); this.send('sk', { r, id: 'chrono', d: 3 }); }
-    if (can('shock') && dist < 5) {
+    if (can('timestop') && los && dist < 30) { used('timestop'); this.send('sk', { r, id: 'timestop', d: SK.timestop.time }); }
+    if (can('chrono') && los && dist < 28) { used('chrono'); this.send('sk', { r, id: 'chrono', d: SK.chrono.time }); }
+    const S = SK.shock;
+    if (can('shock') && dist < S.rad - 1.5) {
       used('shock');
-      this.send('expl', { r, pid: 0, p: [r3(b.pos.x), r3(b.pos.y + 1), r3(b.pos.z)], br: 2.3, bp: 270, rad: 6.5, k: 15, fxk: 'shock', own: 1 });
-      this.send('auth', { t: 'hit', r, d: 15 + 30 * (1 - dist / 6.5), h: false, w: 'shock' });
+      this.send('expl', { r, pid: 0, p: [r3(b.pos.x), r3(b.pos.y + 1), r3(b.pos.z)], br: 2.6, bp: 340, rad: S.rad, k: S.k, fxk: 'shock', own: 1 });
+      this.send('auth', { t: 'hit', r, d: S.min + (S.max - S.min) * (1 - dist / S.rad), h: false, w: 'shock' });
     }
     if (can('orbital') && los && dist > 7) {
       used('orbital');
       const p = [r3(this.tx), r3(this.gy + 0.05), r3(this.tz)];
-      this.strikes.push({ x: p[0], y: p[1], z: p[2], at: now + 1700 });
-      this.send('sk', { r, id: 'orbital', p, d: 1.7 });
+      this.strikes.push({ x: p[0], y: p[1], z: p[2], at: now + SK.orbital.delay * 1000, last: now });
+      this.send('sk', { r, id: 'orbital', p, d: SK.orbital.delay });
     }
-    if (can('dome') && los && me.hp < 60) { used('dome'); this.send('sk', { r, id: 'dome', p: [r3(b.pos.x), r3(b.pos.y + 0.3), r3(b.pos.z)], d: 5.5 }); }
+    if (can('dome') && los && me.hp < 60) { used('dome'); this.send('sk', { r, id: 'dome', p: [r3(b.pos.x), r3(b.pos.y + 0.3), r3(b.pos.z)], d: SK.dome.time, rr: SK.dome.r }); }
     if (can('cloak') && !los && dist > 8) { used('cloak'); this.cloakEnd = now + 5000; this.send('sk', { r, id: 'cloak', d: 5 }); }
   }
-  // 軌道砲時間到：往下連炸三層，玩家在光柱附近就受傷（跟玩家自己放的算法一樣）
+  // 軌道砲：光柱追著玩家跑；時間到往下連炸三層，玩家在光柱附近就受傷（跟玩家自己放的算法一樣）
   _strikes(now, live) {
+    const O = SK.orbital;
     for (let i = this.strikes.length - 1; i >= 0; i--) {
       const m = this.strikes[i];
-      if (now < m.at) continue;
+      if (now < m.at) {
+        const dt = Math.min(0.1, (now - (m.last || now)) / 1000), dx = this.tx - m.x, dz = this.tz - m.z, dd = Math.hypot(dx, dz);
+        m.last = now;
+        if (dd < O.trackR && dd > 0.01) { const st = Math.min(dd, O.track * dt); m.x += (dx / dd) * st; m.z += (dz / dd) * st; m.y += (this.gy + 0.05 - m.y) * Math.min(1, dt * 6); }
+        continue;
+      }
+      m.x = r3(m.x); m.y = r3(m.y); m.z = r3(m.z);
       this.strikes.splice(i, 1);
       if (!live) continue;
       for (let k = 0; k < 3; k++) {
@@ -264,8 +281,8 @@ export class Bot {
         if (k) msg.kind = 'dig'; else msg.fxk = 'orbital';
         this.send('expl', msg);
       }
-      const cy = Math.max(m.y - 3.5, Math.min(m.y + 40, this.ty + 0.9)), d = Math.hypot(this.tx - m.x, this.ty + 0.9 - cy, this.tz - m.z), f = d < 2 ? 1 : Math.max(0, 1 - (d - 2) / 4.5);
-      if (f > 0) this.send('auth', { t: 'hit', r: this.round, d: 150 * f, h: false, w: 'orbital' });
+      const cy = Math.max(m.y - 3.5, Math.min(m.y + 40, this.ty + 0.9)), d = Math.hypot(this.tx - m.x, this.ty + 0.9 - cy, this.tz - m.z), f = d < O.full ? 1 : Math.max(0, 1 - (d - O.full) / O.fade);
+      if (f > 0) this.send('auth', { t: 'hit', r: this.round, d: O.dmg * f, h: false, w: 'orbital' });
     }
   }
 
@@ -273,7 +290,7 @@ export class Bot {
   fire(def, now, fx, fy, fz) {
     const b = this.body, me = this.me;
     if (now < this.cloakEnd) { this.cloakEnd = 0; this.send('sk', { r: this.round, id: 'cloak', d: 0 }); }   // 開槍就現形
-    const dm = this.mods.dmg * (this.mods.berserk && me ? 1 + 0.4 * rage(me.hp, me.mhp) : 1);
+    const dm = this.mods.dmg * (this.mods.berserk && me ? 1 + BERSERK.dmg * rage(me.hp, me.mhp) : 1);
     this.nextShot = now + (60000 / (def.rpm * this.mods.rpm)) * (def.auto ? 1 : 1.5);
     if (--this.ammo <= 0) { this.ammo = Math.round(def.mag * this.mods.mag); this.nextShot = now + def.reload * 1000; }
     else if (def.auto && ++this.burst >= 7) { this.burst = 0; this.nextShot += 350 + Math.random() * 300; }
@@ -301,6 +318,6 @@ export class Bot {
     }
     this.send('fire', { w: this.weapon, e: ends });
     if (blk.length) this.send('blk', { r: this.round, h: blk });
-    if (total > 0) this.send('auth', { t: 'hit', r: this.round, d: total, h: head, w: this.weapon });
+    if (total > 0) this.send('auth', { t: 'hit', r: this.round, d: head && this.mods.reaper ? 400 : total, h: head, w: this.weapon });
   }
 }

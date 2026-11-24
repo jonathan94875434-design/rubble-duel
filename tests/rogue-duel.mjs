@@ -55,10 +55,12 @@ ok('雙方各有 3 張卡', st.a.length === 3 && st.b.length === 3, JSON.stringi
 // 指定卡片：房主拿鋼牆，訪客拿時間凝結
 const setCh = (i, ids) => A.evaluate((i, ids) => { const a = __game.authority; a.players[i].choices = ids; a.dirty = true; a.flush(); }, i, ids);
 await setCh(0, ['wall', 'vital', 'tough']); await setCh(1, ['chrono', 'vital', 'tough']); await sleep(300);
-await B.click('.card[data-id="chrono"]'); await sleep(400);
+// 選卡畫面有翻牌動畫：還沒翻開的卡點了只會翻開，所以要等它翻開再點
+const pick = async (P, id) => { await P.waitForFunction((id) => document.querySelector(`.card.up[data-id="${id}"]`), { timeout: 10000 }, id).catch(() => {}); await P.click(`.card[data-id="${id}"]`); };
+await pick(B, 'chrono'); await sleep(400);
 st = await A.evaluate(() => ({ opp: document.getElementById('lo-build-opp').textContent, sk: __game.gs.p[1].sk }));
 ok('對手已經選好，但我還沒選：畫面上不公開他拿了什麼', st.sk[0] === 'chrono' && !st.opp.includes('時間凝結') && st.opp.includes('等你選完才公開'), JSON.stringify(st));
-await A.click('.card[data-id="wall"]'); await sleep(400);
+await pick(A, 'wall'); await sleep(400);
 st = { a: await A.evaluate(() => document.getElementById('lo-build-opp').textContent), b: await B.evaluate(() => document.getElementById('lo-build-opp').textContent) };
 ok('雙方都選好之後互相公開', st.a.includes('時間凝結') && st.b.includes('鋼牆'), JSON.stringify(st));
 await A.screenshot({ path: OUT + '/rd1-revealed.png' });
@@ -89,7 +91,7 @@ ok('訪客那邊確實多了 35 格鋼板', st === (await A.evaluate(() => __gam
 // ── 時間凝結：B 對 A 放，A 的移動和轉頭變慢 ──
 used = await B.evaluate(() => { __game.skills.ready = [0, 0]; return __game.skills.use(0); }); await sleep(350);
 st = await A.evaluate(() => ({ mul: __game.skills.speedMul(__game.gs.p[0]), look: __game.skills.lookMul(), tint: document.getElementById('tintfx').className, chip: document.getElementById('status').textContent }));
-ok('時間凝結：被放的人移動剩 1/3、轉頭變慢、畫面變藍', used && Math.abs(st.mul - 0.33) < 0.01 && st.look === 0.4 && st.tint === 'slow' && st.chip.includes('時間凝結'), JSON.stringify(st));
+ok('時間凝結：被放的人移動剩三成、轉頭變慢、畫面變藍', used && Math.abs(st.mul - 0.3) < 0.01 && st.look === 0.3 && st.tint === 'slow' && st.chip.includes('時間凝結'), JSON.stringify(st));
 await A.screenshot({ path: OUT + '/rd2-chrono.png' });
 
 // ── 光學迷彩：B 隱身，A 看不到他；B 開槍就現形 ──
@@ -118,7 +120,7 @@ ok('走進護罩裡面就打得到人', (await A.evaluate(() => __game.gs.p[0].h
 // ── 不死鳥：A 吃到致命傷，兩邊都收到重生的通知 ──
 await B.evaluate(() => { __game.auth('hit', { r: __game.round, d: 400, h: false, w: 'knife' }); }); await sleep(500);
 st = { a: await A.evaluate(() => ({ hp: __game.gs.p[0].hp, al: __game.gs.p[0].al, banner: document.getElementById('banner').textContent })), b: await B.evaluate(() => document.getElementById('feed').textContent) };
-ok('不死鳥：沒死、回到 40 血，自己看到大字、對手看到訊息', st.a.al && st.a.hp === 40 && st.a.banner.includes('不死鳥') && st.b.includes('浴火重生'), JSON.stringify(st));
+ok('不死鳥：沒死、回到 70 血，自己看到大字、對手看到訊息', st.a.al && st.a.hp === 70 && st.a.banner.includes('不死鳥') && st.b.includes('浴火重生'), JSON.stringify(st));
 
 // ── 黑洞、軌道砲：B 換技能再放，A 被吸、地形同步 ──
 await A.evaluate(() => { const a = __game.authority; a.players[1].skills = ['blackhole', 'orbital']; a.players[0].maxHp = 900; a.players[0].hp = 900; a.dirty = true; a.flush(); });

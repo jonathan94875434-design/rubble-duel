@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { BS, PLAYER } from './config.js';
 import { WEAPONS, THROWABLES, NADE_IDS, projDef, falloff } from './weapons.js';
 import { BLOCK } from './world.js';
-import { cardMods, rage } from './cards.js';
+import { cardMods, rage, BERSERK, SK } from './cards.js';
 import * as GM from './gunmodel.js';
 import { lerp, r3 } from './util.js';
 
@@ -21,7 +21,7 @@ const MELEE_RAYS = [[0, 0], [0.13, 0], [-0.13, 0], [0, 0.11], [0, -0.11]];
 export class Combat {
   constructor(g) {
     this.g = g;
-    this.slots = []; this.cur = 0; this.last = 1; this.mods = cardMods([]); this.boomAt = 0;
+    this.slots = []; this.cur = 0; this.last = 1; this.mods = cardMods([]); this.boomAt = 0; this.markUntil = 0;
     this.bloom = 0; this.recP = 0; this.recY = 0; this.ads = 0;
     this.switchEnd = 0; this.switchDur = 350; this.fireQueued = 0; this.lastShotT = 0; this.prevShotT = 0;
     this.projectiles = []; this.pid = 1; this.blkOut = []; this.fires = [];
@@ -43,7 +43,7 @@ export class Combat {
     this.slots = [mk(lo.p), mk(lo.s), mk('knife')];
     this.cur = this.slots[0] ? 0 : 1; this.last = this.slots[0] ? 1 : 2;
     for (const k of NADE_IDS) this.nades[k] = lo[k] | 0;
-    if (this.mods.arsenal) { this.nades.he++; this.nades.flash++; }   // 軍火庫：多送一顆手榴彈和閃光彈
+    if (this.mods.arsenal) { this.nades.he += 2; this.nades.flash++; this.nades.smoke++; }   // 軍火庫：多送兩顆手榴彈、閃光彈、煙霧彈
     this.throwAt = 0;
     this.bloom = 0; this.recP = this.recY = 0; this.ads = 0; this.switchEnd = 0; this.fireQueued = 0;
     this.g.view.setWeapon(this.w.id, this.g.settings.wskin);
@@ -104,11 +104,14 @@ export class Combat {
   reloadProgress() { const w = this.w; if (!w || !w.reloadEnd) return 0; return Math.min(1, (performance.now() - w.reloadStart) / (w.reloadEnd - w.reloadStart)); }
   drawProgress() { const left = this.switchEnd - performance.now(); return left <= 0 ? 1 : 1 - left / this.switchDur; }
 
-  // 目前的傷害倍率：卡片的固定加成 × 狂戰士（血越少越高）
+  // 目前的傷害倍率：卡片的固定加成 × 狂戰士（血越少越高）× 透視中／獵人印記（只對對手）
   dmgMul() {
-    const g = this.g, m = this.mods, me = m.berserk && g.gs ? g.gs.p[g.me] : null;
-    return m.dmg * (me ? 1 + 0.4 * rage(me.hp, me.mhp) : 1);
+    const g = this.g, m = this.mods, me = m.berserk && g.gs ? g.gs.p[g.me] : null, now = performance.now();
+    const foe = g.horde && g.horde.on ? 1 : (now < g.skills.scanEnd ? SK.scan.dmg : 1) * (now < this.markUntil ? 1.2 : 1);
+    return m.dmg * (me ? 1 + BERSERK.dmg * rage(me.hp, me.mhp) : 1) * foe;
   }
+  // 獵人印記：打中對手之後 4 秒內標在小地圖上
+  _mark(id) { if (this.mods.hunter && id === -1) { this.markUntil = performance.now() + 4000; const rp = this.g.remote.pos; this.g.mini.spot(performance.now(), rp.x, rp.z); } }
 
   // 目前的散布（度）。CS 式：站定最準、蹲下更準，跑動和跳躍會散；速度降到三成以下就算停住（急停）
   spread() {
@@ -180,7 +183,7 @@ export class Combat {
       const ry2 = g.targetYaw(best.id), fl = Math.hypot(fx, fz) || 1, back = (-Math.sin(ry2) * fx - Math.cos(ry2) * fz) / fl > 0.45;
       const dmg = (heavy ? (back ? def.back : def.heavy) : def.dmg) * this.dmgMul();
       g.fx.hitSpark(ox + best.dx * best.t, oy + best.dy * best.t, oz + best.dz * best.t, 0, 9);
-      g.hitTarget(best.id, dmg, false, 'knife', { bk: back ? 1 : 0 });
+      g.hitTarget(best.id, dmg, false, 'knife', { bk: back ? 1 : 0 }); this._mark(best.id);
       g.hud.hitmarker(back); g.sfx.knifeHit(true);
       g.shake = Math.min(1, g.shake + 0.25);
       return;
@@ -214,8 +217,8 @@ export class Combat {
       this.spawnProjectile(w.id, pid, o, v, true);
       g.sendPeer('fire', { w: w.id, pid, o, v });
     } else {
-      // twin = 雙重射擊：每次多射一發，每發傷害打 65 折
-      const twin = this.mods.twin, np = def.pellets * (twin ? 2 : 1), dm = this.dmgMul() * (twin ? 0.65 : 1);
+      // twin = 雙重射擊：每次多射一發，每發傷害打 8 折
+      const twin = this.mods.twin, np = def.pellets * (twin ? 2 : 1), dm = this.dmgMul() * (twin ? 0.8 : 1);
       const ends = [], ends2 = [], pen = (def.pen || 0) * this.mods.pen, sk = g.skills;
       // 每個打中的目標各自累計（對戰只有對手一個；機器人模式一槍霰彈可能同時打到好幾隻）
       const hits = new Map(), addHit = (id, d, h, w2) => { const o = hits.get(id) || { d: 0, head: false, wb: false }; o.d += d; o.head = o.head || h; o.wb = o.wb || w2; hits.set(id, o); };
@@ -243,7 +246,7 @@ export class Combat {
           if (h.dist > end + 0.01) break;
           const px = ox + dx * h.dist, py = oy + dy * h.dist, pz = oz + dz * h.dist;
           if (h.oob) { if (h.first) g.fx.impact(px, py, pz, h.nx, h.ny, h.nz, h.type, 2); break; }
-          const dmg = Math.round(def.dmg * def.block * this.mods.block * km * (twin ? 0.65 : 1)), ci = g.world.idx(h.x, h.y, h.z);
+          const dmg = Math.round(def.dmg * def.block * this.mods.block * km * (twin ? 0.8 : 1)), ci = g.world.idx(h.x, h.y, h.z);
           const res = g.world.damage(h.x, h.y, h.z, dmg);
           this.blkOut.push(ci, dmg);
           if (h.first && !boom) boom = [px + h.nx * 0.12, py + h.ny * 0.12, pz + h.nz * 0.12];
@@ -271,7 +274,7 @@ export class Combat {
           let e2 = Math.min(bh ? bh.dist : 60, sk.shieldDist(qx, qy, qz, bx, by, bz));
           if (p2 && p2.t < e2) {
             e2 = p2.t;
-            addHit(p2.id, def.dmg * falloff(def, end + e2) * (p2.head ? def.head * this.mods.head : 1) * dm * 0.7, p2.head, false);
+            addHit(p2.id, def.dmg * falloff(def, end + e2) * (p2.head ? def.head * this.mods.head : 1) * dm * 0.9, p2.head, false);
             g.fx.hitSpark(qx + bx * e2, qy + by * e2, qz + bz * e2, 0, 5);
           } else if (bh && bh.dist <= e2 + 0.01 && !bh.oob) {
             const d2 = Math.round(def.dmg * def.block * this.mods.block * 0.5), r2 = g.world.damage(bh.x, bh.y, bh.z, d2);
@@ -287,7 +290,8 @@ export class Combat {
       if (hits.size) {
         this.hits++;
         let head = false;
-        for (const [id, o] of hits) { g.hitTarget(id, o.d, o.head, w.id, { wb: o.wb ? 1 : 0 }); head = head || o.head; }
+        // 死神：爆頭直接給一個打不完的傷害（裁判那邊上限 400）
+        for (const [id, o] of hits) { g.hitTarget(id, o.head && this.mods.reaper ? 400 : o.d, o.head, w.id, { wb: o.wb ? 1 : 0 }); this._mark(id); head = head || o.head; }
         g.hud.hitmarker(head); g.sfx.hit(head);
       }
       // 爆裂彈：這一槍打到的第一個方塊那裡小爆一下（連發時稍微限制頻率，免得特效塞滿）
@@ -310,12 +314,12 @@ export class Combat {
     g.shake = Math.min(1, g.shake + def.recoil[0] * 0.05);
   }
 
-  // 爆裂彈的小爆炸：炸方塊為主，1.8 公尺內的對手吃一點濺射傷害；不會炸到自己
+  // 爆裂彈的小爆炸：炸方塊為主，2.4 公尺內的對手吃濺射傷害；不會炸到自己
   miniBoom(p, wid) {
-    const g = this.g, msg = { r: g.round, pid: 0, p: [r3(p[0]), r3(p[1]), r3(p[2])], br: 1.15, bp: 120 * this.mods.block, rad: 1.8, k: 0, fxk: 'mini', own: g.me };
+    const g = this.g, msg = { r: g.round, pid: 0, p: [r3(p[0]), r3(p[1]), r3(p[2])], br: 1.3, bp: 150 * this.mods.block, rad: 2.4, k: 0, fxk: 'mini', own: g.me };
     g.sendPeer('expl', msg); g.doExplosion(msg);
     let hit = false;
-    g.eachTarget((id, tp, sc) => { if (Math.hypot(p[0] - tp.x, p[1] - (tp.y + 0.9 * sc), p[2] - tp.z) < 1.8) { g.hitTarget(id, 10 * this.dmgMul(), false, wid); hit = true; } });
+    g.eachTarget((id, tp, sc) => { if (Math.hypot(p[0] - tp.x, p[1] - (tp.y + 0.9 * sc), p[2] - tp.z) < 2.4) { g.hitTarget(id, 16 * this.dmgMul(), false, wid); hit = true; } });
     if (hit) g.hud.hitmarker(false);
   }
 

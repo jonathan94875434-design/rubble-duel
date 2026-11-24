@@ -32,6 +32,11 @@ ok('選卡時間比一般模式長', st.tl > 35000, String(st.tl));
 const kinds = await ev(() => __game.gs.p[0].ch.map((id) => document.querySelector(`.card[data-id="${id}"]`).className));
 ok('技能格是空的時候，保證至少有一張主動技能、也至少有一張被動', kinds.some((c) => c.includes(' act')) && kinds.some((c) => !c.includes(' act')), JSON.stringify(kinds));
 await page.screenshot({ path: OUT + '/r1-draft.png' });
+// 選卡動畫：整個畫面蓋上一層，卡片先背面朝上，一張一張翻開；還沒翻開就點 = 直接全部翻開、不會選到
+st = await ev(() => ({ draft: document.getElementById('lo-buff').classList.contains('draft'), fixed: getComputedStyle(document.getElementById('lo-buff')).position, backs: document.querySelectorAll('#lo-buff-cards .card .back').length }));
+ok('Roguelike 選卡是蓋住畫面的動畫，每張卡都有背面', st.draft && st.fixed === 'fixed' && st.backs === 3, JSON.stringify(st));
+await page.waitForFunction(() => document.querySelectorAll('#lo-buff-cards .card.up').length === 3, { timeout: 8000 }).catch(() => {});
+ok('三張卡會自己依序翻開', await ev(() => document.querySelectorAll('#lo-buff-cards .card.up').length === 3));
 
 // 還沒選卡不能按準備
 ok('還沒選卡時「準備」按不了', await ev(() => document.getElementById('btn-ready').disabled));
@@ -40,6 +45,8 @@ ok('還沒選卡時「準備」按不了', await ev(() => document.getElementByI
 const before = await ev(() => ({ ch: __game.gs.p[0].ch.slice(), $: __game.gs.p[0].$ }));
 await page.click('#btn-reroll'); await sleep(300);
 let after = await ev(() => ({ ch: __game.gs.p[0].ch.slice(), $: __game.gs.p[0].$, rr: __game.gs.p[0].rr }));
+const skip = await ev(() => { const el = document.querySelector('#lo-buff-cards .card:not(.up)'); if (!el) return 'all-up'; el.click(); return { up: document.querySelectorAll('#lo-buff-cards .card.up').length, ch: !!__game.gs.p[0].ch }; });
+ok('重抽後的新卡還沒翻開就點：全部直接翻開，不會選到卡', skip === 'all-up' || (skip.up === 3 && skip.ch), JSON.stringify(skip));
 ok('重抽：扣 $400、換一批完全不同的卡', after.$ === before.$ - 400 && after.rr === 1 && after.ch.every((id) => !before.ch.includes(id)), JSON.stringify([before, after]));
 await page.click('#btn-reroll'); await sleep(300);
 after = await ev(() => ({ $: __game.gs.p[0].$, rr: __game.gs.p[0].rr, dis: document.getElementById('btn-reroll').disabled }));
@@ -69,8 +76,8 @@ await sleep(400);
 // ── 對戰中的 HUD ──
 st = await ev(() => { const g = __game; return { slots: g.skills.slots, tiles: document.querySelectorAll('#skills .sk').length, buffs: document.querySelectorAll('#buffs .glyph').length, mhp: g.gs.p[0].mhp, opp: document.getElementById('oppbuild').children.length, aj: g.player.maxAirJumps, mods: g.combat.mods }; });
 ok('HUD 有兩個技能格、被動圖示、對手的異能', st.tiles === 2 && st.buffs === 13 && st.opp >= 2, JSON.stringify(st));
-ok('重裝巨人：最大生命 160', st.mhp === 160, String(st.mhp));
-ok('被動換算成本機倍率（二段跳、月球靴、射速、雙重射擊…）', st.aj === 1 && st.mods.grav === 0.5 && st.mods.rpm === 1.25 && st.mods.twin && st.mods.explosive && st.mods.ricochet && st.mods.head === 1.4, JSON.stringify(st.mods));
+ok('重裝巨人：最大生命 190', st.mhp === 190, String(st.mhp));
+ok('被動換算成本機倍率（三段跳、月球靴、射速、雙重射擊…）', st.aj === 2 && st.mods.grav === 0.5 && st.mods.rpm === 1.35 && st.mods.twin && st.mods.explosive && st.mods.ricochet && st.mods.head === 1.6, JSON.stringify(st.mods));
 
 // 把玩家和機器人擺到廣場中間的空地，面對面
 const place = (px, pz, bx, bz, yaw = Math.PI) => ev((px, pz, bx, bz, yaw) => { const g = __game, p = g.player; p.pos.set(px, 1.5, pz); p.vel.set(0, 0, 0); p.yaw = yaw; p.pitch = 0; p.unstick(); const b = g.bot.body; b.pos.set(bx, 1.5, bz); b.vel.set(0, 0, 0); b.unstick(); }, px, pz, bx, bz, yaw);
@@ -97,7 +104,7 @@ await place(SX, SZ, SX, SZ - 11, 0); await sleep(200);
 const metal0 = await ev(() => { window.__before = __game.world.types.slice(); return __game.world.types.reduce((n, t) => n + (t === 6 ? 1 : 0), 0); });
 used = await ev(() => __game.skills.use(1)); await sleep(200);
 st = await ev((m0) => { const g = __game, p = g.player; return { added: g.world.types.reduce((n, t) => n + (t === 6 ? 1 : 0), 0) - m0, hit: !!g.world.raycast(p.pos.x, p.pos.y + 1, p.pos.z, 0, 0, -1, 4), stuck: p.collides(p.pos.x, p.pos.y, p.pos.z), uses: g.skills.uses[1] }; }, metal0);
-ok('鋼牆：面前多出一道 7×5 的鋼板，不會把自己埋住，次數扣一', used && st.added === 35 && st.hit && !st.stuck && st.uses === 1, JSON.stringify(st));
+ok('鋼牆：面前多出一道 7×5 的鋼板，不會把自己埋住，次數扣一', used && st.added === 35 && st.hit && !st.stuck && st.uses === 2, JSON.stringify(st));
 await page.screenshot({ path: OUT + '/r3-wall.png' });
 // 把牆拆掉，後面的測試才不會被它擋住
 const unwall = () => ev(() => { const w = __game.world, b = window.__before; for (let i = 0; i < b.length; i++) if (w.types[i] !== b[i] && w.types[i] === 6) { const x = i % w.X, r = (i - x) / w.X, z = r % w.Z, y = (r - z) / w.Z; w.edit(x, y, z, 0); } });
@@ -129,7 +136,7 @@ await setSkills('stim', 'scan');
 await ev(() => { __game.authority.players[0].hp = 60; __game.authority.dirty = true; __game.authority.flush(); }); await sleep(150);
 used = await ev(() => __game.skills.use(0)); await sleep(250);
 st = await ev(() => ({ hp: __game.gs.p[0].hp, mul: __game.skills.speedMul(__game.gs.p[0]) }));
-ok('腎上腺素：回 40 血並加速', used && st.hp === 100 && st.mul > 1.2, JSON.stringify(st));
+ok('腎上腺素：回 60 血並加速', used && st.hp === 120 && st.mul > 1.3, JSON.stringify(st));
 used = await ev(() => __game.skills.use(1)); await sleep(200);
 st = await ev(() => ({ sil: __game.skills.sil.visible, seen: performance.now() - __game.mini.seen.t < 500 }));
 ok('透視脈衝：出現紅色人形、小地圖標出對手', used && st.sil && st.seen, JSON.stringify(st));
@@ -150,7 +157,7 @@ used = await ev(() => __game.skills.use(1)); await healBot(); await sleep(300);
 const hpB0 = await ev(() => __game.gs.p[1].hp + __game.gs.p[1].ar);
 await ev(() => { const g = __game; g.player.pitch = 0; g.player.yaw = 0; g.mouse.l = true; g.mouse.lp = true; }); await sleep(120); await ev(() => { __game.mouse.l = false; }); await sleep(300);
 st = await ev(() => ({ hp: __game.gs.p[1].hp + __game.gs.p[1].ar, domes: __game.skills.domes.length, sd: __game.skills.shieldDist(__game.player.pos.x, 2.6, __game.player.pos.z, 0, 0, -1) }));
-ok('能量護罩：子彈被擋在護罩表面（3 公尺左右），打不到外面的人', used && st.domes === 1 && st.hp === hpB0 && st.sd > 2.5 && st.sd < 3.4, JSON.stringify([hpB0, st]));
+ok('能量護罩：子彈被擋在護罩表面（3.8 公尺左右），打不到外面的人', used && st.domes === 1 && st.hp === hpB0 && st.sd > 3.2 && st.sd < 4.3, JSON.stringify([hpB0, st]));
 await page.screenshot({ path: OUT + '/r4-dome.png' });
 await ev(() => { __game.skills.domes.length = 0; });
 
@@ -191,6 +198,7 @@ await waitPhase('loadout', 20000); await sleep(400);
 st = await ev(() => ({ ch: __game.gs.p[0].ch, lu: __game.gs.p[0].lu, botCh: __game.gs.p[1].ch, botLu: __game.gs.p[1].lu, round: __game.gs.round }));
 ok('第 2 局大家再抽一次；上一局輸的機器人是輸家加碼', st.round === 2 && st.ch && st.ch.length === 3 && st.botLu === 1 && st.lu === 0, JSON.stringify(st));
 await ev(() => { const a = __game.authority, p = a.players[0]; p.choices = ['chrono', 'vital', 'tough']; a.dirty = true; a.flush(); }); await sleep(250);
+await page.waitForFunction(() => document.querySelector('.card.up[data-id="chrono"]'), { timeout: 10000 }).catch(() => {});   // 等翻牌動畫翻到這張
 await page.click('.card[data-id="chrono"]'); await sleep(200);
 st = await ev(() => ({ ask: document.querySelector('.card[data-id="chrono"]').classList.contains('ask'), ch: !!__game.gs.p[0].ch, btns: document.querySelectorAll('.card[data-id="chrono"] [data-slot]').length }));
 ok('技能格滿了：點卡片會先問要換掉哪一個', st.ask && st.ch && st.btns === 2, JSON.stringify(st));
@@ -211,17 +219,17 @@ st = await ev(() => ({ fz: __game.gs.p[1].fz, bu: __game.gs.p[1].bu, hp: __game.
 ok('冰凍彈＋燃燒彈：被打中的人緩速、著火', st.fz === 1 && st.bu === 1, JSON.stringify(st));
 await sleep(1700);
 const burned = await ev(() => __game.gs.p[1].hp + __game.gs.p[1].ar);
-ok('著火會持續扣血，緩速 1.2 秒後解除', burned < st.hp && (await ev(() => __game.gs.p[1].fz)) === 0, JSON.stringify([st.hp, burned]));
-// 荊棘：玩家被打，30% 彈回去
+ok('著火會持續扣血，緩速 1.6 秒後解除', burned < st.hp && (await ev(() => __game.gs.p[1].fz)) === 0, JSON.stringify([st.hp, burned]));
+// 荊棘：玩家被打，45% 彈回去
 await ev(() => { const a = __game.authority; a.players[1].hp = 100; a.players[1].armor = 0; a.players[0].hp = 100; a.players[0].armor = 0; a.players[1].burnT = 0; a.handle(1, 'hit', { r: a.round, d: 40, h: false, w: 'ar' }); }); await sleep(200);
 st = await ev(() => ({ me: __game.gs.p[0].hp, bot: __game.gs.p[1].hp }));
-ok('荊棘：受到 40 傷害，反彈 12 給對手', st.me === 60 && st.bot === 88, JSON.stringify(st));
-// 不死鳥：致命傷 → 回到 40 血、短暫無敵；同一局第二次就真的死
+ok('荊棘：受到 40 傷害，反彈 18 給對手', st.me === 60 && st.bot === 82, JSON.stringify(st));
+// 不死鳥：致命傷 → 回到 70 血、短暫無敵；同一局第二次就真的死
 await ev(() => { const a = __game.authority; a.handle(1, 'hit', { r: a.round, d: 400, h: false, w: 'knife' }); a.handle(1, 'hit', { r: a.round, d: 400, h: false, w: 'knife' }); }); await sleep(250);
 st = await ev(() => ({ hp: __game.gs.p[0].hp, al: __game.gs.p[0].al, phase: __game.phase }));
-ok('不死鳥：吃了刀沒死，回到 40 血，無敵期間再砍也沒事', st.al && st.hp === 40 && st.phase === 'playing', JSON.stringify(st));
+ok('不死鳥：吃了刀沒死，回到 70 血，無敵期間再砍也沒事', st.al && st.hp === 70 && st.phase === 'playing', JSON.stringify(st));
 // 黑洞：丟在機器人旁邊，會把它吸過去、吞方塊
-await sleep(1300);
+await sleep(2100);
 await ev(() => { const a = __game.authority; a.players[1].maxHp = 900; a.players[1].hp = 900; a.players[1].burnT = 0; a.dirty = true; a.flush(); });   // 血給多一點，免得被黑洞吸死之後這一局就結束了
 await place(SX, SZ, SX + 4, SZ - 9, 0); await sleep(300);
 await ev(() => { __game.skills.ready = [0, 0]; __game.player.yaw = 0; __game.player.pitch = -0.15; }); await sleep(150);
@@ -233,7 +241,7 @@ st = await ev((s1, bx0) => ({ dug: s1 - __game.world.types.reduce((n, t) => n + 
 ok('黑洞：吞掉方塊、把旁邊的對手往中心吸', used && st.dug > 20 && st.dx > 1.2 && st.holes === 1, JSON.stringify(st));
 await sleep(2200);
 st = await ev(() => ({ holes: __game.skills.holes.length, hp: __game.gs.p[1].hp, phase: __game.phase }));
-ok('黑洞 4 秒後消失；被吸在正中間的人總共受傷 60～130', st.holes === 0 && st.hp <= 840 && st.hp >= 770 && st.phase === 'playing', JSON.stringify(st));
+ok('黑洞 4.5 秒後消失；被吸在正中間的人總共受傷 60～260', st.holes === 0 && st.hp <= 840 && st.hp >= 640 && st.phase === 'playing', JSON.stringify(st));
 
 // ── 開槍相關的被動：爆裂彈、跳彈、雙重射擊（對著牆打）──
 await ev(() => { const g = __game; g.authority.players[0].buffs = ['explosive', 'ricochet', 'twin']; g.authority.dirty = true; g.authority.flush(); g.combat.mods = { ...g.combat.mods, explosive: true, ricochet: true, twin: true }; });
@@ -252,13 +260,59 @@ ok('雙重射擊：手槍一次射兩發', sent.pellets === 2, JSON.stringify(se
 ok('跳彈：打在鋼牆上會反彈', sent.e2 >= 1, JSON.stringify(sent));
 ok('爆裂彈：打到東西有小爆炸', sent.mini === 'mini', JSON.stringify(sent));
 
-// 投資客：下一局開始多 $1000
+// ── 新技能：衝刺、換位、時間暫停、流星雨、軌道砲追人 ──
+await ev(() => { const a = __game.authority; a.players[0].maxHp = 900; a.players[0].hp = 900; a.players[1].maxHp = 900; a.players[1].hp = 900; a.players[1].armor = 0; a.players[1].burnT = 0; a.players[0].buffs = []; a.dirty = true; a.flush(); __game.combat.mods = { ...__game.combat.mods, cd: 1, extraUses: 0, twin: false, explosive: false, ricochet: false }; });
+await setSkills('dash', 'swap');
+await arena();                                                              // 前面的測試立了鋼牆、炸了洞：重清場地
+await place(SX, SZ, SX + 8, SZ - 10, 0); await sleep(600);
+let q0 = await ev(() => [__game.player.pos.x, __game.player.pos.z]);
+used = await ev(() => __game.skills.use(0)); await sleep(1500);
+let q1 = await ev(() => [__game.player.pos.x, __game.player.pos.z]);
+ok('衝刺：一下子往前衝出一大段', used && q0[1] - q1[1] > 4, JSON.stringify([q0, q1]));
+await place(SX, SZ, SX, SZ - 9, 0); await sleep(1500);                     // 等對手的位置同步過來（畫面很慢的電腦上要久一點）
+q0 = await ev(() => ({ me: [__game.player.pos.x, __game.player.pos.z], bot: [__game.bot.body.pos.x, __game.bot.body.pos.z] }));
+used = await ev(() => __game.skills.use(1)); await sleep(300);
+q1 = await ev(() => ({ me: [__game.player.pos.x, __game.player.pos.z], bot: [__game.bot.body.pos.x, __game.bot.body.pos.z] }));
+const near = (a, b, d) => Math.hypot(a[0] - b[0], a[1] - b[1]) < d;
+ok('換位：跟看得到的對手交換位置', used && near(q1.me, q0.bot, 1.5) && near(q1.bot, q0.me, 1.5), JSON.stringify([q0, q1]));
+await setSkills('timestop', 'meteor');
+await place(SX, SZ, SX, SZ - 10, 0); await sleep(300);
+used = await ev(() => __game.skills.use(0)); await sleep(200);
+st = await ev(() => ({ bot: __game.bot.stopUntil - performance.now(), mine: __game.skills.rStopEnd - performance.now() }));
+ok('時間暫停：機器人完全停住 2.5 秒', used && st.bot > 1500 && st.mine > 1500, JSON.stringify(st));
+st = await ev(() => { const g = __game; g.skills.onNet({ r: g.round, id: 'timestop', d: 1.5 }); return { frozen: g.skills.frozen(), spd: g.skills.speedMul(g.gs.p[0]), look: g.skills.lookMul(), cast: g.skills.use(1) }; });
+ok('被時間暫停：不能動、不能轉頭、不能放技能', st.frozen && st.spd === 0 && st.look === 0 && !st.cast, JSON.stringify(st));
+await sleep(1700);
+const hpM0 = await ev(() => __game.gs.p[1].hp), solidM = await ev(() => __game.world.types.reduce((n, t) => n + (t ? 1 : 0), 0));
+await ev(() => { __game.player.yaw = 0; __game.player.pitch = -0.17; });
+used = await ev(() => __game.skills.use(1)); await sleep(4000);
+st = await ev((h0, s0) => ({ hp: __game.gs.p[1].hp, h0, dug: s0 - __game.world.types.reduce((n, t) => n + (t ? 1 : 0), 0), uses: __game.skills.uses[1] }), hpM0, solidM);
+ok('流星雨：隕石追著對手砸，打掉血、砸爛地形，每局一次', used && st.hp < st.h0 - 50 && st.dug > 20 && st.uses === 0, JSON.stringify(st));
+await page.screenshot({ path: OUT + '/r9-meteor.png' });
+await setSkills('orbital', 'stim');
+await place(SX, SZ, SX + 6, SZ - 10, 0); await sleep(300);
+await ev(() => { __game.player.yaw = 0; __game.player.pitch = -0.2; __game.bot.fire = () => {}; });
+used = await ev(() => __game.skills.use(0));
+const m0 = await ev(() => { const m = __game.skills.marks[0], b = __game.bot.body.pos; return m ? Math.hypot(m.x - b.x, m.z - b.z) : -1; }); await sleep(600);
+const m1 = await ev(() => { const m = __game.skills.marks[0], b = __game.bot.body.pos; return m ? Math.hypot(m.x - b.x, m.z - b.z) : -1; });
+ok('軌道砲：光柱會往附近的對手移過去', used && m0 > 0 && m1 >= 0 && m1 < m0 - 0.5, JSON.stringify([m0, m1]));
+await sleep(1200);
+// ── 新被動（裁判端）：急救包、求生本能；超頻 ──
+st = await ev(() => { const a = __game.authority, p = a.players[0]; p.maxHp = 100; p.hp = 100; p.armor = 0; p.inv = 0; p.buffs = ['medkit']; p.aid = false; a.handle(1, 'hit', { r: a.round, d: 70, h: false, w: 'ar' }); return p.hp; });
+ok('急救包：血掉到 35 以下自動補 50', st === 80, String(st));
+st = await ev(() => { const a = __game.authority, p = a.players[0]; p.hp = 30; p.buffs = ['survivor']; a.handle(1, 'hit', { r: a.round, d: 20, h: false, w: 'ar' }); return p.hp; });
+ok('求生本能：血少的時候受到的傷害 −40%', Math.abs(st - 18) < 0.01, String(st));
+await ev(() => { const a = __game.authority, p = a.players[0]; p.maxHp = 900; p.hp = 900; p.buffs = []; a.dirty = true; a.flush(); });
+st = await ev(() => { const g = __game; g.combat.mods = { ...g.combat.mods, cd: 0.6, extraUses: 1 }; g.skills.setup(['wall', 'stim']); const u = g.skills.uses[0]; g.skills.use(1); const left = g.skills.hudState(performance.now()).slots[1].left; g.combat.mods = { ...g.combat.mods, cd: 1, extraUses: 0 }; return { u, left }; });
+ok('超頻：冷卻 −40%、有次數的技能多一次', st.u === 4 && st.left > 7.5 && st.left < 9, JSON.stringify(st));
+
+// 投資客：下一局開始多 $1500
 await healBot();
 const money0 = await ev(() => { const a = __game.authority; a.players[0].buffs.push('investor'); return a.players[0].money; });
 await ev(() => { const a = __game.authority; a.handle(0, 'hit', { r: a.round, d: 400, h: false, w: 'knife' }); });
 await waitPhase('loadout', 20000); await sleep(300);
 st = await ev(() => ({ $: __game.gs.p[0].$, round: __game.gs.round }));
-ok('投資客：贏一局 $2000 之外，下一局開始再多 $1000', st.$ === Math.min(12000, money0 + 2000 + 1000), JSON.stringify([money0, st]));
+ok('投資客：贏一局 $2000 之外，下一局開始再多 $1500', st.$ === Math.min(12000, money0 + 2000 + 1500), JSON.stringify([money0, st]));
 
 // 沒選卡就讓時間跑完：自動拿一張，不會擠掉現有的技能
 await ev(() => { const a = __game.authority, p = a.players[0]; p.skills = ['blink', 'wall']; p.choices = ['orbital', 'vital', 'cloak']; a.tEnd = Date.now() + 300; a.dirty = true; a.flush(); });
@@ -273,7 +327,7 @@ const snd = await ev(() => {
   for (const k of ['blink', 'grapple', 'jet', 'wall', 'stim', 'scan', 'cloak', 'dome', 'chrono', 'mark', 'beam', 'hole', 'phoenix']) {
     try { s.skill(k, 5, 0.2); const b = s.bufs.get('skill:' + k), d = b.getChannelData(0); let m = 0; for (let i = 0; i < d.length; i++) { if (!Number.isFinite(d[i])) { bad.push(k + ':nan'); break; } m = Math.max(m, Math.abs(d[i])); } if (m < 0.2 || m > 1) bad.push(k + ':peak' + m.toFixed(2)); } catch (e) { bad.push(k + ':' + e.message); }
   }
-  for (const r of ['c', 'r', 'l']) { try { s.card(r); } catch (e) { bad.push('card:' + e.message); } }
+  for (const r of ['c', 'r', 'l', 'm']) { try { s.card(r); } catch (e) { bad.push('card:' + e.message); } }
   try { s.loop('void', 'void', 0.5, 0); s.loop('void', 'void', 0); } catch (e) { bad.push('void:' + e.message); }
   return bad.join(', ') || 'ok';
 });

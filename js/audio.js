@@ -479,10 +479,12 @@ const SKILL = {
 };
 // 選卡：稀有度越高，音越多、越亮
 function cardBuf(d, r) {
-  const notes = r === 'l' ? [523.25, 659.25, 783.99, 1046.5, 1318.5] : r === 'r' ? [523.25, 659.25, 783.99] : [587.33, 880], last = notes[notes.length - 1];
+  // 神話：多一個八度往上爬，底下再墊一聲低沉的轟
+  const notes = r === 'm' ? [392, 523.25, 659.25, 783.99, 1046.5, 1318.5, 1567.98] : r === 'l' ? [523.25, 659.25, 783.99, 1046.5, 1318.5] : r === 'r' ? [523.25, 659.25, 783.99] : [587.33, 880], last = notes[notes.length - 1];
   const x = d.z(notes.length * 0.07 + 0.8);
   notes.forEach((f, i) => { d.add(x, d.tone(0.6, f, f, 0.16, [[1, 1], [2, 0.3], [3, 0.12]], 0.004), 0.6, i * 0.07); });
   d.add(x, d.ring(0.5, [[last * 2, 0.12, 1], [last * 3, 0.07, 0.5]]), r === 'c' ? 0.12 : 0.3, (notes.length - 1) * 0.07);
+  if (r === 'm') d.add(x, d.dec(d.sine(0.9, 90, 45, 0.3), 0.5, 0.01), 0.7);
   return d.fin(x, 0.85, 0.02);
 }
 
@@ -792,7 +794,7 @@ export class Sfx {
     if (!this.ctx || !SKILL[kind]) return;
     this._play(this._b('skill:' + kind, SKILL[kind]), { g: 0.5 * att(dist, 0.05, 0.12), pan, rate: rr(0.97, 1.03), send: 0.2, lp: dist > 8 ? 1500 + 14000 * Math.exp(-dist / 18) : 0 });
   }
-  card(r) { const k = r === 'l' || r === 'r' ? r : 'c'; this._one('card:' + k, (d) => cardBuf(d, k), { g: 0.24, ui: true }); }
+  card(r) { const k = r === 'm' || r === 'l' || r === 'r' ? r : 'c'; this._one('card:' + k, (d) => cardBuf(d, k), { g: 0.24, ui: true }); }
   // 按住說話：on = 按下（上揚的喀聲）、放開（下降＋雜訊）
   voiceBlip(on) { this._one(on ? 'voice:1' : 'voice:0', (d) => voiceBuf(d, on), { g: 0.14, ui: true }); }
   buy() { this._one('buy', buyBuf, { g: 0.18, ui: true }); }

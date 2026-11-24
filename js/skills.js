@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { BS } from './config.js';
-import { CARDS, rage } from './cards.js';
+import { CARDS, SK, BERSERK, rage } from './cards.js';
 import { B } from './world.js';
 import { clamp, r3 } from './util.js';
 
@@ -43,8 +43,9 @@ export class Skills {
     this.cloakEnd = 0; this.rCloakEnd = 0;        // 我隱身到何時／對手隱身到何時
     this.scanEnd = 0; this.scannedEnd = 0;        // 我在透視對手／我被透視
     this.slowEnd = 0; this.rSlowEnd = 0;          // 我被時間凝結／對手被凝結
-    this.stimEnd = 0; this.inHole = false; this.radarAt = 0; this.hid = false;
-    this.domes = []; this.holes = []; this.marks = []; this.jets = [];
+    this.stopEnd = 0; this.rStopEnd = 0;          // 我被時間暫停／對手被暫停
+    this.stimEnd = 0; this.inHole = false; this.radarAt = 0; this.markAt = 0; this.hid = false; this.btUsed = false;
+    this.domes = []; this.holes = []; this.marks = []; this.jets = []; this.rains = [];
     this.myWall = new Set();                      // 這一局我立的鋼牆方塊（對手說「這格蓋在我身上」時，只有這些可以撤掉）
   }
 
@@ -78,7 +79,7 @@ export class Skills {
       return { grp, core, halo, disk };
     });
     // 軌道砲：瞄準用的細紅光 + 地上的圈；打下來時是一根很粗的白色光柱
-    this.markM = [0, 1, 2].map(() => { const o = { beam: add(new THREE.Mesh(cyl, glow(0xff3a2a))), ring: add(new THREE.Mesh(ringG, glow(0xff4a3a))), core: add(new THREE.Mesh(cyl, glow(0xffffff))) }; o.core.material.color.setRGB(7, 9, 11); return o; });
+    this.markM = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(() => { const o = { beam: add(new THREE.Mesh(cyl, glow(0xff3a2a))), ring: add(new THREE.Mesh(ringG, glow(0xff4a3a))), core: add(new THREE.Mesh(cyl, glow(0xffffff))) }; o.core.material.color.setRGB(7, 9, 11); return o; });
     // 貼地往外擴的光圈（衝擊波、重生、黑洞爆開）
     this.novas = [0, 1, 2, 3].map(() => ({ m: add(new THREE.Mesh(ringG, glow(0xffffff))), life: 0, max: 1, r: 1 }));
     this.nnext = 0;
@@ -91,7 +92,8 @@ export class Skills {
   setup(skills, uses) {
     this.clear();
     this.slots = [0, 1].map((i) => (skills && CARDS[skills[i]] && CARDS[skills[i]].k === 'a' ? skills[i] : null));
-    this.ready = [0, 0]; this.uses = this.slots.map((id, i) => (uses && uses[i] !== undefined ? uses[i] : (id && CARDS[id].uses) || 0));
+    const extra = this.g.combat.mods.extraUses || 0;   // 超頻：有次數的技能每局多一次
+    this.ready = [0, 0]; this.uses = this.slots.map((id, i) => (uses && uses[i] !== undefined ? uses[i] : id && CARDS[id].uses ? CARDS[id].uses + extra : 0));
   }
   // 只補次數，不清掉場上的東西（守據點每一波休息時）
   refill(i, n) { if (this.slots[i]) { this.uses[i] = n; this.ready[i] = 0; } }
@@ -110,14 +112,15 @@ export class Skills {
   // ───────── 施放 ─────────
   use(i) {
     const g = this.g, id = this.slots[i], now = performance.now();
-    if (!id || (g.phase !== 'playing' && g.phase !== 'horde') || !g.meAlive() || g.kc || g.emote) return false;
+    if (!id || (g.phase !== 'playing' && g.phase !== 'horde') || !g.meAlive() || g.kc || g.emote || this.frozen()) return false;
     const c = CARDS[id];
     if (now < this.ready[i] || (c.uses && this.uses[i] <= 0)) { g.sfx.deny(); return false; }
     if (!this['_' + id](now)) { g.sfx.deny(); return false; }
-    this.ready[i] = now + c.cd * 1000;
+    this.ready[i] = now + c.cd * 1000 * (this.g.combat.mods.cd || 1);
     if (c.uses) this.uses[i]--;
     return true;
   }
+  frozen() { return performance.now() < this.stopEnd; }
   _send(d) { this.g.sendPeer('sk', { r: this.g.round, ...d }); }
   _aim() { const e = this.g.camera.matrixWorld.elements; return { ox: e[12], oy: e[13], oz: e[14], dx: -e[8], dy: -e[9], dz: -e[10], rx: e[0], ry: e[1], rz: e[2] }; }
   _snd(kind, x, z) { const g = this.g; g.sfx.skill(kind, Math.hypot(x - g.camera.position.x, z - g.camera.position.z), g.panOf(x, z)); }
@@ -153,12 +156,12 @@ export class Skills {
 
   // 鉤索：打到東西才算數，然後每一幀把速度設成「朝鉤點衝」
   _grapple(now) {
-    const g = this.g, a = this._aim(), h = g.world.raycast(a.ox, a.oy, a.oz, a.dx, a.dy, a.dz, 28);
+    const g = this.g, a = this._aim(), h = g.world.raycast(a.ox, a.oy, a.oz, a.dx, a.dy, a.dz, SK.grapple.range);
     if (!h || h.oob || h.dist < 1.5) return false;
     const x = r3(a.ox + a.dx * h.dist), y = r3(a.oy + a.dy * h.dist), z = r3(a.oz + a.dz * h.dist);
-    this.grap = { x, y, z, t0: now, end: now + 1500, stall: 0, lx: g.player.pos.x, ly: g.player.pos.y, lz: g.player.pos.z };
+    this.grap = { x, y, z, t0: now, end: now + SK.grapple.time * 1000, stall: 0, lx: g.player.pos.x, ly: g.player.pos.y, lz: g.player.pos.z };
     g.sfx.skill('grapple'); g.fx.impact(x, y, z, h.nx, h.ny, h.nz, h.type, 5);
-    this._send({ id: 'grapple', p: [x, y, z], d: 1.5 });
+    this._send({ id: 'grapple', p: [x, y, z], d: SK.grapple.time });
     return true;
   }
   _dropGrap(fling) {
@@ -171,11 +174,25 @@ export class Skills {
   // 噴射背包
   _jet(now) {
     const g = this.g, p = g.player, a = this._aim(), hl = Math.hypot(a.dx, a.dz) || 1;
-    p.vel.y = 15; p.vel.x += (a.dx / hl) * 6; p.vel.z += (a.dz / hl) * 6; p.onGround = false;
-    const hs = Math.hypot(p.vel.x, p.vel.z); if (hs > 13) { p.vel.x *= 13 / hs; p.vel.z *= 13 / hs; }
+    const J = SK.jet;
+    p.vel.y = J.up; p.vel.x += (a.dx / hl) * J.fwd; p.vel.z += (a.dz / hl) * J.fwd; p.onGround = false;
+    const hs = Math.hypot(p.vel.x, p.vel.z); if (hs > J.cap) { p.vel.x *= J.cap / hs; p.vel.z *= J.cap / hs; }
     this.jets.push({ me: true, end: now + 450 });
     g.sfx.skill('jet'); g.shake = Math.min(1, g.shake + 0.3);
     this._send({ id: 'jet' });
+    return true;
+  }
+
+  // 衝刺：往按著的方向（沒按就往前）水平衝出去；在空中不會掉速度，所以會滑一大段
+  _dash(now) {
+    const g = this.g, p = g.player, f = (g.held('fwd') ? 1 : 0) - (g.held('back') ? 1 : 0), r = (g.held('right') ? 1 : 0) - (g.held('left') ? 1 : 0);
+    const sy = Math.sin(p.yaw), cy = Math.cos(p.yaw);
+    let dx = -sy * (f || (r ? 0 : 1)) + cy * r, dz = -cy * (f || (r ? 0 : 1)) - sy * r;
+    const l = Math.hypot(dx, dz) || 1; dx /= l; dz /= l;
+    p.vel.x = dx * SK.dash.speed; p.vel.z = dz * SK.dash.speed; p.vel.y = Math.max(p.vel.y, SK.dash.up); p.onGround = false;
+    this.jets.push({ me: true, end: now + 200, dash: true });
+    g.sfx.skill('jet'); g.shake = Math.min(1, g.shake + 0.2);
+    this._send({ id: 'dash' });
     return true;
   }
 
@@ -233,7 +250,7 @@ export class Skills {
   _stim(now) {
     const g = this.g, p = g.player.pos;
     g.auth('skill', { r: g.round, id: 'stim' });
-    this.stimEnd = now + 3000;
+    this.stimEnd = now + SK.stim.time * 1000;
     g.sfx.skill('stim'); this._sparkle(p.x, p.y + 1, p.z, 1.2, 6, 2);
     this._send({ id: 'stim' });
     return true;
@@ -244,9 +261,9 @@ export class Skills {
   }
 
   _scan(now) {
-    this.scanEnd = now + 4000;
+    this.scanEnd = now + SK.scan.time * 1000;
     this.g.sfx.skill('scan');
-    this._send({ id: 'scan', d: 4 });
+    this._send({ id: 'scan', d: SK.scan.time });
     return true;
   }
 
@@ -266,9 +283,9 @@ export class Skills {
   _puff(x, y, z) { const fx = this.g.fx; for (let i = 0; i < 12; i++) fx.glowP.spawn(x + (Math.random() - 0.5) * 0.6, y + (Math.random() - 0.5) * 1.4, z + (Math.random() - 0.5) * 0.6, (Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2, 0.2, 0.02, 0.4, 2.5, 3.5, 4.5, 0.6, 0, 2); }
 
   _dome(now) {
-    const p = this.g.player.pos, d = { x: r3(p.x), y: r3(p.y + 0.3), z: r3(p.z), r: 3.2, t0: now, end: now + 5500, pulse: 0 };
+    const p = this.g.player.pos, d = { x: r3(p.x), y: r3(p.y + 0.3), z: r3(p.z), r: SK.dome.r, t0: now, end: now + SK.dome.time * 1000, pulse: 0 };
     this._addDome(d);
-    this._send({ id: 'dome', p: [d.x, d.y, d.z], d: 5.5 });
+    this._send({ id: 'dome', p: [d.x, d.y, d.z], d: SK.dome.time, rr: SK.dome.r });
     return true;
   }
   _addDome(d) { if (this.domes.length >= this.domeM.length) this.domes.shift(); this.domes.push(d); this._snd('dome', d.x, d.z); }
@@ -294,21 +311,55 @@ export class Skills {
 
   // 震地衝擊波：爆炸中心放在腰的高度，腳下的地板大致留著，身邊的掩體會碎
   _shock() {
-    const g = this.g, p = g.player.pos, rp = g.remote.pos;
-    const msg = { r: g.round, pid: 0, p: [r3(p.x), r3(p.y + 1.0), r3(p.z)], br: 2.3, bp: 270, rad: 6.5, k: 15, fxk: 'shock', own: g.me };
+    const g = this.g, p = g.player.pos, rp = g.remote.pos, S = SK.shock;
+    const msg = { r: g.round, pid: 0, p: [r3(p.x), r3(p.y + 1.0), r3(p.z)], br: 2.6, bp: 340, rad: S.rad, k: S.k, fxk: 'shock', own: g.me };
     g.sendPeer('expl', msg); g.doExplosion(msg);
     const d = Math.hypot(rp.x - p.x, rp.y - p.y, rp.z - p.z);
-    if (g.remote.alive && d < 6.5) this._hit(15 + 30 * (1 - d / 6.5), 'shock');
+    if (g.remote.alive && d < S.rad) this._hit(S.min + (S.max - S.min) * (1 - d / S.rad), 'shock');
     return true;
   }
   _hit(d, w) { const g = this.g; g.auth('hit', { r: g.round, d, h: false, w }); g.hud.hitmarker(false); g.sfx.hit(false); g.remote.hitFlash(); }
 
   _chrono(now) {
     const g = this.g, rp = g.remote.pos;
-    this.rSlowEnd = now + 3000;
+    this.rSlowEnd = now + SK.chrono.time * 1000;
     g.sfx.skill('chrono'); this.nova(rp.x, rp.y + 0.1, rp.z, 0x59b8ff, 3, 0.6);
-    this._send({ id: 'chrono', d: 3 });
+    this._send({ id: 'chrono', d: SK.chrono.time });
     return true;
+  }
+
+  // 時間暫停（神話）：對手完全不能動
+  _timestop(now) {
+    const g = this.g, rp = g.remote.pos;
+    if (!g.remote.alive) return false;
+    this.rStopEnd = now + SK.timestop.time * 1000;
+    g.sfx.skill('chrono'); this.nova(rp.x, rp.y + 0.1, rp.z, 0xffffff, 5, 0.8); this.nova(rp.x, rp.y + 1, rp.z, 0x59b8ff, 3, 1.2);
+    this._send({ id: 'timestop', d: SK.timestop.time });
+    return true;
+  }
+
+  // 換位：跟看得到的對手瞬間交換位置
+  _swap() {
+    const g = this.g, p = g.player, rm = g.remote;
+    if (!rm.alive) return false;
+    const ex = p.pos.x, ey = p.pos.y + 1.4, ez = p.pos.z;
+    let dx = rm.pos.x - ex, dy = rm.pos.y + 1.2 - ey, dz = rm.pos.z - ez;
+    const dist = Math.hypot(dx, dy, dz);
+    if (dist > SK.swap.range || dist < 0.5) return false;
+    dx /= dist; dy /= dist; dz /= dist;
+    if (g.world.raycast(ex, ey, ez, dx, dy, dz, dist - 0.3)) return false;          // 中間隔著牆：看不到就不能換
+    if (p.collides(rm.pos.x, rm.pos.y, rm.pos.z)) return false;
+    const a = [r3(p.pos.x), r3(p.pos.y), r3(p.pos.z)], b = [r3(rm.pos.x), r3(rm.pos.y), r3(rm.pos.z)];
+    p.pos.set(b[0], b[1], b[2]); p.prev.copy(p.pos); p.rpos.copy(p.pos); p.vel.set(0, 0, 0); p.stepSmooth = 0;
+    rm.clearBuffer(); rm.pos.set(a[0], a[1], a[2]); if (rm.lastPos) rm.lastPos.copy(rm.pos);
+    this._swapFx(a, b); g.sfx.skill('blink');
+    this._send({ id: 'swap', a, b });
+    return true;
+  }
+  _swapFx(a, b) {
+    const up = (q) => [q[0], q[1] + 0.9, q[2]];
+    this._blinkFx(up(a), up(b)); this._blinkFx(up(b), up(a));
+    this.nova(a[0], a[1] + 0.1, a[2], 0x7fe0ff, 2.5, 0.5); this.nova(b[0], b[1] + 0.1, b[2], 0x7fe0ff, 2.5, 0.5);
   }
 
   // 軌道砲：先標記，時間到由施放的人引爆
@@ -316,23 +367,61 @@ export class Skills {
     const g = this.g, a = this._aim(), h = g.world.raycast(a.ox, a.oy, a.oz, a.dx, a.dy, a.dz, 90);
     if (!h || h.oob) return false;
     const p = [r3(a.ox + a.dx * h.dist + h.nx * 0.05), r3(a.oy + a.dy * h.dist + h.ny * 0.05), r3(a.oz + a.dz * h.dist + h.nz * 0.05)];
-    this._addMark({ x: p[0], y: p[1], z: p[2], t0: now, at: now + 1700, mine: true, done: false });
-    this._send({ id: 'orbital', p, d: 1.7 });
+    this._addMark({ x: p[0], y: p[1], z: p[2], t0: now, at: now + SK.orbital.delay * 1000, mine: true, done: false, track: true, s: 1 });
+    this._send({ id: 'orbital', p, d: SK.orbital.delay });
     return true;
+  }
+
+  // 流星雨（神話）：瞄準的地方陸續降下隕石，每一顆落點都對準當時附近的對手
+  _meteor(now) {
+    const g = this.g, a = this._aim(), h = g.world.raycast(a.ox, a.oy, a.oz, a.dx, a.dy, a.dz, 90);
+    if (!h || h.oob) return false;
+    const p = [a.ox + a.dx * h.dist, a.oy + a.dy * h.dist + 0.05, a.oz + a.dz * h.dist];
+    this.rains.push({ x: p[0], y: p[1], z: p[2], next: now, n: SK.meteor.n });
+    this._snd('mark', p[0], p[2]);
+    return true;
+  }
+  _rainTick(now) {
+    const g = this.g, M = SK.meteor, rm = g.remote;
+    for (let i = this.rains.length - 1; i >= 0; i--) {
+      const r = this.rains[i];
+      while (r.n > 0 && now >= r.next) {
+        r.n--; r.next += M.gap * 1000;
+        let cx = r.x, cz = r.z, cy = r.y;
+        if (rm.alive && Math.hypot(rm.pos.x - r.x, rm.pos.z - r.z) < M.trackR) { cx = rm.pos.x; cz = rm.pos.z; cy = rm.pos.y; }
+        const an = Math.random() * 6.283, rr = Math.random() * M.spread * (r.n === M.n - 1 ? 0.3 : 1);
+        const x = cx + Math.cos(an) * rr, z = cz + Math.sin(an) * rr;
+        const down = g.world.raycast(x, cy + 6, z, 0, -1, 0, 16), y = down && !down.oob ? cy + 6 - down.dist + 0.05 : cy + 0.05;
+        const p = [r3(x), r3(y), r3(z)];
+        this._addMark({ x: p[0], y: p[1], z: p[2], t0: now, at: now + M.delay * 1000, mine: true, done: false, s: 0.55, meteor: true });
+        this._send({ id: 'orbital', p, d: M.delay, k: 'm' });
+      }
+      if (r.n <= 0) this.rains.splice(i, 1);
+    }
   }
   _addMark(m) { if (this.marks.length >= this.markM.length) this.marks.shift(); this.marks.push(m); this._snd('mark', m.x, m.z); }
   // 光柱打下來（只有施放的人會跑這裡）：往下連炸三層，把地面鑽穿；光柱範圍內的人吃滿傷害，旁邊的遞減
   _strike(m) {
     const g = this.g;
+    if (m.meteor) {                                          // 流星雨的一顆：一次比較小的爆炸
+      const M = SK.meteor, msg = { r: g.round, pid: 0, p: [m.x, r3(m.y + 0.3), m.z], br: 1.9, bp: 700, rad: 4, k: 10, own: g.me };
+      g.sendPeer('expl', msg); g.doExplosion(msg);
+      const f = (pos) => { const d = Math.hypot(pos.x - m.x, pos.y + 0.9 - (m.y + 0.6), pos.z - m.z); return d < M.full ? 1 : Math.max(0, 1 - (d - M.full) / M.fade); };
+      const fr = f(g.remote.pos), fm = f(g.player.pos);
+      if (g.remote.alive && fr > 0) this._hit(M.dmg * fr, 'meteor');
+      if (g.meAlive() && fm > 0) g.auth('self', { r: g.round, d: M.dmg * fm * 0.4, w: 'meteor' });
+      return;
+    }
+    const O = SK.orbital;
     for (let k = 0; k < 3; k++) {
       const msg = { r: g.round, pid: 0, p: [m.x, r3(m.y + 0.3 - k * 1.5), m.z], br: 2.7, bp: 1300, rad: k ? 0 : 6.5, k: k ? 0 : 14, own: g.me };
       if (k) msg.kind = 'dig'; else msg.fxk = 'orbital';
       g.sendPeer('expl', msg); g.doExplosion(msg);
     }
-    const f = (pos) => { const cy = clamp(pos.y + 0.9, m.y - 3.5, m.y + 40), d = Math.hypot(pos.x - m.x, pos.y + 0.9 - cy, pos.z - m.z); return d < 2 ? 1 : Math.max(0, 1 - (d - 2) / 4.5); };
+    const f = (pos) => { const cy = clamp(pos.y + 0.9, m.y - 3.5, m.y + 40), d = Math.hypot(pos.x - m.x, pos.y + 0.9 - cy, pos.z - m.z); return d < O.full ? 1 : Math.max(0, 1 - (d - O.full) / O.fade); };
     const fr = f(g.remote.pos), fm = f(g.player.pos);
-    if (g.remote.alive && fr > 0) this._hit(150 * fr, 'orbital');
-    if (g.meAlive() && fm > 0) g.auth('self', { r: g.round, d: 150 * fm * 0.6, w: 'orbital' });
+    if (g.remote.alive && fr > 0) this._hit(O.dmg * fr, 'orbital');
+    if (g.meAlive() && fm > 0) g.auth('self', { r: g.round, d: O.dmg * fm * 0.6, w: 'orbital' });
   }
 
   // 黑洞
@@ -340,8 +429,8 @@ export class Skills {
     const g = this.g, a = this._aim(), h = g.world.raycast(a.ox, a.oy, a.oz, a.dx, a.dy, a.dz, 24), t = h ? Math.max(1.5, h.dist - 1.1) : 24;
     const p = [r3(a.ox + a.dx * t), r3(a.oy + a.dy * t), r3(a.oz + a.dz * t)];
     g.fx.tracer(_a.set(a.ox + a.rx * 0.2, a.oy - 0.2, a.oz + a.rz * 0.2), _b.set(p[0], p[1], p[2]), 0xb060ff, 0.1, 0.3);
-    this._addHole({ x: p[0], y: p[1], z: p[2], t0: now, end: now + 4000, mine: true, tick: now + 300, done: false });
-    this._send({ id: 'blackhole', p, d: 4 });
+    this._addHole({ x: p[0], y: p[1], z: p[2], t0: now, end: now + SK.blackhole.time * 1000, mine: true, tick: now + 300, done: false });
+    this._send({ id: 'blackhole', p, d: SK.blackhole.time });
     return true;
   }
   _addHole(h) { if (this.holes.length >= this.holeM.length) this.holes.shift(); this.holes.push(h); this._snd('hole', h.x, h.z); }
@@ -360,18 +449,36 @@ export class Skills {
         else if (vec3(d.p)) { this.rgrap = { x: d.p[0], y: d.p[1], z: d.p[2], end: now + dur(0.2, 2) }; this._snd('grapple', rp.x, rp.z); }
         break;
       case 'jet': this.jets.push({ me: false, end: now + 450 }); this._snd('jet', rp.x, rp.z); break;
+      case 'dash': this.jets.push({ me: false, end: now + 200, dash: true }); this._snd('jet', rp.x, rp.z); break;
       case 'wall': if (Array.isArray(d.c) && d.c.length <= 40) this._placeWall(d.c, false, d.b === B.SANDBAG ? B.SANDBAG : B.METAL); break;
       case 'unwall': if (Array.isArray(d.c) && d.c.length <= 40) this._unwall(d.c); break;
       case 'stim': this._sparkle(rp.x, rp.y + 1, rp.z, 1.2, 6, 2); this._snd('stim', rp.x, rp.z); break;
       case 'scan': this.scannedEnd = now + dur(1, 6); g.sfx.skill('scan'); g.hud.feed('對手用透視脈衝掃到你了'); break;
       case 'cloak': this.rCloakEnd = d.d > 0 ? now + dur(0.5, 8) : 0; this._puff(rp.x, rp.y + 1, rp.z); this._snd('cloak', rp.x, rp.z); break;
-      case 'dome': if (vec3(d.p)) this._addDome({ x: d.p[0], y: d.p[1], z: d.p[2], r: 3.2, t0: now, end: now + dur(1, 8), pulse: 0 }); break;
+      case 'dome': if (vec3(d.p)) this._addDome({ x: d.p[0], y: d.p[1], z: d.p[2], r: clamp(+d.rr || 3.2, 2, 4.5), t0: now, end: now + dur(1, 8), pulse: 0 }); break;
       case 'chrono': {
         const p = g.player.pos;
-        this.slowEnd = now + dur(0.5, 4); g.sfx.skill('chrono'); g.hud.banner('時間凝結', '你的時間變慢了', 1300); this.nova(p.x, p.y + 0.1, p.z, 0x59b8ff, 3, 0.6);
+        this.slowEnd = now + dur(0.5, 6); g.sfx.skill('chrono'); g.hud.banner('時間凝結', '你的時間變慢了', 1300); this.nova(p.x, p.y + 0.1, p.z, 0x59b8ff, 3, 0.6);
         break;
       }
-      case 'orbital': if (vec3(d.p)) this._addMark({ x: d.p[0], y: d.p[1], z: d.p[2], t0: now, at: now + dur(0.8, 3), mine: false, done: false }); break;
+      case 'timestop': {
+        const p = g.player.pos;
+        this.stopEnd = now + dur(0.5, 3.5); g.sfx.skill('chrono'); g.hud.banner('時間暫停', '你完全動不了', 1300);
+        this.nova(p.x, p.y + 0.1, p.z, 0xffffff, 5, 0.8); this.nova(p.x, p.y + 1, p.z, 0x59b8ff, 3, 1.2);
+        if (this.grap) this._dropGrap(false);
+        break;
+      }
+      case 'swap': {
+        if (!vec3(d.a) || !vec3(d.b) || !g.meAlive()) break;
+        const p = g.player;
+        if (p.collides(d.a[0], d.a[1], d.a[2])) break;                          // 那個位置現在被擋住了（地形剛好被打爛之類）：不換
+        p.pos.set(d.a[0], d.a[1], d.a[2]); p.prev.copy(p.pos); p.rpos.copy(p.pos); p.vel.set(0, 0, 0); p.stepSmooth = 0;
+        g.remote.clearBuffer(); g.remote.pos.set(d.b[0], d.b[1], d.b[2]); if (g.remote.lastPos) g.remote.lastPos.copy(g.remote.pos);
+        if (this.grap) this._dropGrap(false);
+        this._swapFx(d.a, d.b); g.sfx.skill('blink'); g.hud.banner('換位', '對手跟你交換了位置', 1100);
+        break;
+      }
+      case 'orbital': if (vec3(d.p)) this._addMark({ x: d.p[0], y: d.p[1], z: d.p[2], t0: now, at: now + dur(0.5, 3), mine: false, done: false, track: d.k !== 'm', s: d.k === 'm' ? 0.55 : 1, meteor: d.k === 'm' }); break;
       case 'blackhole': if (vec3(d.p)) this._addHole({ x: d.p[0], y: d.p[1], z: d.p[2], t0: now, end: now + dur(1, 6), mine: false, tick: 0, done: false }); break;
     }
   }
@@ -386,6 +493,14 @@ export class Skills {
     if (mine) g.hud.banner('不死鳥', '浴火重生！短暫無敵', 1400); else g.hud.feed(`${g.gs ? g.gs.p[1 - g.me].n : '對手'} 浴火重生了`);
   }
 
+  // 急救包（裁判通知，雙方都會收到）
+  medkit(who) {
+    const g = this.g, mine = who === g.me, p = mine ? g.player.pos : g.remote.pos;
+    this._sparkle(p.x, p.y + 1, p.z, 1.5, 6, 2.5); this.nova(p.x, p.y + 0.1, p.z, 0x6aff9a, 2.5, 0.5);
+    this._snd('stim', p.x, p.z);
+    if (mine) g.hud.banner('急救包', '自動回復 50 生命', 1100);
+  }
+
   nova(x, y, z, color, r, life) {
     const n = this.novas[this.nnext]; this.nnext = (this.nnext + 1) % this.novas.length;
     n.life = n.max = life; n.r = r; n.m.position.set(x, y, z); n.m.material.color.setHex(color).multiplyScalar(2.2); n.m.visible = true;
@@ -396,6 +511,7 @@ export class Skills {
     const g = this.g, p = g.player;
     this.inHole = false;
     if (!g.meAlive() || g.phase !== 'playing') { if (this.grap) this._dropGrap(false); return; }
+    if (this.frozen()) { p.vel.x = 0; p.vel.z = 0; if (p.vel.y > 0) p.vel.y = 0; }      // 被時間暫停：釘在原地（還是會往下掉）
     const gp = this.grap;
     if (gp) {
       _v.set(gp.x - p.pos.x, gp.y - (p.pos.y + 1.0), gp.z - p.pos.z);
@@ -403,30 +519,32 @@ export class Skills {
       gp.stall = moved < 4 * dt ? gp.stall + dt : 0; gp.lx = p.pos.x; gp.ly = p.pos.y; gp.lz = p.pos.z;
       if (g.held('jump') && now - gp.t0 > 180) this._dropGrap(true);
       else if (d < 1.5 || now > gp.end || gp.stall > 0.3) this._dropGrap(false);
-      else { p.vel.copy(_v).multiplyScalar(26 / d); p.onGround = false; }
+      else { p.vel.copy(_v).multiplyScalar(SK.grapple.pull / d); p.onGround = false; }
     }
     // 對手的黑洞：把我吸過去，而且跑不快
     for (const h of this.holes) {
       if (h.mine || now >= h.end) continue;
       _v.set(h.x - p.pos.x, h.y - (p.pos.y + 0.9), h.z - p.pos.z);
       const d = _v.length();
-      if (d > 9 || d < 0.3) continue;
+      const H = SK.blackhole;
+      if (d > H.pull || d < 0.3) continue;
       this.inHole = true;
-      p.vel.addScaledVector(_v, ((6 + 34 * (1 - d / 9)) * dt) / d);
+      p.vel.addScaledVector(_v, ((H.base + H.str * (1 - d / H.pull)) * dt) / d);
     }
   }
   // 移動速度倍率：腎上腺素、時間凝結、冰凍彈、黑洞、狂戰士
   speedMul(me) {
     const now = performance.now();
     let k = 1;
-    if (now < this.stimEnd) k *= 1.25;
-    if (now < this.slowEnd) k *= 0.33;
-    if (me && me.fz) k *= 0.65;
-    if (this.inHole) k *= 0.55;
-    if (me && this.g.combat.mods.berserk) k *= 1 + 0.2 * rage(me.hp, me.mhp);
+    if (now < this.stopEnd) return 0;
+    if (now < this.stimEnd) k *= SK.stim.speed;
+    if (now < this.slowEnd) k *= SK.chrono.move;
+    if (me && me.fz) k *= 0.55;
+    if (this.inHole) k *= SK.blackhole.slow;
+    if (me && this.g.combat.mods.berserk) k *= 1 + BERSERK.speed * rage(me.hp, me.mhp);
     return k;
   }
-  lookMul() { return performance.now() < this.slowEnd ? 0.4 : 1; }
+  lookMul() { const now = performance.now(); return now < this.stopEnd ? 0 : now < this.slowEnd ? SK.chrono.look : 1; }
   oppCloaked() { const now = performance.now(); return now < this.rCloakEnd && now >= this.scanEnd; }
 
   // ───────── 每一幀：特效、計時、自己施放的東西到時間引爆 ─────────
@@ -475,8 +593,16 @@ export class Skills {
       this.silBody.material.opacity = 0.42 + 0.16 * Math.sin(this.t * 9);
       g.mini.spot(now, rm.pos.x, rm.pos.z);
     }
-    // 雷達（被動）：每 2 秒在小地圖上掃一次
-    if (mods.radar && live && alive && rm.alive && now >= this.radarAt) { this.radarAt = now + 2000; g.mini.spot(now, rm.pos.x, rm.pos.z); }
+    // 雷達（被動）：每 1.2 秒在小地圖上掃一次；獵人印記：打中之後 4 秒內一直標著
+    if (mods.radar && live && alive && rm.alive && now >= this.radarAt) { this.radarAt = now + 1200; g.mini.spot(now, rm.pos.x, rm.pos.z); }
+    if (mods.hunter && live && rm.alive && now < g.combat.markUntil && now >= this.markAt) { this.markAt = now + 250; g.mini.spot(now, rm.pos.x, rm.pos.z); }
+    // 子彈時間（被動）：這一局血第一次掉到 40 以下，對手自動被凝結 3 秒
+    if (mods.bullet && live && alive && rm.alive && !this.btUsed && me.hp < 40) {
+      this.btUsed = true; this.rSlowEnd = now + 3000;
+      g.sfx.skill('chrono'); this.nova(rm.pos.x, rm.pos.y + 0.1, rm.pos.z, 0x59b8ff, 3, 0.6); g.hud.banner('子彈時間', '對手的時間變慢了', 1100);
+      this._send({ id: 'chrono', d: 3 });
+    }
+    if (live) this._rainTick(now);
 
     let lx = 0, ly = 0, lz = 0, li = 0, lc = 0xffffff;
 
@@ -498,18 +624,18 @@ export class Skills {
       if (now < h.end) {
         if (h.mine && live && now >= h.tick) {                                  // 我的黑洞：每 0.3 秒啃一圈方塊、咬一口靠太近的對手
           h.tick += 300;
-          const msg = { r: g.round, pid: 0, p: [h.x, h.y, h.z], br: r3(Math.min(2.7, 1.3 + (now - h.t0) * 0.00045)), bp: 190, rad: 0, k: 0, kind: 'dig', own: g.me };
+          const H = SK.blackhole, msg = { r: g.round, pid: 0, p: [h.x, h.y, h.z], br: r3(Math.min(2.9, 1.4 + (now - h.t0) * 0.0005)), bp: 220, rad: 0, k: 0, kind: 'dig', own: g.me };
           g.sendPeer('expl', msg); g.doExplosion(msg);
-          if (rm.alive && Math.hypot(rm.pos.x - h.x, rm.pos.y + 0.9 - h.y, rm.pos.z - h.z) < 2.7) this._hit(6, 'blackhole');
+          if (rm.alive && Math.hypot(rm.pos.x - h.x, rm.pos.y + 0.9 - h.y, rm.pos.z - h.z) < H.bite) this._hit(H.biteDmg, 'blackhole');
         }
         continue;
       }
       if (h.mine && live && !h.done) {                                          // 時間到：爆開
         h.done = true;
-        const msg = { r: g.round, pid: 0, p: [h.x, h.y, h.z], br: 2.7, bp: 600, rad: 5.5, k: 12, fxk: 'void', own: g.me };
+        const H = SK.blackhole, msg = { r: g.round, pid: 0, p: [h.x, h.y, h.z], br: 3, bp: 800, rad: H.boomR, k: 16, fxk: 'void', own: g.me };
         g.sendPeer('expl', msg); g.doExplosion(msg);
         const d = Math.hypot(rm.pos.x - h.x, rm.pos.y + 0.9 - h.y, rm.pos.z - h.z);
-        if (rm.alive && d < 5.5) this._hit(35 * (1 - d / 5.5), 'blackhole');
+        if (rm.alive && d < H.boomR) this._hit(H.boomDmg * (d < 2 ? 1 : 1 - (d - 2) / (H.boomR - 2)), 'blackhole');
       }
       this.nova(h.x, h.y, h.z, 0xb060ff, 6, 0.5);
       this.holes.splice(i, 1);
@@ -534,14 +660,22 @@ export class Skills {
     // 軌道砲
     for (let i = this.marks.length - 1; i >= 0; i--) {
       const m = this.marks[i];
+      // 軌道砲的光柱會追人：施放的一方追對手、被打的一方追自己（兩邊各算各的，位置只差一點網路延遲）
+      if (m.track && !m.done) {
+        const tq = m.mine ? (rm.alive ? rm.pos : null) : (alive ? p.pos : null);
+        if (tq) {
+          const dx = tq.x - m.x, dz = tq.z - m.z, dd = Math.hypot(dx, dz);
+          if (dd < SK.orbital.trackR && dd > 0.01) { const st = Math.min(dd, SK.orbital.track * dt); m.x += (dx / dd) * st; m.z += (dz / dd) * st; m.y += (tq.y + 0.05 - m.y) * Math.min(1, dt * 6); }
+        }
+      }
       if (!m.done && now >= m.at) {
         m.done = true;
         if (m.mine && live) this._strike(m);
-        const dc = Math.hypot(m.x - cam.position.x, m.z - cam.position.z);
-        this._snd('beam', m.x, m.z); this.nova(m.x, m.y + 0.05, m.z, 0xbfeaff, 9, 0.6);
-        fx.light(m.x, m.y + 2, m.z, 0xbfe6ff, 480, 0.5, 40);
-        g.shake = Math.min(1.6, g.shake + Math.max(0, 1.4 - dc / 30));
-        if (dc < 28 && !g.kc) g.hud.flash(0.5 * (1 - dc / 28), 0.3);          // 離得近：整個畫面白一下
+        const dc = Math.hypot(m.x - cam.position.x, m.z - cam.position.z), sz = m.s || 1;
+        this._snd(m.meteor ? 'mark' : 'beam', m.x, m.z); this.nova(m.x, m.y + 0.05, m.z, m.meteor ? 0xffa050 : 0xbfeaff, 9 * sz, 0.6);
+        fx.light(m.x, m.y + 2, m.z, m.meteor ? 0xff9a40 : 0xbfe6ff, 480 * sz, 0.5, 40 * sz);
+        g.shake = Math.min(1.6, g.shake + Math.max(0, 1.4 - dc / 30) * sz);
+        if (dc < 28 * sz && !g.kc) g.hud.flash(0.5 * (1 - dc / (28 * sz)), 0.3);          // 離得近：整個畫面白一下
       }
       if (now >= m.at + 600) this.marks.splice(i, 1);
     }
@@ -550,13 +684,13 @@ export class Skills {
       const k = clamp((now - m.t0) / (m.at - m.t0), 0, 1), post = clamp((now - m.at) / 600, 0, 1), fired = now >= m.at;
       const pulse = 0.6 + 0.4 * Math.sin(this.t * (10 + k * 30));
       o.beam.position.set(m.x, m.y, m.z); o.ring.position.set(m.x, m.y + 0.06, m.z); o.core.position.set(m.x, m.y - 4, m.z);
-      const bw = fired ? 2.9 * (1 - post * 0.6) : 0.03 + 0.1 * k;
-      // 顏色故意給超過 1：後製的光暈會把它暈開。鎖定時是紅色細線，打下來變成藍白色的粗光柱
-      if (fired) o.beam.material.color.setRGB(1.0, 3.0, 6.5); else o.beam.material.color.setRGB(3.2, 0.45, 0.3);
+      const sz = m.s || 1, bw = (fired ? 2.9 * (1 - post * 0.6) : 0.03 + 0.1 * k) * sz;
+      // 顏色故意給超過 1：後製的光暈會把它暈開。鎖定時是紅色細線，打下來變成藍白色的粗光柱（流星雨是橘色的火柱）
+      if (fired) { if (m.meteor) o.beam.material.color.setRGB(6.5, 2.2, 0.5); else o.beam.material.color.setRGB(1.0, 3.0, 6.5); } else o.beam.material.color.setRGB(3.2, 0.45, 0.3);
       o.ring.material.color.copy(o.beam.material.color);
       o.beam.scale.set(bw, 70, bw); o.beam.material.opacity = fired ? 0.6 * (1 - post) : 0.55 * pulse;
-      o.ring.scale.setScalar(fired ? 2.2 + post * 6 : 2.2 + (1 - k) * 3); o.ring.material.opacity = fired ? 0.7 * (1 - post) : 0.5 + 0.4 * pulse;
-      o.core.visible = fired; o.core.scale.set(2.1 * (1 - post * 0.75), 74, 2.1 * (1 - post * 0.75)); o.core.material.opacity = (1 - post) * (1 - post);
+      o.ring.scale.setScalar((fired ? 2.2 + post * 6 : 2.2 + (1 - k) * 3) * sz); o.ring.material.opacity = fired ? 0.7 * (1 - post) : 0.5 + 0.4 * pulse;
+      o.core.visible = fired; o.core.scale.set(2.1 * sz * (1 - post * 0.75), 74, 2.1 * sz * (1 - post * 0.75)); o.core.material.opacity = (1 - post) * (1 - post);
       if (fired) for (let n = 0; n < 4; n++) fx.glowP.spawn(m.x + (Math.random() - 0.5) * 3, m.y + Math.random() * 12, m.z + (Math.random() - 0.5) * 3, (Math.random() - 0.5) * 6, Math.random() * 8, (Math.random() - 0.5) * 6, 0.3, 0.04, 0.4, 5, 8, 10, 1 - post, 0, 1);
     });
 
@@ -573,8 +707,8 @@ export class Skills {
     const flame = (q, on) => { if (on && Math.random() < dt * 40) fx.glowP.spawn(q.x + (Math.random() - 0.5) * 0.45, q.y + 0.3 + Math.random() * 1.2, q.z + (Math.random() - 0.5) * 0.45, (Math.random() - 0.5) * 0.5, 1.2 + Math.random() * 1.4, (Math.random() - 0.5) * 0.5, 0.34, 0.05, 0.35 + Math.random() * 0.3, 5, 1.8 + Math.random(), 0.25, 0.5, -1.5, 1); };
     const frost = (q, on) => { if (on && Math.random() < dt * 26) fx.glowP.spawn(q.x + (Math.random() - 0.5) * 0.7, q.y + 0.2 + Math.random() * 1.5, q.z + (Math.random() - 0.5) * 0.7, 0, -0.3, 0, 0.1, 0.02, 0.5, 1.4, 3.2, 5, 0.7); };
     flame(rm.pos, rm.alive && !!opp.bu && !hide);
-    frost(rm.pos, rm.alive && (!!opp.fz || now < this.rSlowEnd) && !hide);
-    if (g.emote && alive) { flame(p.pos, !!me.bu); frost(p.pos, !!me.fz || now < this.slowEnd); }
+    frost(rm.pos, rm.alive && (!!opp.fz || now < this.rSlowEnd || now < this.rStopEnd) && !hide);
+    if (g.emote && alive) { flame(p.pos, !!me.bu); frost(p.pos, !!me.fz || now < this.slowEnd || now < this.stopEnd); }
 
     this.light.intensity = li; if (li > 0) { this.light.position.set(lx, ly, lz); this.light.color.setHex(lc); }
   }
@@ -584,6 +718,7 @@ export class Skills {
     const g = this.g, me = g.gs ? g.gs.p[g.me] : null, st = [];
     const left = (t) => ((t - now) / 1000).toFixed(1);
     if (now < this.cloakEnd) st.push(['cloak', '隱身中 ' + left(this.cloakEnd)]);
+    if (now < this.stopEnd) st.push(['slow', '時間暫停 ' + left(this.stopEnd)]);
     if (now < this.slowEnd) st.push(['slow', '時間凝結 ' + left(this.slowEnd)]);
     if (me && me.fz) st.push(['slow', '被冰凍，跑不快']);
     if (me && me.bu) st.push(['burn', '著火了']);
@@ -592,6 +727,7 @@ export class Skills {
     if (now < this.stimEnd) st.push(['stim', '腎上腺素 ' + left(this.stimEnd)]);
     if (now < this.scanEnd) st.push(['good', '透視中 ' + left(this.scanEnd)]);
     if (now < this.rSlowEnd) st.push(['good', '對手被凝結 ' + left(this.rSlowEnd)]);
+    if (now < this.rStopEnd) st.push(['good', '對手被暫停 ' + left(this.rStopEnd)]);
     const tint = ['slow', 'burn', 'hole', 'cloak', 'stim'].find((k) => st.some((s) => s[0] === k)) || '';
     const on = { cloak: now < this.cloakEnd, grapple: !!this.grap, scan: now < this.scanEnd, stim: now < this.stimEnd };
     return {
