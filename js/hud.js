@@ -189,7 +189,7 @@ export class Hud {
     $('dm-map').innerHTML = opts([['random', '隨機'], ...all], mm('hzdm'));
     $('df-map').innerHTML = opts([['random', '隨機'], ...all], mm('hzdef'));
     this._hzBest();
-    $('ed-src').innerHTML = opts([['', '空地'], ...all], '');
+    $('ed-src').innerHTML = opts([['', '空地'], ...all.filter(([id]) => !MAPS[id].size)], '');   // 大地圖不能拿來當編輯器的底圖
   }
 
   // ───────── 地圖編輯器的面板 ─────────

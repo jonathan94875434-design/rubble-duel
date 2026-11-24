@@ -53,17 +53,34 @@ const FACES = [
 
 export class World {
   constructor(scene) {
-    this.X = WORLD.X; this.Y = WORLD.Y; this.Z = WORLD.Z;
-    const n = this.X * this.Y * this.Z;
-    this.types = new Uint8Array(n);
-    this.hp = new Float32Array(n);
-    this.light = new SkyLight(this);
     // 著色器要用的共用參數：材質貼圖（之後由 setTextures 塞進來）、天光、室內最低亮度
-    this.U = { tAlb: { value: null }, tNrm: { value: null }, tSky: { value: this.light.tex }, uSkyMin: { value: 0.22 }, uWorld: { value: this.light.size } };
+    this.U = { tAlb: { value: null }, tNrm: { value: null }, tSky: { value: null }, uSkyMin: { value: 0.22 }, uWorld: { value: null } };
     this.material = this._mkMaterial();
     this.group = new THREE.Group();
     scene.add(this.group);
-    this.ncx = Math.ceil(this.X / CHUNK); this.ncy = Math.ceil(this.Y / CHUNK); this.ncz = Math.ceil(this.Z / CHUNK);
+    this.chunks = [];
+    this.dirty = new Set();
+    this.rev = 0;        // 地形每變一次就 +1（尋路用來判斷要不要重算）
+    this.sizeRev = 0;    // 世界大小每變一次就 +1（小地圖、尋路、陰影範圍要跟著換）
+    this.mapId = 'plaza';
+    this.resize(WORLD);
+    this.reset();
+  }
+
+  // 換世界大小（大地圖用）：重新配置方塊陣列、天光、區塊網格。大小一樣就什麼都不做
+  // Y 最多 32：尋路用一個 32 位元的整數記一整根柱子
+  resize(sz) {
+    const X = sz.X || WORLD.X, Y = Math.min(32, sz.Y || WORLD.Y), Z = sz.Z || WORLD.Z;
+    if (this.types && X === this.X && Y === this.Y && Z === this.Z) return false;
+    this.X = X; this.Y = Y; this.Z = Z;
+    const n = X * Y * Z;
+    this.types = new Uint8Array(n);
+    this.hp = new Float32Array(n);
+    if (this.light) this.light.tex.dispose();
+    this.light = new SkyLight(this);
+    this.U.tSky.value = this.light.tex; this.U.uWorld.value = this.light.size;
+    for (const c of this.chunks) { this.group.remove(c.mesh); c.mesh.geometry.dispose(); }
+    this.ncx = Math.ceil(X / CHUNK); this.ncy = Math.ceil(Y / CHUNK); this.ncz = Math.ceil(Z / CHUNK);
     this.chunks = [];
     for (let cy = 0; cy < this.ncy; cy++) for (let cz = 0; cz < this.ncz; cz++) for (let cx = 0; cx < this.ncx; cx++) {
       const mesh = new THREE.Mesh(new THREE.BufferGeometry(), this.material);
@@ -72,9 +89,8 @@ export class World {
       this.chunks.push({ cx, cy, cz, mesh });
     }
     this.dirty = new Set();
-    this.rev = 0;        // 地形每變一次就 +1（尋路用來判斷要不要重算）
-    this.mapId = 'plaza';
-    this.reset();
+    this.sizeRev++; this.rev++;
+    return true;
   }
 
   // ───────── 基本存取 ─────────
@@ -122,6 +138,7 @@ export class World {
 
   reset(mapId) {
     if (mapId && MAPS[mapId]) this.mapId = mapId;
+    this.resize(MAPS[this.mapId].size || WORLD);
     this.types.fill(0); this.hp.fill(0); this.rev++;
     MAPS[this.mapId].build(this);
     for (let i = 0; i < this.chunks.length; i++) this.dirty.add(i);

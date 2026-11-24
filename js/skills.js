@@ -217,6 +217,56 @@ export class Skills {
     this._send({ id: 'wall', c: cells, b: this.wallType });
     return true;
   }
+  // 堡壘（神話）：在原地蓋一座小城堡，自己直接站上正中間的哨塔頂
+  _fortress() {
+    const g = this.g, p = g.player, w = g.world, F = SK.fortress, rm = g.remote;
+    const cx = Math.floor(p.pos.x / BS), cz = Math.floor(p.pos.z / BS);
+    let by = Math.floor((p.pos.y + 0.05) / BS);
+    for (let k = 0; k < 12 && by > 1 && !w.get(cx, by - 1, cz); k++) by--;       // 在空中放：往下找到地面
+    const T = F.tower, top = by + T;
+    // 哨塔頂上要站得下人（頭上有天花板、或太接近世界頂端就蓋不了）
+    for (let y = top; y < top + 4; y++) for (let x = cx - 1; x <= cx + 1; x++) for (let z = cz - 1; z <= cz + 1; z++) if (!w.inb(x, y, z) || w.types[w.idx(x, y, z)]) return false;
+    const rock = [], stone = [], seen = new Set();
+    const put = (list, x, y, z) => {
+      if (!w.inb(x, y, z)) return;
+      const i = w.idx(x, y, z);
+      if (seen.has(i) || w.types[i]) return;
+      if (rm.alive && this._boxHits(x, y, z, rm.pos, 0.45, 1.85)) return;        // 不會把對手埋進去
+      seen.add(i); list.push(i);
+    };
+    // 城門開在面向的那一邊
+    const fx = -Math.sin(p.yaw), fz = -Math.cos(p.yaw), gate = Math.abs(fx) > Math.abs(fz) ? (fx > 0 ? 'E' : 'W') : (fz > 0 ? 'S' : 'N');
+    const R = F.r;
+    for (let d = -R; d <= R; d++) for (let y = 0; y <= F.wall; y++) {
+      const crenel = y === F.wall;
+      if (crenel && (d + R) % 2) continue;                                        // 最上面一格是一格一格的城垛
+      const isGate = Math.abs(d) <= 2 && y < 5;
+      if (!(isGate && gate === 'N')) put(rock, cx + d, by + y, cz - R);
+      if (!(isGate && gate === 'S')) put(rock, cx + d, by + y, cz + R);
+      if (!(isGate && gate === 'W')) put(rock, cx - R, by + y, cz + d);
+      if (!(isGate && gate === 'E')) put(rock, cx + R, by + y, cz + d);
+    }
+    // 四角的塔樓（3×3，比城牆高）
+    for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) for (let y = 0; y <= F.turret; y++) {
+      if (y === F.turret && (a || b) && (a + b) % 2 === 0) continue;
+      put(rock, cx + sx * R + a, by + y, cz + sz * R + b);
+    }
+    // 中間的哨塔：5×5 實心水泥柱，頂上一圈 1 公尺高的女兒牆、四個角再高一格
+    for (let x = -2; x <= 2; x++) for (let z = -2; z <= 2; z++) {
+      for (let y = 0; y < T; y++) put(stone, cx + x, by + y, cz + z);
+      if (Math.abs(x) === 2 || Math.abs(z) === 2) { put(stone, cx + x, top, cz + z); put(stone, cx + x, top + 1, cz + z); if (Math.abs(x) === 2 && Math.abs(z) === 2) put(stone, cx + x, top + 2, cz + z); }
+    }
+    if (rock.length + stone.length < 40) return false;
+    this._placeWall(rock, true, B.ROCK); this._placeWall(stone, true, B.CONCRETE);
+    const x = (cx + 0.5) * BS, y = top * BS + 0.01, z = (cz + 0.5) * BS;
+    p.pos.set(x, y, z); p.prev.copy(p.pos); p.rpos.copy(p.pos); p.vel.set(0, 0, 0); p.onGround = false; p.stepSmooth = 0;
+    if (this.grap) this._dropGrap(false);
+    this.nova(x, by * BS + 0.1, z, 0xffc24a, R * BS * 1.2, 0.8); this.nova(x, y + 0.1, z, 0xffc24a, 2.5, 0.6);
+    g.fx.light(x, y + 1, z, 0xffc070, 160, 0.5, 26); g.shake = Math.min(1.2, g.shake + 0.5);
+    g.hud.banner('堡壘', '城堡蓋好了，你在哨塔頂上', 1200);
+    this._send({ id: 'fort', c: rock, c2: stone });
+    return true;
+  }
   _boxHits(bx, by, bz, pos, hw, h) {
     return (bx + 1) * BS > pos.x - hw && bx * BS < pos.x + hw && (bz + 1) * BS > pos.z - hw && bz * BS < pos.z + hw && (by + 1) * BS > pos.y && by * BS < pos.y + h;
   }
@@ -232,8 +282,9 @@ export class Skills {
       if (mine) this.myWall.add(ci);
       const wx = (x + 0.5) * BS, wy = (y + 0.5) * BS, wz = (z + 0.5) * BS;
       sx += wx; sy += wy; sz += wz; n++;
-      if (n % (cells.length > 60 ? 9 : 3) === 0) g.fx.smoke(wx, wy, wz, 1, 0.16);
-      if (n % (cells.length > 60 ? 12 : 5) === 0) g.fx.glowP.spawn(wx, wy, wz, (Math.random() - 0.5) * 3, Math.random() * 3, (Math.random() - 0.5) * 3, 0.1, 0.02, 0.3, 6, 5, 3, 1, 9);
+      const big = cells.length > 300 ? 3 : cells.length > 60 ? 1 : 0;            // 大片的牆、堡壘：特效少一點
+      if (n % [3, 9, 28][big] === 0) g.fx.smoke(wx, wy, wz, 1, 0.16);
+      if (n % [5, 12, 36][big] === 0) g.fx.glowP.spawn(wx, wy, wz, (Math.random() - 0.5) * 3, Math.random() * 3, (Math.random() - 0.5) * 3, 0.1, 0.02, 0.3, 6, 5, 3, 1, 9);
     }
     if (n) this._snd('wall', sx / n, sz / n);
     if (skipped.length) this._send({ id: 'unwall', c: skipped });
@@ -241,7 +292,7 @@ export class Skills {
   _unwall(cells) {
     const w = this.g.world;
     for (const ci of cells) {
-      if (!this.myWall.has(ci) || (w.types[ci] !== B.METAL && w.types[ci] !== B.SANDBAG)) continue;
+      if (!this.myWall.has(ci) || !w.types[ci]) continue;
       const x = ci % w.X, r = (ci - x) / w.X, z = r % w.Z, y = (r - z) / w.Z;
       w.edit(x, y, z, 0); this.myWall.delete(ci);
     }
@@ -452,7 +503,12 @@ export class Skills {
       case 'jet': this.jets.push({ me: false, end: now + 450 }); this._snd('jet', rp.x, rp.z); break;
       case 'dash': this.jets.push({ me: false, end: now + 200, dash: true }); this._snd('jet', rp.x, rp.z); break;
       case 'wall': if (Array.isArray(d.c) && d.c.length <= 500) this._placeWall(d.c, false, d.b === B.SANDBAG ? B.SANDBAG : B.METAL); break;
-      case 'unwall': if (Array.isArray(d.c) && d.c.length <= 500) this._unwall(d.c); break;
+      case 'unwall': if (Array.isArray(d.c) && d.c.length <= 2500) this._unwall(d.c); break;
+      case 'fort':
+        if (Array.isArray(d.c) && d.c.length <= 2000) this._placeWall(d.c, false, B.ROCK);
+        if (Array.isArray(d.c2) && d.c2.length <= 1000) this._placeWall(d.c2, false, B.CONCRETE);
+        this._snd('wall', rp.x, rp.z); g.shake = Math.min(1, g.shake + 0.3);
+        break;
       case 'stim': this._sparkle(rp.x, rp.y + 1, rp.z, 1.2, 6, 2); this._snd('stim', rp.x, rp.z); break;
       case 'scan': this.scannedEnd = now + dur(1, 6); g.sfx.skill('scan'); g.hud.feed('對手用透視脈衝掃到你了'); break;
       case 'cloak': this.rCloakEnd = d.d > 0 ? now + dur(0.5, 8) : 0; this._puff(rp.x, rp.y + 1, rp.z); this._snd('cloak', rp.x, rp.z); break;

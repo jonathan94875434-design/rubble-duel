@@ -95,8 +95,7 @@ export class Environment {
     this.hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 1); scene.add(this.hemi);
     const sun = this.sun = new THREE.DirectionalLight(0xffffff, 3);
     sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
-    const sc = sun.shadow.camera, r = half * 1.5;
-    sc.left = -r; sc.right = r; sc.top = r; sc.bottom = -r; sc.near = 1; sc.far = 220;
+    sun.shadow.camera.near = 1; sun.shadow.camera.far = 260;
     sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.05;
     scene.add(sun, sun.target);
 
@@ -111,12 +110,22 @@ export class Environment {
     // 地圖外面的地：四大片平面圍住地圖（中間留空，不然挖開地面會看到一片漂浮的地板）
     this.skirtMat = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 1, metalness: 0 });
     this.skirt = new THREE.Group(); scene.add(this.skirt);
+    this.setBounds(center, half);
+    this.pmrem = new THREE.PMREMGenerator(renderer);
+    this.envScene = new THREE.Scene(); this.envRT = null;
+  }
+
+  // 地圖的範圍（換到不同大小的地圖時呼叫）：太陽陰影要蓋住整張圖，外面那圈地要貼著地圖邊緣
+  setBounds(center, half) {
+    this.center.copy(center); this.half = half;
+    const sc = this.sun.shadow.camera, r = half * 1.5;
+    sc.left = -r; sc.right = r; sc.top = r; sc.bottom = -r; sc.updateProjectionMatrix();
+    for (const m of [...this.skirt.children]) { this.skirt.remove(m); m.geometry.dispose(); }
     const S = 400, h = half, cx = center.x, cz = center.z;
     for (const [x, z, w, d] of [[cx, cz - h - S / 2, S * 2 + h * 2, S], [cx, cz + h + S / 2, S * 2 + h * 2, S], [cx - h - S / 2, cz, S, h * 2], [cx + h + S / 2, cz, S, h * 2]]) {
       const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), this.skirtMat); m.rotation.x = -Math.PI / 2; m.position.set(x, 0, z); m.receiveShadow = true; this.skirt.add(m);
     }
-    this.pmrem = new THREE.PMREMGenerator(renderer);
-    this.envScene = new THREE.Scene(); this.envRT = null;
+    this.sun.target.position.copy(this.center); this.sun.position.copy(this.center).addScaledVector(this.sunDir, 110);
   }
 
   // size = 0 → 關掉陰影

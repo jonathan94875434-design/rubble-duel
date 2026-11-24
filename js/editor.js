@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { BS } from './config.js';
+import { BS, WORLD } from './config.js';
 import { B, BLOCK } from './world.js';
 import { MAPS, base, encodeMap, decodeMap, registerCustom, saveMapCode } from './maps.js';
 import { clamp } from './util.js';
@@ -29,7 +29,8 @@ export class Editor {
   open(src = null, opts = {}) {
     const g = this.g, w = g.world;
     this.on = true; this.undo = []; this.boxA = null;
-    if (src && MAPS[src]) {
+    w.resize(WORLD); g.syncBounds();                         // 自製地圖固定是標準大小（大地圖不能拿來改）
+    if (src && MAPS[src] && !MAPS[src].size) {
       const M = MAPS[src];
       w.types.fill(0); w.hp.fill(0); M.build(w);
       this.env = M.env; this.G = Math.round((M.ground || 2) / BS); this.name = M.custom ? M.name : M.name + '（改）'; this.editId = M.custom ? src : null;

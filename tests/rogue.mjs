@@ -163,11 +163,13 @@ await ev(() => { __game.skills.domes.length = 0; });
 
 // ── 震地衝擊波 ──
 await setSkills('shock', 'chrono');
-await place(SX, SZ, SX, SZ - 3, 0); await healBot(); await sleep(300);
+await place(SX, SZ, SX, SZ - 3, 0); await healBot();
+await ev(() => { const a = __game.authority, b = a.players[1]; b.maxHp = 400; b.hp = 400; a.dirty = true; a.flush(); }); await sleep(300);   // 衝擊波最多 120 傷害：血給多一點，免得這一局直接結束
 const hpS0 = await ev(() => __game.gs.p[1].hp + __game.gs.p[1].ar);
 used = await ev(() => __game.skills.use(0)); await sleep(400);
 st = await ev(() => ({ hp: __game.gs.p[1].hp + __game.gs.p[1].ar, me: __game.gs.p[0].hp, bv: __game.bot.body.vel.length() + Math.abs(__game.bot.body.pos.z - (__game.player.pos.z - 3)) }));
-ok('震地衝擊波：對手受傷並被震開，自己沒事', used && st.hp < hpS0 - 20 && st.bv > 0.5, JSON.stringify([hpS0, st]));
+ok('震地衝擊波：對手受傷並被震開，自己沒事', used && st.hp < hpS0 - 40 && st.bv > 0.5, JSON.stringify([hpS0, st]));
+await arena();                                                              // 超大衝擊波把地板震出大坑：重清場地
 
 // ── 時間凝結（開打 4 秒後才能用）──
 await sleep(600);
@@ -289,6 +291,15 @@ used = await ev(() => __game.skills.use(1)); await sleep(4000);
 st = await ev((h0, s0) => ({ hp: __game.gs.p[1].hp, h0, dug: s0 - __game.world.types.reduce((n, t) => n + (t ? 1 : 0), 0), uses: __game.skills.uses[1] }), hpM0, solidM);
 ok('流星雨：隕石追著對手砸，打掉血、砸爛地形', used && st.hp < st.h0 - 50 && st.dug > 20, JSON.stringify(st));
 await page.screenshot({ path: OUT + '/r9-meteor.png' });
+// 堡壘：在原地蓋城堡，自己站上哨塔頂
+await setSkills('fortress', 'stim');
+await place(SX, SZ, SX, SZ - 14, 0); await sleep(600);
+const fortS0 = await ev(() => __game.world.types.reduce((n, t) => n + (t ? 1 : 0), 0)), fortY0 = await ev(() => __game.player.pos.y);
+used = await ev(() => __game.skills.use(0)); await sleep(1500);
+st = await ev((s0, y0) => { const g = __game, p = g.player; return { added: g.world.types.reduce((n, t) => n + (t ? 1 : 0), 0) - s0, dy: p.pos.y - y0, stuck: p.collides(p.pos.x, p.pos.y, p.pos.z), bot: g.bot.body.collides(g.bot.body.pos.x, g.bot.body.pos.y, g.bot.body.pos.z) }; }, fortS0, fortY0);
+ok('堡壘：蓋出一座城堡（上千塊），自己站上 6 公尺高的哨塔，沒有把人埋住', used && st.added > 700 && st.dy > 5.5 && st.dy < 6.5 && !st.stuck && !st.bot, JSON.stringify(st));
+await page.screenshot({ path: OUT + '/r10-fortress.png' });
+await arena(); await sleep(300);
 await setSkills('orbital', 'stim');
 await place(SX, SZ, SX + 6, SZ - 10, 0); await sleep(300);
 await ev(() => { __game.player.yaw = 0; __game.player.pitch = -0.2; __game.bot.fire = () => {}; });
@@ -334,6 +345,10 @@ const snd = await ev(() => {
   return bad.join(', ') || 'ok';
 });
 ok('技能音效都正常', snd === 'ok', snd);
+
+// ── 大地圖：換到城堡要塞時世界變大，換回來恢復 ──
+st = await ev(() => { const g = __game; g.setMap('castle'); const a = { X: g.world.X, Z: g.world.Z, half: g.env.half }; g.setMap('plaza'); a.back = g.world.X; return a; });
+ok('城堡要塞是 72×72 公尺的大地圖，換回一般地圖會恢復', st.X === 144 && st.Z === 144 && st.half === 36 && st.back === 96, JSON.stringify(st));
 
 // ── 一般模式不受影響 ──
 await ev(() => __game.leave()); await sleep(300);

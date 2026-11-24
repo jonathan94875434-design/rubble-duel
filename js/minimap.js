@@ -19,6 +19,9 @@ export class Minimap {
 
   // 每一格取「最上面那塊」的顏色，越高越亮
   _rebuild() {
+    if (this.base.width !== this.w.X || this.base.height !== this.w.Z) {          // 換到不同大小的地圖
+      this.base.width = this.w.X; this.base.height = this.w.Z; this.img = this.bctx.createImageData(this.w.X, this.w.Z);
+    }
     const w = this.w, { X, Y, Z, types } = w, d = this.img.data;
     for (let z = 0; z < Z; z++) for (let x = 0; x < X; x++) {
       let y = Y - 1, t = 0;

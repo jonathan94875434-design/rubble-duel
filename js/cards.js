@@ -32,6 +32,7 @@ export const SK = {
   meteor:    { n: 7, gap: 0.32, delay: 0.75, spread: 3.5, trackR: 14, full: 1.6, fade: 2.6, dmg: 60 },
   blackhole: { time: 4.5, pull: 14, base: 10, str: 58, slow: 0.4, bite: 3, biteDmg: 8, boomR: 7, boomDmg: 75 },
   swap:      { range: 45 },
+  fortress:  { r: 9, wall: 6, turret: 9, tower: 12 },  // 堡壘（方塊數）：城牆離中心幾格、城牆高、塔樓高、哨塔高（12 格 = 6 公尺）
 };
 
 const P = (r, glyph, name, desc, x) => ({ k: 'p', r, glyph, name, desc, ...x });
@@ -89,6 +90,7 @@ export const CARDS = {
   swap:       A('l', '換', '換位', '跟看得到的對手（45 公尺內）瞬間交換位置', 10, { bot: false }),
   // ── 主動技能：神話 ──
   timestop:   A('m', '停', '時間暫停', '對手完全靜止 2.5 秒：不能動、不能轉頭、不能開槍', 20, { lock: 3 }),
+  fortress:   A('m', '堡', '堡壘', '在原地瞬間蓋起一座小城堡：四面岩石城牆、四角塔樓，你直接站上正中間 6 公尺高的哨塔頂；城門開在你面向的那一邊', 25, { lock: 3, bot: false }),
   meteor:     A('m', '隕', '流星雨', '在瞄準的地方降下 7 顆隕石，會追著附近的對手砸，每顆 60 傷害、把地形砸得稀爛', 14, { lock: 4, bot: false }),
 };
 export const CARD_IDS = Object.keys(CARDS);

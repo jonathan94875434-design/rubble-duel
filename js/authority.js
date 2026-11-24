@@ -238,7 +238,7 @@ export class Authority {
       p.spent = loadoutCost(p.loadout); p.money -= p.spent;
       const has = (b) => p.buffs.includes(b);
       p.maxHp = maxHpOf(p.buffs);
-      p.hp = p.maxHp; p.armor = (p.loadout.armor ? 50 : 0) + (has('plate') ? 100 : 0) + (has('arsenal') ? 50 : 0);   // 護甲片、軍火庫可以跟買的防彈衣疊加 p.alive = true; p.lastHurt = 0;
+      p.hp = p.maxHp; p.armor = (p.loadout.armor ? 50 : 0) + (has('plate') ? 100 : 0) + (has('arsenal') ? 50 : 0); p.alive = true; p.lastHurt = 0;   // 護甲片、軍火庫可以跟買的防彈衣疊加
       p.rHits = p.rDmg = p.rHead = 0;   // 這一局的傷害報告歸零
       p.phx = false; p.aid = false; p.bt = false; p.inv = 0; p.slowT = 0; p.burnT = 0; p.stimAt = 0;
     }

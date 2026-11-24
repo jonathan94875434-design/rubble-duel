@@ -156,7 +156,17 @@ class Game {
   }
 
   // 換地圖：重建地形，天氣跟著換
-  setMap(id) { this.world.reset(id); this._applyEnv(); }
+  setMap(id) {
+    this.world.reset(id);
+    this.syncBounds();
+    this._applyEnv();
+  }
+  // 換到不同大小的地圖：陰影範圍、外圍的地跟著換
+  syncBounds() {
+    if (this.envSize === this.world.sizeRev) return;
+    this.envSize = this.world.sizeRev; const w = this.world;
+    this.env.setBounds(new THREE.Vector3((w.X * BS) / 2, 0, (w.Z * BS) / 2), (w.X * BS) / 2);
+  }
   _applyEnv() { const m = MAPS[this.world.mapId]; if (m) this.applyEnvDef(m.env, m.ground || 0); }
   applyEnvDef(envId, groundY) {
     const d = this.envDef = this.env.apply(envId, groundY);
@@ -1144,7 +1154,7 @@ class Game {
       const dc = this.debugCam, f = dc ? dc.fov || 75 : 60;
       if (Math.abs(cam.fov - f) > 0.01) { cam.fov = f; cam.updateProjectionMatrix(); }
       if (dc) { cam.position.set(dc.p[0], dc.p[1], dc.p[2]); cam.lookAt(dc.l[0], dc.l[1], dc.l[2]); }
-      else { const gy = MAPS[this.world.mapId] ? MAPS[this.world.mapId].ground || 0 : 0; cam.position.set(24 + Math.cos(this.orbit) * 40, gy + 22, 24 + Math.sin(this.orbit) * 40); cam.lookAt(24, gy + 2, 24); }
+      else { const gy = MAPS[this.world.mapId] ? MAPS[this.world.mapId].ground || 0 : 0, hc = (this.world.X * BS) / 2, rr = hc * 1.67; cam.position.set(hc + Math.cos(this.orbit) * rr, gy + 22 * (hc / 24), hc + Math.sin(this.orbit) * rr); cam.lookAt(hc, gy + 2, hc); }
     }
 
     if (this.bot) this.bot.update(dt, now);

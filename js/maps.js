@@ -247,6 +247,93 @@ function buildQuarry(w) {
 }
 
 // 每張地圖：名稱、建造函式、兩個出生點（yaw 面向對手方向）、補給品
+// ═════════ 5. 城堡要塞：大地圖（72 × 72 公尺），中央城堡、四座哨塔、兩側民房（繞中心旋轉 180° 對稱）═════════
+// 出生點在東西兩側，中間被城堡擋住。城堡兩層樓可以爬上屋頂；四個角落各一座四層高的哨塔，塔裡有樓梯一路走到頂。
+const GC = 3, CASTLE = { X: 144, Y: 32, Z: 144 };
+function buildCastle(w) {
+  const S = (...a) => w.boxSym(...a), G = GC;
+  base(w, GRASS, G);
+
+  // ── 中央城堡（50..93）：水泥外牆 13 格高、二樓木地板、屋頂可以站，四周有城垛 ──
+  const k0 = 50, k1 = 93;
+  S(k0, G, k0, k1, G + 13, k0 + 1, CONCRETE); S(k0, G, k0, k0 + 1, G + 13, k1, CONCRETE);
+  S(k0, G, 68, k0 + 1, G + 5, 75, AIR);                                      // 東西兩側的大門（4 公尺寬）
+  S(58, G, k0, 61, G + 4, k0 + 1, AIR);                                      // 南北的小門（偏一邊）
+  S(k0, G + 2, 57, k0 + 1, G + 3, 58, AIR); S(k0, G + 2, 85, k0 + 1, G + 3, 86, AIR);   // 一樓的小窗（蹲跳鑽得過）
+  S(66, G + 2, k0, 67, G + 3, k0 + 1, AIR); S(76, G + 2, k0, 77, G + 3, k0 + 1, AIR);
+  w.box(k0 + 2, G + 6, k0 + 2, k1 - 2, G + 6, k1 - 2, WOOD);                // 二樓地板
+  S(k0, G + 8, 60, k0 + 1, G + 10, 62, AIR); S(k0, G + 8, 81, k0 + 1, G + 10, 83, AIR);  // 二樓的窗
+  S(70, G + 8, k0, 73, G + 10, k0 + 1, AIR);
+  w.box(k0 + 2, G + 13, k0 + 2, k1 - 2, G + 13, k1 - 2, CONCRETE);          // 屋頂
+  // 一樓大廳：四根柱子、兩側隔出小房間
+  S(63, G, 63, 64, G + 5, 64, CONCRETE); S(63, G, 79, 64, G + 5, 80, CONCRETE);
+  S(52, G, 62, 62, G + 5, 62, PLASTER); S(56, G, 62, 58, G + 4, 62, AIR);
+  S(62, G, 52, 62, G + 5, 56, PLASTER);
+  S(68, G, 66, 70, G + 1, 68, WOOD); S(74, G, 75, 75, G + 2, 77, WOOD);
+  // 樓梯：一樓 → 二樓（西北角往東爬），二樓 → 屋頂（再往西爬）
+  S(54, G + 6, 53, 60, G + 6, 55, AIR);
+  for (let i = 0; i < 7; i++) S(60 - i, G, 53, 60 - i, G + i, 55, WOOD);
+  S(53, G + 13, 57, 59, G + 13, 59, AIR);
+  for (let i = 0; i < 7; i++) S(53 + i, G + 7, 57, 53 + i, G + 7 + i, 59, WOOD);
+  // 二樓的掩體
+  S(66, G + 7, 70, 67, G + 9, 73, BRICK); S(56, G + 7, 76, 60, G + 8, 77, WOOD);
+  // 屋頂：1 公尺高的女兒牆 + 一格一格的城垛；四個角落有小塔樓可以躲
+  S(k0, G + 14, k0, k1, G + 15, k0, CONCRETE); S(k0, G + 14, k0, k0, G + 15, k1, CONCRETE);
+  for (let x = k0; x <= k1; x += 4) S(x, G + 16, k0, x + 1, G + 16, k0, CONCRETE);
+  for (let z = k0 + 4; z <= k1 - 4; z += 4) S(k0, G + 16, z, k0, G + 16, z + 1, CONCRETE);
+  S(k0, G + 14, k0, k0 + 3, G + 18, k0 + 3, CONCRETE); S(k0, G + 14, k1 - 3, k0 + 3, G + 18, k1, CONCRETE);
+  S(69, G + 14, 69, 70, G + 15, 74, CONCRETE);                              // 屋頂中間的矮牆
+
+  // ── 四座哨塔（9×9、岩石砌的）：一樓 + 三層木地板，樓梯沿著牆往上繞，頂樓有城垛 ──
+  const tower = (x0, z0, doorX) => {
+    const x1 = x0 + 8, z1 = z0 + 8;
+    S(x0, G, z0, x1, G + 20, z0, ROCK); S(x0, G, z1, x1, G + 20, z1, ROCK);
+    S(x0, G, z0, x0, G + 20, z1, ROCK); S(x1, G, z0, x1, G + 20, z1, ROCK);
+    S(doorX, G, z0 + 3, doorX, G + 4, z0 + 5, AIR);                          // 門
+    for (const f of [G + 6, G + 13, G + 20]) S(x0 + 1, f, z0 + 1, x1 - 1, f, z1 - 1, WOOD);
+    for (const y of [G + 9, G + 16]) {                                         // 每層樓四面都有箭窗
+      S(x0, y, z0 + 4, x0, y + 1, z0 + 4, AIR); S(x1, y, z0 + 4, x1, y + 1, z0 + 4, AIR);
+      S(x0 + 4, y, z0, x0 + 4, y + 1, z0, AIR); S(x0 + 4, y, z1, x0 + 4, y + 1, z1, AIR);
+    }
+    // 樓梯：一樓沿南牆往東爬、二樓沿北牆往西爬、三樓再沿南牆往東爬
+    S(x0 + 1, G + 6, z0 + 1, x1 - 1, G + 6, z0 + 2, AIR);
+    for (let i = 0; i < 7; i++) S(x0 + 1 + i, G, z0 + 1, x0 + 1 + i, G + i, z0 + 2, WOOD);
+    S(x0 + 1, G + 13, z1 - 2, x1 - 1, G + 13, z1 - 1, AIR);
+    for (let i = 0; i < 7; i++) S(x1 - 1 - i, G + 7, z1 - 2, x1 - 1 - i, G + 7 + i, z1 - 1, WOOD);
+    S(x0 + 1, G + 20, z0 + 1, x1 - 1, G + 20, z0 + 2, AIR);
+    for (let i = 0; i < 7; i++) S(x0 + 1 + i, G + 14, z0 + 1, x0 + 1 + i, G + 14 + i, z0 + 2, WOOD);
+    // 頂樓：女兒牆 + 城垛
+    S(x0, G + 21, z0, x1, G + 21, z0, ROCK); S(x0, G + 21, z1, x1, G + 21, z1, ROCK);
+    S(x0, G + 21, z0, x0, G + 21, z1, ROCK); S(x1, G + 21, z0, x1, G + 21, z1, ROCK);
+    for (let k = 0; k <= 8; k += 2) { S(x0 + k, G + 22, z0, x0 + k, G + 22, z0, ROCK); S(x0 + k, G + 22, z1, x0 + k, G + 22, z1, ROCK); S(x0, G + 22, z0 + k, x0, G + 22, z0 + k, ROCK); S(x1, G + 22, z0 + k, x1, G + 22, z0 + k, ROCK); }
+  };
+  tower(12, 12, 20); tower(12, 123, 20);
+
+  // ── 兩側民房（兩層，灰泥牆、木頭樓板）──
+  const h0 = 28, h1 = 41, hz0 = 62, hz1 = 81;
+  S(h0, G, hz0, h1, G + 11, hz0, PLASTER); S(h0, G, hz1, h1, G + 11, hz1, PLASTER);
+  S(h0, G, hz0, h0, G + 11, hz1, PLASTER); S(h1, G, hz0, h1, G + 11, hz1, PLASTER);
+  S(h0 + 1, G + 6, hz0 + 1, h1 - 1, G + 6, hz1 - 1, WOOD); S(h0, G + 12, hz0, h1, G + 12, hz1, WOOD);
+  S(h1, G, 70, h1, G + 4, 73, AIR); S(33, G, hz0, 35, G + 4, hz0, AIR); S(h0, G, 76, h0, G + 4, 78, AIR);   // 三個門
+  S(h1, G + 8, 65, h1, G + 9, 67, AIR); S(h1, G + 8, 76, h1, G + 9, 78, AIR); S(h0, G + 8, 69, h0, G + 9, 72, AIR);   // 二樓的窗
+  S(h0 + 1, G + 6, hz0 + 1, h0 + 2, G + 6, hz0 + 7, AIR);
+  for (let i = 0; i < 7; i++) S(h0 + 1, G, hz0 + 7 - i, h0 + 2, G + i, hz0 + 7 - i, WOOD);
+  S(35, G, 72, 37, G + 1, 74, WOOD); S(31, G + 7, 76, 33, G + 8, 77, WOOD);
+
+  // ── 庭院裡的掩體：廢墟矮牆、市集棚子、木箱、沙包 ──
+  S(28, G, 9, 44, G + 6, 10, BRICK); S(34, G, 9, 37, G + 4, 10, AIR);       // 南北邊的拱門牆
+  S(24, G, 30, 40, G + 2, 31, ROCK); S(30, G, 38, 31, G + 3, 48, BRICK); S(30, G + 2, 42, 31, G + 3, 43, AIR);
+  S(45, G, 30, 47, G + 2, 32, WOOD); S(48, G, 31, 49, G + 1, 32, WOOD);
+  S(60, G, 24, 72, G + 3, 24, WOOD); S(60, G + 4, 24, 72, G + 4, 30, WOOD); // 市集棚子
+  S(60, G, 30, 60, G + 3, 30, WOOD); S(72, G, 30, 72, G + 3, 30, WOOD); S(64, G, 26, 66, G + 1, 27, WOOD);
+  S(80, G, 18, 81, G + 4, 32, BRICK); S(80, G + 2, 24, 81, G + 3, 26, AIR);
+  S(44, G, 60, 45, G + 1, 66, SANDBAG); S(44, G, 77, 45, G + 1, 83, SANDBAG);
+  S(22, G, 95, 24, G + 1, 97, WOOD); S(25, G, 96, 26, G + 3, 97, WOOD);
+  S(36, G, 104, 48, G + 2, 105, ROCK); S(52, G, 108, 53, G + 5, 120, BRICK);
+  // 出生點前面的掩體牆（擋住一出門就被看到）
+  S(11, G, 63, 12, G + 4, 69, BRICK); S(11, G, 74, 12, G + 4, 80, BRICK); S(15, G, 70, 16, G + 2, 73, WOOD);
+}
+
 export const MAPS = {
   plaza: {
     name: '廢墟廣場', desc: '開闊場地，中央兩層塔與角落高台',
@@ -311,6 +398,23 @@ export const MAPS = {
       { type: 'armor', amount: 50, x: m(47.5), y: QLO * BS, z: m(47.5), respawn: 30 },   // 礦坑隧道的十字路口
       { type: 'hp', amount: 25, x: m(41.5), y: QHI * BS, z: m(38.5) },
       { type: 'hp', amount: 25, x: m(41.5), y: QHI * BS, z: m(56.5) },
+    ],
+  },
+  castle: {
+    name: '城堡要塞', desc: '大地圖（72×72 公尺）：中央兩層城堡可以上屋頂，四角有四層高的哨塔，兩側有民房',
+    build: buildCastle, size: CASTLE,
+    env: 'golden', ground: GC * BS,
+    spawns: [
+      { x: m(6), y: GC * BS, z: m(71), yaw: -Math.PI / 2 },
+      { x: m(137), y: GC * BS, z: m(72), yaw: Math.PI / 2 },
+    ],
+    pickups: [
+      { type: 'hp', amount: 40, x: m(34.5), y: GC * BS, z: m(67) },
+      { type: 'hp', amount: 40, x: m(108.5), y: GC * BS, z: m(76) },
+      { type: 'armor', amount: 50, x: m(71.5), y: (GC + 14) * BS, z: m(71.5), respawn: 30 },   // 城堡屋頂正中間
+      { type: 'hp', amount: 25, x: m(16), y: (GC + 21) * BS, z: m(16) },                         // 哨塔頂
+      { type: 'hp', amount: 25, x: m(127), y: (GC + 21) * BS, z: m(127) },
+      { type: 'hp', amount: 25, x: m(71.5), y: (GC + 7) * BS, z: m(71.5) },                      // 城堡二樓
     ],
   },
 };

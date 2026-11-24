@@ -9,8 +9,11 @@ import { BS } from './config.js';
 const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
 
 export class Nav {
-  constructor(world) {
-    this.w = world; this.X = world.X; this.Z = world.Z;
+  constructor(world) { this.w = world; this._alloc(); }
+  // 世界大小變了（換到大地圖）就重新配置
+  _alloc() {
+    const world = this.w;
+    this.sizeRev = world.sizeRev; this.X = world.X; this.Z = world.Z;
     this.NX = this.X + 1; this.NZ = this.Z + 1;
     this.col = new Uint32Array(this.X * this.Z);
     this.mask = new Uint32Array(this.NX * this.NZ);
@@ -22,6 +25,7 @@ export class Nav {
 
   // 地形有變才重算遮罩（整張圖約 1ms）
   refresh() {
+    if (this.sizeRev !== this.w.sizeRev) this._alloc();
     if (this.rev === this.w.rev) return;
     this.rev = this.w.rev;
     const { X, Z } = this, Y = this.w.Y, t = this.w.types, col = this.col, mask = this.mask;
@@ -60,7 +64,7 @@ export class Nav {
 
   // A*。回傳路徑點陣列 [{x,y,z}]（公尺，含起點與終點），走不到回 null。
   // goal = -1：不找終點，把走得到的地方全部展開一遍（reachable() 用）
-  find(start, goal, maxExpand = 40000) {
+  find(start, goal, maxExpand = Math.round(40000 * (this.X * this.Z) / (96 * 96))) {   // 大地圖展開上限跟著放大
     if (start < 0 || goal < -1) return null;
     const all = goal === -1;
     const { NX, mask, g, f, from, stamp, done } = this;
