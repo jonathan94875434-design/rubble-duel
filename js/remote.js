@@ -466,6 +466,7 @@ export class RemotePlayer {
       this.guns[key] = g;
     }
     const g = this.gun = this.guns[key], ud = (g && g.userData) || {};
+    if (g && ud.model === 'karambit') g.rotation.x = Math.PI;   // 爪刀反手握（刀從小指那一側出來）
     if (g) g.visible = true;
     this.gunKey = key; this.weapon = id;
     // 槍的握法：新模型會在 userData 給 kind / gripL；沒有就照武器代號猜

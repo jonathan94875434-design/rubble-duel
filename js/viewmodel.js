@@ -224,7 +224,7 @@ export class ViewModel {
     this.mel = -1; this.melHeavy = false;   // 揮刀
     this.thr = -1; this.thrKind = 'he';     // 丟投擲物
     this.drumAng = 0; this.drumTo = 0; this.loaded = true; this.lastReload = 0; this.rlFlags = 0;
-    this.P = { gp: V(), gr: V(), lp: V(), lq: new THREE.Quaternion(), la: 0, rp: V(), rr: V(), mag: 0, magVis: true, bolt: 0, boltRot: 0, pump: 0, cyl: 0, hammer: 0, rk: V(), rkRot: 0, rkVis: true, prop: null, propAt: V() };
+    this.P = { gp: V(), gr: V(), lp: V(), lq: new THREE.Quaternion(), la: 0, rp: V(), rr: V(), mag: 0, magVis: true, bolt: 0, boltRot: 0, pump: 0, cyl: 0, hammer: 0, rk: V(), rkRot: 0, rkVis: true, prop: null, propAt: V(), kr: V() };   // kr：刀在手裡自己轉（蝴蝶刀翻刀、爪刀反手）
     this.setLook('recruit', 0x4d5a48);
   }
 
@@ -239,6 +239,9 @@ export class ViewModel {
     if (!this.guns[key]) { this.guns[key] = buildGun(id, wskin); this.holder.add(this.guns[key]); }
     const g = this.gun = this.guns[key], u = this.u = g.userData;
     g.visible = true; this.key = key; this.id = u.id;
+    this.model = u.model || u.id;
+    // 刀的握法：爪刀是反手握（刀身從小指那一側出來、往前彎，指環在食指上）→ 把刀在手裡翻過來
+    this.kBase = this.model === 'karambit' ? [Math.PI, 0, 0] : [0, 0, 0];
     this.hip = HIP[u.id] || HIP[u.kind] || HIP.rifle; this.kk = KICK[u.kind] || KICK.rifle;
     this.flash.position.copy(u.muzzle); this.flashLight.position.copy(u.muzzle).add(_v.set(0, 0.03, -0.06));
     // 手的握法
@@ -366,6 +369,8 @@ export class ViewModel {
     P.gp.set(0, 0, 0); P.gr.set(0, 0, 0); P.lp.copy(this.baseLp); P.lq.copy(this.baseLq); P.la = this.poseL ? 0 : 1; P.rp.set(0, 0, 0); P.rr.set(0, 0, 0);
     P.mag = 0; P.magVis = true; P.bolt = 0; P.boltRot = 0; P.pump = 0; P.cyl = 0; P.hammer = 0; P.rk.set(0, 0, 0); P.rkRot = 0; P.prop = null;
     P.rkVis = s.loaded === undefined ? this.loaded : !!s.loaded;
+    P.kr.set(0, 0, 0);
+    if (knife && this.model === 'butterfly' && draw < 1) P.kr.x -= (1 - sm(draw)) * TAU * 1.5;   // 蝴蝶刀拿出來的時候翻開（轉一圈半）
     if (rl > 0) this._reload(rl, u, A, P);
     else if (this.cyc >= 0) this._cycle(this.cyc, u, A, P);
     if (this.mel >= 0) this._melee(this.mel, P);
@@ -387,6 +392,7 @@ export class ViewModel {
       hip[5] * hipW - this.sway.x * 0.05 * aw + P.gr.z * aw + bx * 1.6 - cr * 0.1 - dr * 0.35,
     );
     if (knife) h.quaternion.multiply(Q_KNIFE);
+    if (knife && this.gun) { const b = this.kBase || [0, 0, 0]; this.gun.rotation.set(b[0] + P.kr.x, b[1] + P.kr.y, b[2] + P.kr.z); }
     h.updateMatrixWorld(true);
 
     // ── 會動的零件 ──
@@ -585,6 +591,37 @@ export class ViewModel {
 
   // ───────── 揮刀 ─────────
   _melee(t, P) {
+    const m = this.model;
+    if (m === 'karambit') {
+      if (!this.melHeavy) {   // 爪刀快砍：手先往右下收，再由右下往左上「勾」過去，手腕翻著讓彎刀畫一道弧
+        const wind = hat(t, 0, 0.05, 0.06, 0.1), hook = hat(t, 0.06, 0.15, 0.2, 0.36);
+        P.gp.set(0.07 * wind - 0.25 * hook, -0.06 * wind + 0.12 * hook, 0.02 * wind - 0.1 * hook);
+        P.gr.set(0.25 * wind - 0.35 * hook, -0.3 * wind + 0.55 * hook, -0.55 * wind + 1.35 * hook);
+        P.kr.z += 0.5 * hook;
+      } else {                // 爪刀重擊：反手舉高，往前下方用力扎下去
+        const lift = hat(t, 0, 0.12, 0.14, 0.22), stab = hat(t, 0.14, 0.24, 0.34, 0.6);
+        P.gp.set(-0.02 * lift - 0.07 * stab, 0.11 * lift - 0.08 * stab, 0.06 * lift - 0.24 * stab);
+        P.gr.set(0.45 * lift - 0.7 * stab, 0.05 * stab, 0.15 * lift + 0.1 * stab);
+      }
+      return;
+    }
+    if (m === 'butterfly') {
+      if (!this.melHeavy) {   // 蝴蝶刀快砍：往前一戳，刀在手裡沿著刀身轉一圈
+        const jab = hat(t, 0.02, 0.1, 0.16, 0.36);
+        P.gp.set(-0.06 * jab, 0.03 * jab, -0.22 * jab); P.gr.set(-0.45 * jab, 0.12 * jab, 0.15 * jab);
+        P.kr.z += sm(clamp((t - 0.02) / 0.26)) * TAU;
+      } else {                // 蝴蝶刀重擊：先在手上前後翻兩圈，再刺出去
+        const spin = sm(clamp(t / 0.3)), stab = hat(t, 0.28, 0.38, 0.46, 0.6);
+        P.kr.x -= spin * TAU * 2;
+        P.gp.set(-0.02 * (1 - spin) * spin * 4 - 0.1 * stab, 0.04 * spin * (1 - spin) * 4 + 0.06 * stab, -0.3 * stab); P.gr.set(-0.9 * stab, 0.05 * stab, -0.2 * stab);
+      }
+      return;
+    }
+    if (m === 'bowie' && !this.melHeavy) {   // 獵刀快砍：從右上方往左下劈（比較大力、比較慢收）
+      const wind = hat(t, 0, 0.08, 0.09, 0.14), chop = hat(t, 0.09, 0.19, 0.24, 0.36);
+      P.gp.set(0.06 * wind - 0.22 * chop, 0.12 * wind - 0.12 * chop, 0.03 * wind - 0.12 * chop); P.gr.set(0.5 * wind - 1.1 * chop, -0.2 * wind + 0.5 * chop, -0.3 * wind + 0.6 * chop);
+      return;
+    }
     if (!this.melHeavy) {   // 快砍：先往右上帶一下，再橫掃到左下
       const wind = hat(t, 0, 0.06, 0.07, 0.12), cut = hat(t, 0.07, 0.17, 0.22, 0.36);
       P.gp.set(0.05 * wind - 0.27 * cut, 0.04 * wind - 0.03 * cut, 0.02 * wind - 0.13 * cut); P.gr.set(-0.1 * wind - 0.55 * cut, -0.35 * wind + 0.75 * cut, -0.35 * wind + 0.9 * cut);
