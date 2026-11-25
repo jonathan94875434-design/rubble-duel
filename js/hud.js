@@ -251,6 +251,8 @@ export class Hud {
     $('sel-pmap').addEventListener('change', (e) => g.setSetting('pmap', e.target.value));
     $('chk-prog').checked = !!g.settings.prog;
     $('chk-prog').addEventListener('change', (e) => g.setSetting('prog', e.target.checked));
+    $('chk-inf').checked = !!g.settings.inf;
+    $('chk-inf').addEventListener('change', (e) => g.setSetting('inf', e.target.checked));
     $('btn-reroll').addEventListener('click', () => g.reroll());
     $('btn-locker').addEventListener('click', () => { g.sfx.ui(); g.openLocker(); });
     $('btn-crate').addEventListener('click', () => { g.sfx.ui(); this.openCrate(); });
@@ -273,7 +275,7 @@ export class Hud {
       try { await navigator.clipboard.writeText(g.inviteLink()); this.toast('邀請連結已複製，貼給朋友吧'); }
       catch { this.toast('複製失敗，請手動告訴朋友房號'); }
     });
-    for (const [id, key] of [['set-target', 'target'], ['set-time', 'roundTime'], ['set-buff', 'buffMode'], ['set-map', 'map']]) {
+    for (const [id, key] of [['set-target', 'target'], ['set-time', 'roundTime'], ['set-buff', 'buffMode'], ['set-econ', 'econ'], ['set-map', 'map']]) {
       $(id).addEventListener('change', (e) => g.changeSettings({ [key]: e.target.value }));
     }
     // 大廳的模式卡片：房主點了就換
@@ -663,7 +665,7 @@ export class Hud {
             ? '注意：現在是本機網址（localhost），朋友的電腦打不開這個連結。要先把遊戲放上網路，再從那個網址建立房間。'
             : '按「複製邀請連結」傳給朋友，對方打開連結、按加入就會進來。等的時候可以先按「熱身」跟機器人打，朋友一進來會自動回到這裡。')
         : ffa ? `已連線（混戰，現在 ${nHere} 個人），等房主按開始。` : '已連線，等房主按開始。');
-      for (const [id, key] of [['set-target', 'target'], ['set-time', 'roundTime'], ['set-buff', 'buffMode'], ['set-map', 'map']]) {
+      for (const [id, key] of [['set-target', 'target'], ['set-time', 'roundTime'], ['set-buff', 'buffMode'], ['set-econ', 'econ'], ['set-map', 'map']]) {
         const el = $(id); el.disabled = !g.net.isHost;
         if (document.activeElement !== el) el.value = String(gs.set[key]);
       }
@@ -692,13 +694,13 @@ export class Hud {
 
   _loadout(gs, warm) {
     const g = this.g, me = gs.p[g.me], opp = gs.p[g.oppI()];
-    const r1 = !warm && gs.round <= 1, sel = g.shopSel(), money = warm ? 99999 : me.$, cost = warm ? 0 : loadoutCost(sel);
+    const inf = !warm && gs.set.econ === 'inf', r1 = !warm && !inf && gs.round <= 1, sel = g.shopSel(), money = warm ? 99999 : me.$, cost = warm ? 0 : loadoutCost(sel);
     const hz = gs.phase === 'horde' ? gs.hz : null, tier = g.hzTier();
     this._cls('scr-loadout', 'warm', !!warm);
-    this._set('lo-title', hz ? (hz.kind === 'defense' ? `守據點：第 ${hz.wave + (hz.st === 'break' ? 1 : 0)} 波之前，全部免費（好槍撐到後面幾波才開放）` : '死鬥練習：全部免費，隨便拿') : warm ? '熱身：全部免費，隨便拿' : r1 ? '第 1 局：手槍局，只能買副武器和裝備' : `第 ${gs.round} 局：買裝備`);
+    this._set('lo-title', hz ? (hz.kind === 'defense' ? `守據點：第 ${hz.wave + (hz.st === 'break' ? 1 : 0)} 波之前，全部免費（好槍撐到後面幾波才開放）` : '死鬥練習：全部免費，隨便拿') : warm ? '熱身：全部免費，隨便拿' : r1 ? '第 1 局：手槍局，只能買副武器和裝備' : inf ? `第 ${gs.round} 局：經濟無限，隨便買` : `第 ${gs.round} 局：買裝備`);
     this._set('lo-map', `地圖：${MAPS[gs.map].name}　${MAPS[gs.map].desc}`);
-    const mk = warm ? 'warm' : `${money}:${cost}`;
-    if (this.cache.loMoney !== mk) { this.cache.loMoney = mk; $('lo-money').innerHTML = warm ? '' : `<b>$${money}</b><span>本局花費 $${cost}　剩下 $${money - cost}</span>`; }
+    const mk = warm ? 'warm' : `${money}:${cost}:${inf}`;
+    if (this.cache.loMoney !== mk) { this.cache.loMoney = mk; $('lo-money').innerHTML = warm ? '' : inf ? `<b>$∞</b><span>本局花費 $${cost}　經濟無限</span>` : `<b>$${money}</b><span>本局花費 $${cost}　剩下 $${money - cost}</span>`; }
     const sk = warm ? 'warm' : `${me.sc}:${opp.sc}:${gs.set.target}`;
     if (this.cache.loScore !== sk) {
       this.cache.loScore = sk;

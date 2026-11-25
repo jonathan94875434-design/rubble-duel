@@ -68,6 +68,7 @@ class Game {
       wheel: store.get('wheel', true),          // 滾輪切槍（Magic Mouse 容易誤觸，可以關）
       bot: store.get('bot', 'normal'), pmap: store.get('pmap', 'random'),  // 練習模式的難度與地圖
       prog: store.get('prog', false),           // 練習時也用 Roguelike 模式
+      inf: store.get('inf', false),             // 練習時用「經濟無限」
       // 機器人模式（自己玩）的設定：死鬥的數量／行為／會不會開槍／難度／時間／地圖，守據點的難度／地圖
       hzdm: { n: 8, beh: 'hunt', atk: true, lv: 'normal', time: 300, map: store.get('hzmap', 'random'), ...(store.get('hzdm', null) || {}) },
       hzdef: { lv: store.get('hzlv', 'normal'), map: store.get('hzmap', 'random'), ...(store.get('hzdef', null) || {}) },
@@ -544,7 +545,7 @@ class Game {
     this.authority.setName(1, level === 'dummy' ? '木樁' : '練習機器人');
     // 木樁模式是給你練身法、練槍的：每局 15 分鐘，對手不動也不開槍
     const m = map || this.settings.pmap;
-    this.authority.setSettings({ map: MAPS[m] || m === 'rotate' ? m : 'random', roundTime: level === 'dummy' ? 900 : 120, mode: this.settings.prog ? 'rogue' : 'classic' });
+    this.authority.setSettings({ map: MAPS[m] || m === 'rotate' ? m : 'random', roundTime: level === 'dummy' ? 900 : 120, mode: this.settings.prog ? 'rogue' : 'classic', econ: this.settings.inf ? 'inf' : 'normal' });
     this.authority.startMatch();
   }
 
@@ -646,7 +647,7 @@ class Game {
     if (gs.phase !== 'loadout') return;
     const money = gs.p[this.me].$, next = { ...this.sel };
     if (kind === 'p') {
-      if (gs.round <= 1) { this.sfx.deny(); this.hud.toast('第 1 局是手槍局，下一局才能買主武器'); return; }
+      if (gs.round <= 1 && gs.set.econ !== 'inf') { this.sfx.deny(); this.hud.toast('第 1 局是手槍局，下一局才能買主武器'); return; }
       next.p = next.p === id ? null : id;
     } else if (kind === 's') next.s = id;
     else if (GEAR[kind]) {
@@ -1376,7 +1377,7 @@ class Game {
         w, slot: cb.cur, slots: cb.slots, other: cb.slots[cb.last], reload: cb.reloadProgress(), scoped, third: !!this.emote || this.kc,
         gap: (Math.tan(cb.spread() * DEG) / Math.tan((cam.fov * DEG) / 2)) * (innerHeight / 2),
         net: (this.net.mode === 'bot' || this.warmBot ? '練習模式' : !this.net.connected ? '單人' : `延遲 ${this.net.ping} ms`) + (this.settings.fps ? `　${this.fpsV} FPS` : ''),
-        spd: alive ? p.speed2d() : 0, crouch: p.crouched, nades: cb.nades, money: meS.$, sk: this.skills.hudState(now),
+        spd: alive ? p.speed2d() : 0, crouch: p.crouched, nades: cb.nades, money: gs.set.econ === 'inf' ? '∞' : meS.$, sk: this.skills.hudState(now),
         storm: this.ffa() && this.storm && this.phase === 'playing' ? { wait: Math.max(0, this.storm.a - now), left: Math.max(0, this.storm.b - now), out: !!this.stormOn } : null,
         spec: this.ffa() && !alive && this.spec >= 0 && gs.p[this.spec] ? gs.p[this.spec].n : null,
       });

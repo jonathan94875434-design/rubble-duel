@@ -321,6 +321,29 @@ for (const [map, spots] of [
   await page.close();
 }
 
+// ═══ 6b. 經濟無限：每局錢補滿、第 1 局就能買主武器、不顯示拿到多少錢 ═══
+{
+  const page = await open({ pmap: 'plaza', bot: 'dummy', inf: true });
+  await page.click('#btn-bot'); await page.waitForFunction(() => __game.phase === 'loadout');
+  await sleep(300);
+  await page.evaluate(() => { __game.buy('p', 'sniper'); __game.buy('armor'); __game.buy('he'); __game.buy('flash'); });
+  await sleep(300);
+  let st = await page.evaluate(() => ({ econ: __game.gs.set.econ, $: __game.gs.p[0].$, p: __game.sel.p, title: document.getElementById('lo-title').textContent, money: document.getElementById('lo-money').textContent }));
+  ok('經濟無限：第 1 局就能買狙擊槍，商店顯示 $∞', st.econ === 'inf' && st.$ === 99999 && st.p === 'sniper' && st.money.includes('∞') && st.title.includes('經濟無限'), JSON.stringify(st));
+  await page.click('#btn-ready'); await page.waitForFunction(() => __game.phase === 'playing', { timeout: 15000 });
+  await sleep(300);
+  st = await page.evaluate(() => ({ gun: __game.combat.slots[0] && __game.combat.slots[0].id, ar: __game.gs.p[0].ar, hud: document.getElementById('money').textContent }));
+  ok('買的狙擊槍、防彈衣有拿到；遊戲中錢顯示 $∞', st.gun === 'sniper' && st.ar === 50 && st.hud === '$∞', JSON.stringify(st));
+  await page.evaluate(() => __game.authority.damage(0, 999, 1, 'pistol', false));
+  await page.waitForFunction(() => __game.phase === 'roundEnd', { timeout: 5000 });
+  const inc = await page.evaluate(() => __game.gs.res.inc);
+  await page.waitForFunction(() => __game.phase === 'loadout', { timeout: 9000 });
+  await sleep(300);
+  const m2 = await page.evaluate(() => __game.gs.p[0].$);
+  ok('回合結束不顯示拿到多少錢；下一局錢又補滿', inc === null && m2 === 99999, JSON.stringify({ inc, m2 }));
+  await page.close();
+}
+
 // ═══ 7. 手榴彈、閃光彈、煙霧彈 ═══
 {
   const page = await open({ pmap: 'plaza', bot: 'dummy' });

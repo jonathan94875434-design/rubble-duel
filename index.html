@@ -110,6 +110,7 @@
             <label>地圖<select id="sel-pmap" title="練習地圖"></select></label>
           </div>
           <label class="check"><input id="chk-prog" type="checkbox"> 用 Roguelike 模式（每局選一張異能卡）</label>
+          <label class="check"><input id="chk-inf" type="checkbox"> 經濟無限（每局錢都補滿，第 1 局就能買槍）</label>
           <button id="btn-bot" class="btn go">開始練習</button>
         </article>
 
@@ -213,6 +214,7 @@
         <label class="duelopt">獲勝分數<select id="set-target"><option value="3">搶 3</option><option value="5">搶 5</option><option value="7">搶 7</option><option value="10">搶 10</option></select></label>
         <label class="duelopt">每局時間<select id="set-time"><option value="60">60 秒</option><option value="90">90 秒</option><option value="120">120 秒</option><option value="180">180 秒</option></select></label>
         <label>地圖<select id="set-map"></select></label>
+        <label class="duelopt">經濟<select id="set-econ"><option value="normal">一般：輸贏拿錢、第 1 局手槍局</option><option value="inf">無限：每局錢都補滿，隨便買</option></select></label>
         <label>輸家補償<select id="set-buff"><option value="streak">強化：連敗累積，贏了清空</option><option value="single">強化：只維持下一局</option><option value="permanent">強化：整場保留</option><option value="off">不給強化（只靠多拿錢）</option></select></label>
       </div>
       <div class="actions"><button id="btn-leave" class="btn ghost">離開</button><button id="btn-warm" class="btn">熱身</button><button id="btn-start" class="btn primary">開始對戰</button></div>

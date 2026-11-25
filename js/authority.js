@@ -21,7 +21,7 @@ export class Authority {
     // mode：'classic' 一般對戰／'rogue' Roguelike（每局選一張異能卡，整場累積；輸家補償改成「多一張可以選」）
     //       'dm' 機器人死鬥／'defense' 守據點（這兩個是跟機器人打，見 horde.js）
     // hz：機器人模式的設定。n 幾隻、beh 行為、atk 會不會開槍、lv 難度、time 死鬥幾秒（0 = 不限）
-    this.settings = { target: MATCH.TARGET, roundTime: MATCH.ROUND_TIME, buffMode: MATCH.BUFF_MODE, map: 'random', mode: 'classic', hz: { n: 8, beh: 'hunt', atk: true, lv: 'normal', time: 300 } };
+    this.settings = { target: MATCH.TARGET, roundTime: MATCH.ROUND_TIME, buffMode: MATCH.BUFF_MODE, econ: 'normal', map: 'random', mode: 'classic', hz: { n: 8, beh: 'hunt', atk: true, lv: 'normal', time: 300 } };
     this.hz = null; this.onMobHit = null;   // onMobHit(誰, 資料)：玩家打中機器人（main.js 接到 horde.js）
     this.map = MAP_IDS[0]; this.mapStart = 0; this.lastLoser = -1;
     this.phase = 'lobby'; this.round = 0; this.tEnd = 0; this.result = null; this.matchWinner = -1;
@@ -33,6 +33,7 @@ export class Authority {
   }
   destroy() { clearInterval(this.timer); }
   ffa() { return this.settings.mode === 'ffa'; }
+  inf() { return this.settings.econ === 'inf'; }   // 經濟無限：錢每局補滿、沒有手槍局
   // 座位數：混戰 4 個、其他模式 2 個（玩家陣列跟著變長變短）
   _slots(n) {
     while (this.players.length < n) { this.players.push(this._mk('玩家 ' + (this.players.length + 1))); this.present.push(false); }
@@ -56,6 +57,7 @@ export class Authority {
     if ([60, 90, 120, 180, 900].includes(+s.roundTime)) this.settings.roundTime = +s.roundTime;
     if (s.map === 'random' || s.map === 'rotate' || MAPS[s.map]) this.settings.map = s.map;   // 也可以是自製地圖
     if (['streak', 'permanent', 'single', 'off'].includes(s.buffMode)) this.settings.buffMode = s.buffMode;
+    if (['normal', 'inf'].includes(s.econ)) this.settings.econ = s.econ;
     if (['classic', 'rogue', 'dm', 'defense', 'ffa'].includes(s.mode)) {
       // 房間裡超過 2 個人時只能玩混戰（座位 2、3 有人就不能換回 1 對 1 的模式）
       if (s.mode === 'ffa' || !this.present.slice(2).some(Boolean)) { this.settings.mode = s.mode; this._slots(s.mode === 'ffa' ? FFA.SLOTS : 2); }
@@ -207,9 +209,10 @@ export class Authority {
     this.tEnd = Date.now() + (rogue ? ROGUE.TIME : MATCH.LOADOUT_TIME) * 1000;
     this.players.forEach((p, i) => {
       p.ready = false; p.loadout = validLoadout(null);   // 商店重置：沒買就是只有免費手槍
+      if (this.inf()) p.money = ECON.INF;
       if (!rogue) return;
       // Roguelike：每個人每局都抽卡；上一局輸的人多一張、手氣也比較好
-      if (this.round > 1 && p.buffs.includes('investor')) p.money = Math.min(ECON.MAX, p.money + 1500);
+      if (this.round > 1 && !this.inf() && p.buffs.includes('investor')) p.money = Math.min(ECON.MAX, p.money + 1500);
       p.rr = 0; p.lucky = this.lastLoser === i;
       p.choices = this._roll(p);
     });
@@ -226,7 +229,7 @@ export class Authority {
     p.choices = null; this.dirty = true;
     if (!c) return;
     if (c.k === 'a') { let s = p.skills.indexOf(null); if (s < 0) s = slot === 1 ? 1 : 0; p.skills[s] = id; }
-    else if (!p.buffs.includes(id)) { p.buffs.push(id); if (id === 'investor' && this.phase === 'loadout') p.money = Math.min(ECON.MAX, p.money + 1500); }
+    else if (!p.buffs.includes(id)) { p.buffs.push(id); if (id === 'investor' && this.phase === 'loadout' && !this.inf()) p.money = Math.min(ECON.MAX, p.money + 1500); }
   }
   _reroll(p) {
     if (this.settings.mode !== 'rogue' || this.phase !== 'loadout' || !p.choices || p.rr >= ROGUE.REROLLS) return;
@@ -260,7 +263,7 @@ export class Authority {
       // 沒選就自動拿一張（優先拿不會擠掉現有技能的）
       if (p.choices) this._take(p, p.choices.find((id) => CARDS[id] && (CARDS[id].k === 'p' || p.skills.includes(null))) || p.choices[0], 0);
       // 結帳：依規則與餘額修正裝備，然後扣錢（買了就花掉，不退）
-      p.loadout = fitLoadout(p.loadout, p.money, this.round);
+      p.loadout = fitLoadout(p.loadout, p.money, this.inf() ? 2 : this.round);   // 經濟無限沒有手槍局
       p.spent = loadoutCost(p.loadout); p.money -= p.spent;
       const has = (b) => p.buffs.includes(b);
       p.maxHp = maxHpOf(p.buffs);
@@ -289,7 +292,7 @@ export class Authority {
         else { P.streak++; P.money = Math.min(ECON.MAX, P.money + FFA.LOSE); }
       }
       if (winner >= 0 && this.players[winner].score >= this.settings.target) this.matchWinner = winner;
-      this.result.inc = this.players.map((p, i) => p.money - before[i]);
+      this.result.inc = this.inf() ? null : this.players.map((p, i) => p.money - before[i]);
       this.dirty = true;
       return;
     }
@@ -309,7 +312,7 @@ export class Authority {
       }
       if (W.score >= this.settings.target) this.matchWinner = winner;
     } else for (const p of this.players) p.money = Math.min(ECON.MAX, p.money + ECON.DRAW);
-    this.result.inc = this.players.map((p, i) => p.money - before[i]);   // 這一局各拿到多少錢
+    this.result.inc = this.inf() ? null : this.players.map((p, i) => p.money - before[i]);   // 這一局各拿到多少錢（經濟無限就不顯示）
     this.dirty = true;
   }
 
