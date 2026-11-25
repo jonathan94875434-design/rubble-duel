@@ -11,11 +11,14 @@ export class Minimap {
     this.bctx = this.base.getContext('2d'); this.img = this.bctx.createImageData(world.X, world.Z);
     this.rev = -1; this.at = 0;
     this.seen = { t: -1e9, x: 0, z: 0 }; this.heard = { t: -1e9, x: 0, z: 0 };
+    this.marks = new Map();   // 混戰：每個對手各自的「看到／聽到」（座位號 → { st, sx, sz, ht, hx, hz }）
   }
 
-  reset() { this.seen.t = this.heard.t = -1e9; this.rev = -1; }
-  spot(now, x, z) { this.seen.t = now; this.seen.x = x; this.seen.z = z; }
-  ping(now, x, z) { this.heard.t = now; this.heard.x = x; this.heard.z = z; }
+  reset() { this.seen.t = this.heard.t = -1e9; this.rev = -1; this.marks.clear(); }
+  _m(slot) { let m = this.marks.get(slot); if (!m) this.marks.set(slot, (m = { st: -1e9, sx: 0, sz: 0, ht: -1e9, hx: 0, hz: 0 })); return m; }
+  // slot 不給 = 1 對 1 的那個對手；混戰帶座位號，顏色看 draw 的 colors
+  spot(now, x, z, slot) { if (slot === undefined) { this.seen.t = now; this.seen.x = x; this.seen.z = z; } else { const m = this._m(slot); m.st = now; m.sx = x; m.sz = z; } }
+  ping(now, x, z, slot) { if (slot === undefined) { this.heard.t = now; this.heard.x = x; this.heard.z = z; } else { const m = this._m(slot); m.ht = now; m.hx = x; m.hz = z; } }
 
   // 每一格取「最上面那塊」的顏色，越高越亮
   _rebuild() {
@@ -35,7 +38,8 @@ export class Minimap {
     this.rev = w.rev;
   }
 
-  // s: { px, pz, yaw, alive, pickups: [{x,z,type,on}], smokes: [{x,z,r}], fires: [{x,z,r}], oppColor, meColor }
+  // s: { px, pz, yaw, alive, pickups: [{x,z,type,on}], smokes: [{x,z,r}], fires: [{x,z,r}], oppColor, meColor,
+  //      colors（混戰：座位號 → 顏色）, storm（混戰：毒圈 { x, z, r }） }
   draw(now, s) {
     const w = this.w, c = this.c, g = this.ctx, S = c.width, k = S / (w.X * BS);
     if (this.rev !== w.rev && now - this.at > 400) { this._rebuild(); this.at = now; }
@@ -50,7 +54,17 @@ export class Minimap {
       const x = p.x * k, z = p.z * k;
       if (p.type === 'hp') { g.fillRect(x - 1, z - 3.5, 2, 7); g.fillRect(x - 3.5, z - 1, 7, 2); } else { g.beginPath(); g.moveTo(x, z - 4); g.lineTo(x + 3.5, z - 2); g.lineTo(x + 3.5, z + 1); g.lineTo(x, z + 4); g.lineTo(x - 3.5, z + 1); g.lineTo(x - 3.5, z - 2); g.fill(); }
     }
+    // 混戰的毒圈：圈外塗紫色、圈的邊界一條亮線
+    if (s.storm && s.storm.r < 1e5) {
+      g.fillStyle = 'rgba(120,40,220,0.32)'; g.beginPath(); g.rect(0, 0, S, S); g.arc(s.storm.x * k, s.storm.z * k, s.storm.r * k, 0, 6.283, true); g.fill();
+      g.strokeStyle = '#c58cff'; g.lineWidth = 2; g.beginPath(); g.arc(s.storm.x * k, s.storm.z * k, s.storm.r * k, 0, 6.283); g.stroke();
+    }
     // 對手：聽到槍聲 = 一圈往外擴的波紋；看到 = 實心點
+    for (const [slot, m] of this.marks) {
+      const col = (s.colors && s.colors[slot]) || s.oppColor, h = now - m.ht, v = now - m.st;
+      if (h < HEAR_MS) { const a = 1 - h / HEAR_MS; g.strokeStyle = col; g.lineWidth = 2; g.globalAlpha = a; g.beginPath(); g.arc(m.hx * k, m.hz * k, 4 + (1 - a) * 9, 0, 6.283); g.stroke(); g.globalAlpha = 1; }
+      if (v < SEE_MS) { g.globalAlpha = Math.min(1, 1.3 - v / SEE_MS); g.fillStyle = col; g.strokeStyle = '#000'; g.lineWidth = 1.5; g.beginPath(); g.arc(m.sx * k, m.sz * k, 4.2, 0, 6.283); g.fill(); g.stroke(); g.globalAlpha = 1; }
+    }
     const ha = now - this.heard.t;
     if (ha < HEAR_MS) {
       const a = 1 - ha / HEAR_MS;

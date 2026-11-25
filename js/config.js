@@ -62,6 +62,20 @@ export const ECON = {
   DRAW: 2500,
 };
 
+// 混戰（3～4 人，1 打 1 打 1 打 1）：回合制，最後活下來的人拿 1 分；毒圈從整張地圖慢慢縮到一個點
+export const FFA = {
+  SLOTS: 4,          // 最多幾個人（房主 + 3 個訪客）
+  MIN: 3,            // 至少幾個人才能開打
+  ROUND_TIME: 150,   // 每局秒數（毒圈在時間到之前就會縮完）
+  STORM_WAIT: 20,    // 開打後幾秒毒圈才開始縮
+  STORM_SHRINK: 100, // 縮到最小要幾秒
+  STORM_END_R: 2,    // 最後剩多大（公尺）
+  STORM_DPS: [5, 20],// 待在圈外每秒扣多少血：剛開始縮 → 縮完
+  KILL: 300,         // 每擊倒一個人拿多少錢
+  WIN: 2500,         // 這一局活到最後
+  LOSE: 2000,        // 沒活到最後
+};
+
 // Roguelike 模式：每局開打前選一張異能卡（cards.js）。輸的人多一張可以選、也比較容易抽到稀有卡
 export const ROGUE = {
   N: 3,              // 一次給幾張選
@@ -87,5 +101,5 @@ export const HORDE = {
   SNAP_HZ: 15,       // 機器人位置同步給訪客的頻率
 };
 
-export const TEAM = [0xff7a3c, 0x3cc8ff];      // 房主橘、訪客藍
-export const TEAM_CSS = ['#ff7a3c', '#3cc8ff'];
+export const TEAM = [0xff7a3c, 0x3cc8ff, 0x5ee06a, 0xc86bff];      // 房主橘、訪客藍；混戰的第 3、4 個人綠、紫
+export const TEAM_CSS = ['#ff7a3c', '#3cc8ff', '#5ee06a', '#c86bff'];

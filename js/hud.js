@@ -553,9 +553,11 @@ export class Hud {
     el.onanimationend = () => el.classList.remove('show');
     clearTimeout(this.kmT); this.kmT = setTimeout(() => el.classList.remove('show'), 1400);
   }
+  // 混戰：在毒圈外時畫面蒙一層紫
+  stormFx(on) { $('stormfx').classList.toggle('on', !!on); }
   killfeed(k) {
     const d = document.createElement('div'); d.className = 'kf' + (k.mine ? ' mine' : ' theirs');
-    const ic = this.icons && this.icons[k.w], wn = itemName(k.w) || cardName(k.w);
+    const ic = this.icons && this.icons[k.w], wn = k.w === 'storm' ? '毒圈' : itemName(k.w) || cardName(k.w);
     d.innerHTML = (k.killer ? `<b>${esc(k.killer)}</b>` : '') + (ic ? `<img src="${ic}" alt="">` : `<span class="w">${esc(wn || '自爆')}</span>`)
       + (k.bk ? `<i title="背刺">${ICON.back}</i>` : '') + (k.wb ? `<i title="穿牆">${ICON.wall}</i>` : '') + (k.head ? `<i class="hs" title="爆頭">${ICON.head}</i>` : '') + `<b>${esc(k.victim)}</b>`;
     $('feed').appendChild(d);
@@ -582,7 +584,7 @@ export class Hud {
     const tx = $('v-tx'), rx = $('v-rx');
     tx.classList.toggle('hidden', !(v && v.tx)); rx.classList.toggle('hidden', !(v && v.rx));
     if (v && v.tx) tx.innerHTML = ICON.mic + '<span>說話中</span>';
-    if (v && v.rx) rx.innerHTML = ICON.spk + `<span>${esc(g.gs ? g.gs.p[1 - g.me].n : '對手')}</span>`;
+    if (v && v.rx) rx.innerHTML = ICON.spk + `<span>${esc(g.gs ? g.gs.p[g.oppI()].n : '對手')}</span>`;
     $('out-voice').textContent = st === 'off' ? '' : !v || !v.available() ? '（連線對戰時才會啟用）' : v.stream ? (st === 'ptt' ? `（按住 ${this.key('talk')} 說話）` : '（麥克風開著）') : '（等待麥克風權限…）';
   }
 
@@ -603,14 +605,26 @@ export class Hud {
 
   // ───────── 依主機狀態更新靜態畫面 ─────────
   onState(gs) {
-    const g = this.g, me = g.me, opp = 1 - me, P = gs.p, warm = gs.phase === 'warmup', hz = gs.phase === 'horde' ? gs.hz : null;
+    const g = this.g, me = g.me, opp = g.oppI(), P = gs.p, warm = gs.phase === 'warmup', hz = gs.phase === 'horde' ? gs.hz : null;
     document.documentElement.style.setProperty('--me', TEAM_CSS[me]);
     document.documentElement.style.setProperty('--opp', TEAM_CSS[opp]);
     // 機器人模式：記分板顯示各打倒幾隻；只有自己一個人時，右邊顯示場上還有幾個機器人
     const solo = hz && !gs.here[opp], bots = hz ? (hz.kind === 'defense' ? Math.max(0, hz.left) : g.horde.views.size ? [...g.horde.views.values()].filter((o) => o.alive).length : 0) : 0;
     this._set('nm-me', P[me].n); this._set('nm-opp', solo ? '機器人' : P[opp].n);
     this._set('sc-me', hz ? String(hz.k[me]) : warm ? '–' : String(P[me].sc)); this._set('sc-opp', hz ? String(solo ? bots : hz.k[opp]) : warm ? '–' : String(P[opp].sc));
-    this._set('roundno', hz ? `${hz.kind === 'dm' ? '死鬥' : '守據點 · ' + (HZ_LEVELS[hz.cfg.lv] || HZ_LEVELS.normal).name} · ${MAPS[gs.map].name}` : warm ? `熱身 · ${MAPS[gs.map].name}` : `第 ${gs.round} 局 · 搶 ${gs.set.target} · ${MAPS[gs.map].name}`);
+    const ffa = gs.set.mode === 'ffa';
+    this._set('roundno', hz ? `${hz.kind === 'dm' ? '死鬥' : '守據點 · ' + (HZ_LEVELS[hz.cfg.lv] || HZ_LEVELS.normal).name} · ${MAPS[gs.map].name}` : warm ? `熱身 · ${MAPS[gs.map].name}` : `${ffa ? '混戰 · ' : ''}第 ${gs.round} 局 · 搶 ${gs.set.target} · ${MAPS[gs.map].name}`);
+    this._cls('top', 'ffa', ffa);
+    this._cls('ffaboard', 'hidden', !ffa);
+    if (ffa) {
+      const rows = P.map((p, i) => ({ p, i })).filter((o) => gs.here[o.i]);
+      const key = rows.map((o) => `${o.i}|${o.p.n}|${o.p.sc}|${o.p.al}`).join(',') + gs.phase;
+      if (this.cache.ffab !== key) {
+        this.cache.ffab = key;
+        const live = ['playing', 'countdown', 'roundEnd'].includes(gs.phase);
+        $('ffaboard').innerHTML = rows.map(({ p, i }) => `<div class="fb${i === me ? ' me' : ''}${live && !p.al ? ' dead' : ''}" style="--c:${TEAM_CSS[i]}"><span>${esc(p.n)}</span><b>${p.sc}</b></div>`).join('');
+      }
+    }
     this._cls('hzinfo', 'hidden', !hz);
 
     // 對戰中：對手帶了哪些異能（記分板下面一排小圖示）
@@ -621,14 +635,17 @@ export class Hud {
     }
     if (gs.phase === 'lobby') {
       this._set('lb-code', g.code || '-----');
-      this._set('lb-p0', P[0].n); this._set('lb-p1', gs.here[1] ? P[1].n : '等待對手加入…');
-      $('lb-p1').parentElement.classList.toggle('empty', !gs.here[1]);
+      const ffa = gs.set.mode === 'ffa', nHere = gs.here.filter(Boolean).length;
+      this._cls('scr-lobby', 'ffa', ffa); document.querySelector('#scr-lobby .lobby').classList.toggle('ffa', ffa);
+      for (let i = 1; i < 4; i++) { const el = $('lb-p' + i); if (!el) continue; const here = !!gs.here[i] && !!P[i]; el.textContent = here ? P[i].n : ffa ? '空位' : '等待對手加入…'; el.parentElement.classList.toggle('empty', !here); }
+      this._set('lb-p0', P[0].n);
       this._set('lb-hint', g.net.isHost
-        ? (gs.here[1] ? '對手已連線，調好規則就可以開始。'
+        ? (ffa ? (nHere >= 3 ? `${nHere} 個人到齊了，可以開始混戰。每局最後活著的人拿 1 分；毒圈會一直縮，待在圈外會一直扣血。` : `混戰要 3～4 個人：按「複製邀請連結」傳給朋友，現在 ${nHere} 個人。`)
+          : gs.here[1] ? '對手已連線，調好規則就可以開始。'
           : g.net.mode === 'peer' && ['localhost', '127.0.0.1'].includes(location.hostname)
             ? '注意：現在是本機網址（localhost），朋友的電腦打不開這個連結。要先把遊戲放上網路，再從那個網址建立房間。'
             : '按「複製邀請連結」傳給朋友，對方打開連結、按加入就會進來。等的時候可以先按「熱身」跟機器人打，朋友一進來會自動回到這裡。')
-        : '已連線，等房主按開始。');
+        : ffa ? `已連線（混戰，現在 ${nHere} 個人），等房主按開始。` : '已連線，等房主按開始。');
       for (const [id, key] of [['set-target', 'target'], ['set-time', 'roundTime'], ['set-buff', 'buffMode'], ['set-map', 'map']]) {
         const el = $(id); el.disabled = !g.net.isHost;
         if (document.activeElement !== el) el.value = String(gs.set[key]);
@@ -641,12 +658,15 @@ export class Hud {
       }
       const hm = gs.set.mode === 'dm' || gs.set.mode === 'defense';
       document.querySelectorAll('#scr-lobby .duelopt').forEach((el) => el.classList.toggle('hidden', hm));
+      $('set-time').parentElement.classList.toggle('hidden', hm || ffa);                     // 混戰的每局時間是固定的（毒圈會縮完）
+      // 房間裡已經超過 2 個人：只能玩混戰（其他模式先反灰）
+      document.querySelectorAll('#lb-modes .mtile').forEach((el) => { if (el.dataset.mode !== 'ffa' && gs.here.slice(2).some(Boolean)) el.disabled = true; });
       document.querySelectorAll('#scr-lobby .hzopt').forEach((el) => el.classList.toggle('hidden', !hm || (el.classList.contains('dmopt') && gs.set.mode !== 'dm')));
       $('set-buff').parentElement.classList.toggle('hidden', gs.set.mode !== 'classic');   // Roguelike 的輸家補償是「多一張卡可以選」；機器人模式沒有輸家
       $('btn-start').classList.toggle('hidden', !g.net.isHost);
-      $('btn-start').disabled = !gs.here[1] && !hm;              // 機器人模式可以先自己開打
-      this._set('btn-start', hm ? (gs.here[1] ? '開始' : '先自己開打（朋友晚點進來會直接加入）') : '開始對戰');
-      $('btn-warm').classList.toggle('hidden', !g.net.isHost);
+      $('btn-start').disabled = ffa ? nHere < 3 : !gs.here[1] && !hm;              // 機器人模式可以先自己開打；混戰至少 3 個人
+      this._set('btn-start', ffa ? (nHere >= 3 ? `開始混戰（${nHere} 人）` : `還差 ${3 - nHere} 個人（至少 3 人）`) : hm ? (gs.here[1] ? '開始' : '先自己開打（朋友晚點進來會直接加入）') : '開始對戰');
+      $('btn-warm').classList.toggle('hidden', !g.net.isHost || ffa);
       this._set('btn-warm', gs.here[1] ? '一起熱身' : '熱身（跟機器人）');
       $('btn-copy').classList.toggle('hidden', !g.net.isHost);
     } else if (gs.phase === 'loadout' || ((warm || hz) && g.buyOpen)) this._loadout(gs, warm || !!hz);
@@ -654,7 +674,7 @@ export class Hud {
   }
 
   _loadout(gs, warm) {
-    const g = this.g, me = gs.p[g.me], opp = gs.p[1 - g.me];
+    const g = this.g, me = gs.p[g.me], opp = gs.p[g.oppI()];
     const r1 = !warm && gs.round <= 1, sel = g.shopSel(), money = warm ? 99999 : me.$, cost = warm ? 0 : loadoutCost(sel);
     const hz = gs.phase === 'horde' ? gs.hz : null, tier = g.hzTier();
     this._cls('scr-loadout', 'warm', !!warm);
@@ -782,7 +802,8 @@ export class Hud {
 
   _end(gs) {
     if (gs.hz) { this._hzEnd(gs); return; }
-    const g = this.g, me = gs.p[g.me], opp = gs.p[1 - g.me], win = gs.mw === g.me;
+    if (gs.set.mode === 'ffa') { this._ffaEnd(gs); return; }
+    const g = this.g, me = gs.p[g.me], opp = gs.p[g.oppI()], win = gs.mw === g.me;
     this._set('btn-rematch', '再來一場');
     const t = $('end-title'); t.textContent = win ? '勝利' : '落敗'; t.className = win ? 'win' : 'lose';
     $('scr-end').querySelector('.end').className = 'panel end ' + (win ? 'won' : 'lost');
@@ -795,6 +816,21 @@ export class Hud {
     const bar = (label, a, b) => { const s = a + b || 1; return `<div class="cr"><b>${a}</b><div><span>${label}</span><div class="cb"><i class="me" style="width:${(a / s) * 100}%"></i><i class="opp" style="width:${(b / s) * 100}%"></i></div></div><b>${b}</b></div>`; };
     $('end-cmp').innerHTML = bar('拿下局數', me.sc, opp.sc) + bar('總傷害', me.dmg, opp.dmg) + bar('爆頭擊殺', me.hs, opp.hs);
     $('end-stats').innerHTML = '';
+    $('btn-rematch').classList.toggle('hidden', !g.net.isHost);
+    $('end-wait').textContent = g.net.isHost ? '' : '等房主決定要不要再來一場…';
+  }
+
+  // 混戰的結算：照分數排名，每個人的局數、總傷害、爆頭擊殺
+  _ffaEnd(gs) {
+    const g = this.g, win = gs.mw === g.me, W = gs.p[gs.mw];
+    this._set('btn-rematch', '再來一場');
+    const t = $('end-title'); t.textContent = win ? '勝利' : W ? `${W.n} 贏了` : '結束'; t.className = win ? 'win' : 'lose';
+    $('scr-end').querySelector('.end').className = 'panel end ' + (win ? 'won' : 'lost');
+    const rows = gs.p.map((p, i) => ({ p, i })).filter((o) => gs.here[o.i] || o.i === g.me).sort((a, b) => b.p.sc - a.p.sc || b.p.dmg - a.p.dmg);
+    $('end-score').innerHTML = `<div class="ffarank">${rows.map(({ p, i }, k) => `<div class="fr${i === g.me ? ' me' : ''}" style="--c:${TEAM_CSS[i]}"><b>${k + 1}</b><span>${esc(p.n)}${i === g.me ? '（你）' : ''}</span><em>${p.sc}</em><i>傷害 ${p.dmg}</i><i>爆頭擊殺 ${p.hs}</i></div>`).join('')}</div>`;
+    const log = (g.roundLog || []).filter(Boolean);
+    $('end-rounds').innerHTML = log.length ? `<span class="rl">每一局</span><div class="rr">${log.map((x, i) => { const w = gs.p[x.who]; return `<div class="rd${x.w === -1 ? ' draw' : ''}" style="${w ? `--rc:${TEAM_CSS[x.who]};background:color-mix(in srgb, ${TEAM_CSS[x.who]} 55%, transparent)` : ''}" title="第 ${i + 1} 局：${w ? esc(w.n) + ' 活到最後' : '沒有人活下來'}"><small>${i + 1}</small><em>${w ? esc(w.n.slice(0, 1)) : '平'}</em></div>`; }).join('')}</div>` : '';
+    $('end-cmp').innerHTML = ''; $('end-stats').innerHTML = '';
     $('btn-rematch').classList.toggle('hidden', !g.net.isHost);
     $('end-wait').textContent = g.net.isHost ? '' : '等房主決定要不要再來一場…';
   }
@@ -847,6 +883,16 @@ export class Hud {
     this._set('timer', hz ? (hz.kind === 'dm' ? (hz.cfg.time ? clock : '∞') : hz.st === 'break' ? clock : `第 ${hz.wave} 波`) : d.phase === 'playing' ? clock : d.phase === 'warmup' ? '熱身' : d.phase === 'countdown' ? '準備' : '結束');
     this._cls('timer', 'low', (d.phase === 'playing' || (hz && hz.kind === 'dm' && hz.cfg.time)) && s <= 15);
     if (hz) this._hzFrame(g.gs, tl);
+    // 混戰：毒圈倒數／在圈外的警告；死了在看誰
+    const sm = d.storm;
+    this._cls('stormbar', 'hidden', !sm);
+    if (sm) {
+      const t = (ms) => { const x = Math.ceil(ms / 1000); return `${Math.floor(x / 60)}:${String(x % 60).padStart(2, '0')}`; };
+      this._set('stormbar', sm.out ? '你在毒圈外！快回到圈裡' : sm.wait > 0 ? `毒圈 ${Math.ceil(sm.wait / 1000)} 秒後開始縮` : sm.left > 0 ? `毒圈縮小中　${t(sm.left)}` : '毒圈縮到最小了');
+      this._cls('stormbar', 'out', !!sm.out);
+    }
+    this._cls('specbar', 'hidden', !d.spec);
+    if (d.spec) { const k = 'spec|' + d.spec; if (this.cache.spec !== k) { this.cache.spec = k; $('specbar').innerHTML = `觀戰：${esc(d.spec)}<small>按左鍵換人</small>`; } }
 
     const hp = d.hp, mhp = d.mhp;
     this._set('num-hp', String(hp)); this._set('num-armor', String(d.armor));

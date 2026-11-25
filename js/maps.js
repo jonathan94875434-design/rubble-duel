@@ -439,6 +439,80 @@ function buildDust(w) {
   P(46, G, 98, 48, G + 2, 100, WOOD); P(79, G, 114, 81, G + 2, 116, WOOD);
 }
 
+
+// ═════════ 8. 施工大樓（混戰專用，4 個人）：還沒蓋完的大樓，三層樓加屋頂 ═════════
+// 四個角落完全一樣（每樣東西都繞中心轉 90° 放四份），誰出生在哪都公平。
+// 一樓：四角各一間出生房間；中間是挖空到天空的天井（有一座塔吊），四個象限各一個採光井（也是往下跳的捷徑）。
+// 樓梯每一層換一個位置；二樓有十字鋼樑橫過天井通到塔吊；三樓有辦公室隔間；屋頂沒有遮蔽，有冷氣機和水塔可以躲。
+// 外牆每層都有窗，牆外一圈鷹架走道（跳窗出去可以繞到別的象限）。
+const GS = 3, SITE = { X: 128, Y: 32, Z: 128 };
+const SL = [GS, GS + 7, GS + 14, GS + 21];   // 每一層站的高度（方塊）：一樓、二樓、三樓、屋頂。樓板在 SL[k] - 1
+function buildSite(w) {
+  const N = w.X, G = GS;
+  // 放一塊，同時放它繞地圖中心轉 90°、180°、270° 的三份
+  const R = (x0, y0, z0, x1, y1, z1, t) => {
+    let a = [x0, z0, x1, z1];
+    for (let k = 0; k < 4; k++) {
+      w.box(Math.min(a[0], a[2]), y0, Math.min(a[1], a[3]), Math.max(a[0], a[2]), y1, Math.max(a[1], a[3]), t);
+      a = [N - 1 - a[1], a[0], N - 1 - a[3], a[2]];
+    }
+  };
+  base(w, CONCRETE, G);
+  const lo = 6, hi = N - 7;                                                   // 大樓外牆（2 格厚）在 6..7、120..121
+  R(lo, G, lo, hi, SL[3] + 2, lo + 1, CONCRETE);                             // 外牆一路到屋頂的女兒牆（1.5 公尺，跳不出去）
+  for (const y of [SL[1] - 1, SL[2] - 1, SL[3] - 1]) w.box(lo + 2, y, lo + 2, hi - 2, y, hi - 2, CONCRETE);   // 樓板、屋頂
+  // 外牆的窗：每層、每面牆六個（3 公尺寬、1.5 公尺高，窗台 0.5 公尺）
+  for (const sl of [SL[0], SL[1], SL[2]]) for (const x of [12, 28, 44, 78, 94, 110]) R(x, sl + 1, lo, x + 5, sl + 3, lo + 1, AIR);
+  // 牆外的鷹架：二樓、三樓高度各一圈 1 公尺寬的木板走道（貼著外牆；外側留空讓天光照進窗戶），每 8 公尺一根鐵柱
+  for (const y of [SL[1] - 1, SL[2] - 1]) R(2, y, 4, N - 3, y, 5, WOOD);
+  for (const x of [2, 18, 34, 50, 77, 93, 109, 125]) R(x, G, 2, x, SL[2] + 2, 2, METAL);
+
+  // ── 天井（中間 12 公尺見方，挖空到天空）與塔吊 ──
+  for (const y of [SL[1] - 1, SL[2] - 1, SL[3] - 1]) w.box(52, y, 52, 75, y, 75, AIR);
+  for (const sl of [SL[1], SL[2], SL[3]]) R(52, sl, 51, 75, sl, 51, METAL);           // 每層天井邊的欄杆（0.5 公尺，跳得過）
+  for (const [x, z] of [[62, 62], [65, 62], [62, 65], [65, 65]]) w.box(x, G, z, x, 29, z, METAL);   // 塔吊的四根柱子
+  for (const y of [6, 15, 22, 28]) { w.box(62, y, 62, 65, y, 62, METAL); w.box(62, y, 65, 65, y, 65, METAL); w.box(62, y, 62, 62, y, 65, METAL); w.box(65, y, 62, 65, y, 65, METAL); }
+  w.box(36, 30, 63, 104, 30, 64, METAL);                                      // 吊臂（很高，碰不到）
+  R(52, SL[1] - 1, 63, 61, SL[1] - 1, 64, METAL);                            // 二樓：十字鋼樑橫過天井
+  w.box(62, SL[1] - 1, 62, 65, SL[1] - 1, 65, METAL);                        // 鋼樑交會的平台（在塔吊中間）
+  // ── 每個象限：採光井（3 公尺見方，從一樓通到天空）──
+  for (const y of [SL[1] - 1, SL[2] - 1, SL[3] - 1]) R(34, y, 34, 39, y, 39, AIR);
+  for (const sl of [SL[1], SL[2], SL[3]]) { R(34, sl, 33, 39, sl, 33, METAL); R(34, sl, 40, 39, sl, 40, METAL); R(33, sl, 34, 33, sl, 39, METAL); R(40, sl, 34, 40, sl, 39, METAL); }
+  // ── 柱子（穿過每一層）──
+  for (const [x, z] of [[20, 46], [46, 20], [20, 20]]) R(x, G, z, x + 1, SL[3] - 2, z + 1, CONCRETE);
+  // ── 樓梯（1.5 公尺寬、每階 0.5 公尺）：一樓→二樓、二樓→三樓、三樓→屋頂，三段在不同位置 ──
+  rampX(R, 46, 48, 30, 1, 2, SL[0], 7, CONCRETE);                            // 一樓→二樓：x 30..43、z 46..48（往 -x 爬）
+  R(32, SL[1] - 1, 46, 43, SL[1] - 1, 48, AIR);
+  R(32, SL[1], 45, 43, SL[1], 45, METAL); R(32, SL[1], 49, 43, SL[1], 49, METAL); R(44, SL[1], 45, 44, SL[1], 49, METAL);
+  rampZ(R, 46, 48, 30, 1, 2, SL[1], 7, CONCRETE);                            // 二樓→三樓：x 46..48、z 30..43（往 -z 爬）
+  R(46, SL[2] - 1, 32, 48, SL[2] - 1, 43, AIR);
+  R(45, SL[2], 32, 45, SL[2], 43, METAL); R(49, SL[2], 32, 49, SL[2], 43, METAL); R(45, SL[2], 44, 49, SL[2], 44, METAL);
+  rampX(R, 18, 20, 30, 1, 2, SL[2], 7, CONCRETE);                            // 三樓→屋頂：x 30..43、z 18..20
+  R(32, SL[3] - 1, 18, 43, SL[3] - 1, 20, AIR);
+  R(32, SL[3], 17, 43, SL[3], 17, METAL); R(32, SL[3], 21, 43, SL[3], 21, METAL); R(44, SL[3], 17, 44, SL[3], 21, METAL);
+
+  // ── 一樓：出生房間（磚牆、兩個門）、工地的材料 ──
+  R(28, G, 8, 29, SL[1] - 2, 29, BRICK); R(8, G, 28, 29, SL[1] - 2, 29, BRICK);
+  R(28, G, 14, 29, G + 4, 16, AIR); R(14, G, 28, 16, G + 4, 29, AIR);       // 門 1.5 公尺寬、2.5 公尺高
+  R(10, G, 20, 12, G + 1, 22, WOOD);                                         // 房間裡一疊棧板
+  R(40, G, 8, 47, G + 4, 12, CONT_Y);                                        // 工地貨櫃
+  R(14, G, 38, 18, G + 1, 42, SAND); R(15, G + 2, 39, 17, G + 2, 41, SAND);  // 沙堆
+  R(54, G, 40, 57, G + 2, 41, SANDBAG);                                      // 天井旁的沙包
+  // ── 二樓：一疊一疊的棧板、鐵皮隔板 ──
+  R(14, SL[1], 40, 16, SL[1] + 1, 42, WOOD); R(40, SL[1], 14, 42, SL[1] + 2, 16, WOOD);
+  R(8, SL[1], 26, 20, SL[1] + 2, 26, SHEET);                                // 半高的鐵皮隔板
+  R(26, SL[1], 52, 27, SL[1] + 2, 58, PLASTER);
+  // ── 三樓：辦公室隔間（灰泥牆、兩個門、牆上有窗）──
+  R(24, SL[2], 8, 25, SL[3] - 2, 25, PLASTER); R(8, SL[2], 24, 25, SL[3] - 2, 25, PLASTER);
+  R(24, SL[2], 15, 25, SL[2] + 4, 17, AIR); R(15, SL[2], 24, 17, SL[2] + 4, 25, AIR);
+  R(24, SL[2] + 2, 10, 25, SL[2] + 3, 12, AIR); R(10, SL[2] + 2, 24, 12, SL[2] + 3, 25, AIR);
+  R(52, SL[2], 30, 55, SL[2] + 2, 31, SANDBAG);
+  // ── 屋頂：冷氣機、水塔 ──
+  R(14, SL[3], 40, 18, SL[3] + 2, 43, METAL);
+  R(40, SL[3], 8, 44, SL[3] + 3, 12, SHEET);
+  R(56, SL[3], 44, 59, SL[3] + 1, 46, METAL);
+}
+
 export const MAPS = {
   plaza: {
     name: '廢墟廣場', desc: '開闊場地，中央兩層塔與角落高台',
@@ -552,6 +626,30 @@ export const MAPS = {
       { type: 'hp', amount: 40, x: m(18), y: GD * BS, z: m(70) },                // A 長街大門後面
       { type: 'armor', amount: 50, x: m(108), y: GD * BS, z: m(61), respawn: 30 }, // B 地道中段
       { type: 'hp', amount: 25, x: m(114), y: (GD + 12) * BS, z: m(110) },       // B 點樓頂
+    ],
+  },
+  site: {
+    name: '施工大樓', desc: '混戰專用（64×64 公尺）：還沒蓋完的大樓，三層樓加屋頂；中間天井有塔吊，四個角落各一間出生房間，外牆有鷹架',
+    build: buildSite, size: SITE,
+    env: 'noon', ground: GS * BS,
+    storm: { x: 32, z: 32, r: 9 },                                         // 混戰的毒圈收在中間 9 公尺以內
+    // 四個角落的出生房間，都面向中間；前兩個是對角（1 對 1 也能玩這張）
+    spawns: [
+      { x: m(16), y: GS * BS, z: m(16), yaw: -Math.PI * 0.75 },
+      { x: m(111), y: GS * BS, z: m(111), yaw: Math.PI * 0.25 },
+      { x: m(111), y: GS * BS, z: m(16), yaw: Math.PI * 0.75 },
+      { x: m(16), y: GS * BS, z: m(111), yaw: -Math.PI * 0.25 },
+    ],
+    pickups: [
+      { type: 'hp', amount: 40, x: m(24), y: SL[1] * BS, z: m(24) },          // 二樓，每個象限一個
+      { type: 'hp', amount: 40, x: m(103), y: SL[1] * BS, z: m(24) },
+      { type: 'hp', amount: 40, x: m(103), y: SL[1] * BS, z: m(103) },
+      { type: 'hp', amount: 40, x: m(24), y: SL[1] * BS, z: m(103) },
+      { type: 'armor', amount: 50, x: m(50), y: SL[2] * BS, z: m(40), respawn: 30 },   // 三樓天井旁，每個象限一個
+      { type: 'armor', amount: 50, x: m(87), y: SL[2] * BS, z: m(50), respawn: 30 },
+      { type: 'armor', amount: 50, x: m(77), y: SL[2] * BS, z: m(87), respawn: 30 },
+      { type: 'armor', amount: 50, x: m(40), y: SL[2] * BS, z: m(77), respawn: 30 },
+      { type: 'hp', amount: 25, x: 32, y: SL[1] * BS, z: 32 },                 // 塔吊中間的平台
     ],
   },
 };

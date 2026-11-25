@@ -316,7 +316,7 @@ export class Skills {
       this._goAnchor();
       const i = this.slots.indexOf('anchor'); if (i >= 0) this.ready[i] = performance.now() + CARDS.anchor.cd * 1000 * (g.combat.mods.cd || 1);
       g.hud.banner('回溯錨點', '差點死掉，被拉回錨點了', 1200);
-    } else { this.rAnchor = null; g.hud.feed(`${g.gs ? g.gs.p[1 - g.me].n : '對手'} 被錨點救回去了`); }
+    } else { this.rAnchor = null; g.hud.feed(`${g.gs ? g.gs.p[g.oppI()].n : '對手'} 被錨點救回去了`); }
   }
 
   // 堡壘（神話）：在原地蓋一座小城堡，自己直接站上正中間的哨塔頂
@@ -640,7 +640,7 @@ export class Skills {
       case 'pets': case 'petdie': case 'pethit': g.pets.onNet(d); break;
       case 'gamble': {
         const nm = { chrono: '時間凝結', timestop: '時間暫停', blind: '致盲', launch: '升天', burn: '著火' }[d.fx] || '';
-        const who = g.gs ? g.gs.p[1 - g.me].n : '對手';
+        const who = g.gs ? g.gs.p[g.oppI()].n : '對手';
         if (d.win) g.hud.feed(`${who} 賭贏了：你吃了「${nm}」`); else g.hud.feed(`${who} 賭輸了，自己吃了「${nm}」`);
         break;
       }
@@ -668,7 +668,7 @@ export class Skills {
     for (let i = 0; i < 46; i++) { const a = Math.random() * 6.283, s = 1 + Math.random() * 5; fx.glowP.spawn(p.x, p.y + 0.3 + Math.random() * 1.4, p.z, Math.cos(a) * s, 2 + Math.random() * 6, Math.sin(a) * s, 0.5, 0.06, 0.5 + Math.random() * 0.6, 7, 2.6 + Math.random() * 2, 0.4, 0.9, -1, 1.5); }
     fx.light(p.x, p.y + 1, p.z, 0xff8a30, 220, 0.6, 22);
     this._snd('phoenix', p.x, p.z);
-    if (mine) g.hud.banner('不死鳥', '浴火重生！短暫無敵', 1400); else g.hud.feed(`${g.gs ? g.gs.p[1 - g.me].n : '對手'} 浴火重生了`);
+    if (mine) g.hud.banner('不死鳥', '浴火重生！短暫無敵', 1400); else g.hud.feed(`${g.gs ? g.gs.p[g.oppI()].n : '對手'} 浴火重生了`);
   }
 
   // 急救包（裁判通知，雙方都會收到）
@@ -731,7 +731,7 @@ export class Skills {
     const g = this.g, gs = g.gs, rm = g.remote, p = g.player, fx = g.fx, cam = g.camera, live = g.phase === 'playing';
     this.t += dt;
     if (!gs) return;
-    const me = gs.p[g.me], opp = gs.p[1 - g.me], alive = !!me.al, mods = g.combat.mods;
+    const me = gs.p[g.me], opp = gs.p[g.oppI()], alive = !!me.al, mods = g.combat.mods;
     if (!alive) this.inHole = false;
 
     // 鉤索的繩子

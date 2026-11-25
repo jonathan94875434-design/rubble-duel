@@ -19,6 +19,7 @@
 <div id="hud" class="hidden">
   <div id="scope"></div>
   <div id="flashfx"></div>
+  <div id="stormfx"></div>
   <div id="vignette"></div>
   <div id="tintfx"></div>
   <div id="hurt-arc"><svg viewBox="-200 -200 400 400" aria-hidden="true"><path class="glow" d="M -103 -147 A 180 180 0 0 1 103 -147"/><path class="arc" d="M -103 -147 A 180 180 0 0 1 103 -147"/><path class="tip" d="M 0 -214 L 17 -192 L -17 -192 Z"/></svg></div>
@@ -31,6 +32,9 @@
     <div class="mid"><div id="timer">2:00</div><div id="roundno"></div></div>
     <div class="side opp"><span class="sc" id="sc-opp">0</span><span class="nm" id="nm-opp"></span></div>
   </div>
+  <div id="ffaboard" class="hidden"></div>
+  <div id="stormbar" class="hidden"></div>
+  <div id="specbar" class="hidden"></div>
 
   <div id="tl">
     <div class="mmwrap"><canvas id="minimap" width="188" height="188"></canvas></div>
@@ -191,10 +195,13 @@
         <div class="pl p0"><i></i><span id="lb-p0"></span></div>
         <div class="vs">vs</div>
         <div class="pl p1"><i></i><span id="lb-p1"></span></div>
+        <div class="pl p2 ffaonly"><i></i><span id="lb-p2"></span></div>
+        <div class="pl p3 ffaonly"><i></i><span id="lb-p3"></span></div>
       </div>
       <div class="mtiles" id="lb-modes">
         <button class="mtile t-classic" data-mode="classic"><span class="mi"><svg viewBox="0 0 24 24"><circle cx="8.5" cy="8" r="3.2"/><circle cx="16.8" cy="9.2" r="2.6"/><path d="M2.8 19.5c.6-3.5 2.9-5.4 5.7-5.4s5.1 1.9 5.7 5.4M14.6 14.4c.7-.4 1.4-.6 2.2-.6 2.3 0 4 1.6 4.6 4.7"/></svg></span><b>一般對戰</b><span>買槍、搶分、輸家補償</span></button>
         <button class="mtile t-rogue" data-mode="rogue"><span class="mi"><svg viewBox="0 0 24 24"><rect x="4" y="3.5" width="11" height="15" rx="2"/><path d="M9 21.5h9.5a2 2 0 0 0 2-2V8"/><path d="M9.5 8.2l1.6 3-1.6 3-1.6-3z"/></svg></span><b>Roguelike</b><span>每局選一張異能卡</span></button>
+        <button class="mtile t-ffa" data-mode="ffa"><span class="mi"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" stroke-dasharray="3 2.2"/><circle cx="7.5" cy="8.5" r="1.6"/><circle cx="16.5" cy="8.5" r="1.6"/><circle cx="7.5" cy="15.5" r="1.6"/><circle cx="16.5" cy="15.5" r="1.6"/></svg></span><b>混戰</b><span>3～4 人各打各的，有毒圈</span></button>
         <button class="mtile t-def" data-mode="defense"><span class="mi"><svg viewBox="0 0 24 24"><path d="M12 2.8l7.6 2.9v5.8c0 4.7-3.2 8.4-7.6 9.7-4.4-1.3-7.6-5-7.6-9.7V5.7z"/><path d="M12 7.6l2.6 3.7L12 16.4l-2.6-5.1z"/></svg></span><b>守據點</b><span>兩人合作擋機器人</span></button>
         <button class="mtile t-dm" data-mode="dm"><span class="mi"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7.5"/><circle cx="12" cy="12" r="3.2"/><path d="M12 1.8v4.4M12 17.8v4.4M1.8 12h4.4M17.8 12h4.4"/></svg></span><b>機器人死鬥</b><span>一起打，比誰擊倒多</span></button>
       </div>

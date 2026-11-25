@@ -174,7 +174,7 @@ input[type=color] { width: 100%; height: 30px; padding: 0; border: 1px solid var
 /* ───────── 大廳 ───────── */
 .lobby { width: min(700px, 100%); }
 .lobby > h2 { font-size: 15px; color: var(--dim); font-weight: 700; letter-spacing: 0.1em; }
-.mtiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 2px 0 16px; }
+.mtiles { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin: 2px 0 16px; }
 .mtile { --mc: var(--acc); appearance: none; font: inherit; color: var(--txt); text-align: left; cursor: pointer; display: flex; flex-direction: column; gap: 3px; padding: 12px; min-width: 0;
   border-radius: 4px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.035); transition: border-color 0.15s, background 0.15s, transform 0.08s; }
 .mtile .mi { width: 34px; height: 34px; border-radius: 3px; margin-bottom: 5px; }
@@ -809,3 +809,33 @@ input[type=color] { width: 100%; height: 30px; padding: 0; border: 1px solid var
 .gcard .dec { display: none; flex: none; width: 24px; height: 24px; padding: 0; border: 1px solid var(--line); border-radius: 3px; background: rgba(0, 0, 0, 0.35); color: var(--txt); font: 800 16px/1 var(--f-ui); cursor: pointer; }
 .gcard.sel .dec { display: block; }
 .gcard .dec:hover { border-color: var(--acc); color: var(--acc); }
+
+/* ───────── 混戰（3～4 人）───────── */
+.t-ffa { --mc: #c86bff; }
+.players .ffaonly { display: none; }
+.lobby.ffa .players { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.lobby.ffa .players .vs { display: none; }
+.lobby.ffa .players .ffaonly { display: flex; }
+.players .p2 i { background: #5ee06a; } .players .p3 i { background: #c86bff; }
+/* 計分板：中間是時間，下面一排四個人（顏色條、名字、分數；倒下的變暗） */
+#top.ffa .side { display: none; }
+#ffaboard { position: absolute; top: 74px; left: 50%; transform: translateX(-50%); display: flex; gap: 6px; filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.5)); }
+#ffaboard .fb { --c: #fff; display: flex; align-items: center; gap: 8px; min-width: 112px; padding: 5px 10px 5px 8px; background: rgba(10, 12, 16, 0.82); border-left: 3px solid var(--c); clip-path: var(--chamfer-s); }
+#ffaboard .fb b { font: 700 20px/1 var(--f-num); color: var(--c); margin-left: auto; }
+#ffaboard .fb span { font-size: 13px; font-weight: 700; max-width: 96px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#ffaboard .fb.me span { color: #fff; } #ffaboard .fb.me { background: color-mix(in srgb, var(--c) 22%, rgba(10, 12, 16, 0.85)); }
+#ffaboard .fb.dead { opacity: 0.45; } #ffaboard .fb.dead span { text-decoration: line-through; }
+/* 毒圈：倒數、在圈外的警告；觀戰的提示 */
+#stormbar { position: absolute; top: 116px; left: 50%; transform: translateX(-50%); padding: 4px 14px; font-size: 13px; font-weight: 700; color: #e9d6ff; background: rgba(60, 20, 110, 0.72); border: 1px solid rgba(200, 140, 255, 0.5); clip-path: var(--chamfer-s); white-space: nowrap; }
+#stormbar.out { color: #fff; background: rgba(150, 30, 200, 0.9); animation: stormBlink 0.8s ease-in-out infinite alternate; }
+@keyframes stormBlink { to { background: rgba(110, 20, 160, 0.9); } }
+#stormfx { position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity 0.4s; background: radial-gradient(ellipse at center, rgba(120, 40, 220, 0.12) 30%, rgba(110, 30, 200, 0.55) 100%); }
+#stormfx.on { opacity: 1; }
+#specbar { position: absolute; bottom: 120px; left: 50%; transform: translateX(-50%); padding: 7px 18px; font-size: 15px; font-weight: 700; background: rgba(10, 12, 16, 0.8); border-top: 2px solid var(--acc); clip-path: var(--chamfer-s); white-space: nowrap; }
+#specbar small { color: var(--dim); font-weight: 400; margin-left: 10px; }
+.end .ffarank { display: grid; gap: 6px; margin: 10px 0 4px; }
+.end .ffarank .fr { --c: #fff; display: grid; grid-template-columns: 34px 1fr 70px 70px 80px; align-items: center; gap: 10px; padding: 8px 12px; background: rgba(255, 255, 255, 0.04); border-left: 3px solid var(--c); }
+.end .ffarank .fr.me { background: color-mix(in srgb, var(--c) 16%, rgba(255, 255, 255, 0.03)); }
+.end .ffarank .fr b { font: 800 22px/1 var(--f-num); color: var(--c); }
+.end .ffarank .fr i { font-style: normal; color: var(--dim); font-size: 12px; text-align: right; }
+.end .ffarank .fr em { font-style: normal; font: 700 18px/1 var(--f-num); text-align: right; }
