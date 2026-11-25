@@ -276,10 +276,10 @@ for (const [map, spots] of [
   ok('開打後身上真的有 5 顆閃光彈', st.nades.flash === 5, JSON.stringify(st.nades));
   const am = await page.evaluate(async () => {
     const { WEAPONS } = await import('./js/weapons.js'), c = __game.combat, out = {};
-    for (const id of ['rocket', 'gl']) { c.setLoadout({ p: id, s: 'pistol' }, []); const w = c.slots.find((x) => x && x.id === id); out[id] = { total: w.ammo + w.reserve, mag: w.mag, dmg: WEAPONS[id].dmg, r: WEAPONS[id].proj.radius }; }
+    for (const id of ['rocket', 'gl']) { c.setLoadout({ p: id, s: 'pistol' }, []); const w = c.slots.find((x) => x && x.id === id); out[id] = { total: w.reserve === Infinity ? 'inf' : w.ammo + w.reserve, mag: w.mag, dmg: WEAPONS[id].dmg, r: WEAPONS[id].proj.radius }; }
     return out;
   });
-  ok('火箭筒共 10 發（傷害 140、半徑 5.5）；榴彈槍一匣 6 發、共 18 發（傷害 105）', am.rocket.total === 10 && am.rocket.dmg === 140 && am.rocket.r === 5.5 && am.gl.mag === 6 && am.gl.total === 18 && am.gl.dmg === 105, JSON.stringify(am));
+  ok('火箭筒、榴彈槍子彈無限（傷害 140、半徑 5.5；榴彈槍一匣 6 發、傷害 105）', am.rocket.total === 'inf' && am.rocket.dmg === 140 && am.rocket.r === 5.5 && am.gl.mag === 6 && am.gl.total === 'inf' && am.gl.dmg === 105, JSON.stringify(am));
   ok('傷害報告：打在護甲上的也算（30 + 30 = 60，對手剩 90 血 0 護甲）', st.rdm === 60 && st.hp === 90 && st.armor === 0, JSON.stringify(st));
   await page.close();
 }

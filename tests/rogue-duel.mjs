@@ -91,7 +91,7 @@ ok('訪客那邊確實多了 35 格鋼板', st === (await A.evaluate(() => __gam
 // ── 時間凝結：B 對 A 放，A 的移動和轉頭變慢 ──
 used = await B.evaluate(() => { __game.skills.ready = [0, 0]; return __game.skills.use(0); }); await sleep(350);
 st = await A.evaluate(() => ({ mul: __game.skills.speedMul(__game.gs.p[0]), look: __game.skills.lookMul(), tint: document.getElementById('tintfx').className, chip: document.getElementById('status').textContent }));
-ok('時間凝結：被放的人移動剩三成、轉頭變慢、畫面變藍', used && Math.abs(st.mul - 0.3) < 0.01 && st.look === 0.3 && st.tint === 'slow' && st.chip.includes('時間凝結'), JSON.stringify(st));
+ok('時間凝結：被放的人移動剩一半、轉頭變慢、畫面變藍', used && Math.abs(st.mul - 0.5) < 0.01 && st.look === 0.5 && st.tint === 'slow' && st.chip.includes('時間凝結'), JSON.stringify(st));
 await A.screenshot({ path: OUT + '/rd2-chrono.png' });
 
 // ── 光學迷彩：B 隱身，A 看不到他；B 開槍就現形 ──

@@ -26,7 +26,7 @@ export const SK = {
   dome:      { r: 3.8, time: 7 },
   shock:     { rad: 16, min: 50, max: 120, k: 30, br: 4.5, bp: 650 },   // 傷害 = min + (max - min) × 靠近程度；br／bp 震碎方塊的範圍和力道
   wall:      { half: 10, h: 10 },                     // 鋼牆：寬 2×half+1 格、高 h 格（一格 0.5 公尺）；守據點的沙包牆維持 7×5
-  chrono:    { time: 4.5, move: 0.3, look: 0.3 },
+  chrono:    { time: 3, move: 0.5, look: 0.5 },   // 2026-11-25 削弱：4.5 秒、三成 → 3 秒、五成
   timestop:  { time: 2.5 },
   orbital:   { delay: 1.0, track: 7.5, trackR: 14, full: 3, fade: 4.5, dmg: 200 },   // track：光柱追人的速度（公尺/秒），trackR 多遠內會追
   meteor:    { n: 7, gap: 0.32, delay: 0.75, spread: 3.5, trackR: 14, full: 1.6, fade: 2.6, dmg: 60 },
@@ -61,7 +61,7 @@ export const CARDS = {
   flasher:    P('c', '閃', '閃光大師', '閃光彈閃得更遠更久（+60%），自己不會被自己的閃光閃到；每局多送一顆閃光彈', { bot: false }),
   // ── 被動：稀有 ──
   frenzy:     P('r', '狂', '扳機狂熱', '射速 +35%、換彈快 25%'),
-  glass:      P('r', '玻', '玻璃大砲', '傷害 +65%，但最大生命 −30'),
+  glass:      P('r', '玻', '玻璃大砲', '傷害 +40%，但最大生命 −40'),
   jugg:       P('r', '巨', '重裝巨人', '最大生命 +100、受到的傷害 −10%，但移動速度 −30%'),
   berserk:    P('r', '怒', '狂戰士', '血越少越強：最多傷害 +60%、速度 +25%'),
   thorns:     P('r', '棘', '荊棘', '你受到的傷害有 30% 反彈給打你的人（不會把人彈死）'),
@@ -97,7 +97,7 @@ export const CARDS = {
   dome:       A('r', '罩', '能量護罩', '原地放出半徑 3.8 公尺的護罩 7 秒：子彈打不進也打不出，人可以走進去', 16),
   shock:      A('r', '震', '震地衝擊波', '超大範圍：震碎身邊一大片地形，把 16 公尺內的對手震飛，造成 50～120 傷害', 9),
   // ── 主動技能：傳說 ──
-  chrono:     A('l', '時', '時間凝結', '對手的時間變慢 4.5 秒：移動和轉頭都只剩三成', 18, { lock: 3 }),
+  chrono:     A('l', '時', '時間凝結', '對手的時間變慢 3 秒：移動和轉頭都只剩一半', 18, { lock: 3 }),
   orbital:    A('l', '軌', '軌道砲', '標記你瞄準的地方，1 秒後打下一道光柱（200 傷害）；附近的對手會被光柱追著跑，幾乎躲不掉', 8, { lock: 4 }),
   blackhole:  A('l', '洞', '黑洞', '打開黑洞 4.5 秒：14 公尺內的對手被強力吸過去、跑不動，靠太近一直扣血，最後大爆炸', 8, { lock: 4, bot: false }),
   anchor:     A('l', '錨', '回溯錨點', '按一次在原地留下錨點，再按一次瞬間回到錨點；錨點還在的時候受到致命傷，會直接傳回錨點、剩 50 血（每個錨點救一次）。對手看得到你的錨點', 12, { bot: false }),
@@ -140,7 +140,7 @@ export function rollCards({ owned = [], skills = [], n = 3, luck = 1, exclude = 
 export function cardMods(ids = []) {
   const has = (b) => ids.includes(b);
   return {
-    dmg: (has('power') ? 1.25 : 1) * (has('glass') ? 1.65 : 1) * (has('avatar') ? 1.3 : 1),
+    dmg: (has('power') ? 1.25 : 1) * (has('glass') ? 1.4 : 1) * (has('avatar') ? 1.3 : 1),
     head: has('deadeye') ? 1.6 : 1,
     speed: (has('swift') ? 1.2 : 1) * (has('jugg') ? 0.7 : 1) * (has('moon') ? 1.1 : 1) * (has('ghost') ? 1.08 : 1),
     airJumps: has('hop') ? 2 : 0,
@@ -164,7 +164,7 @@ export function cardMods(ids = []) {
 // 被動卡影響的最大生命（裁判端用）
 export function maxHpOf(buffs = []) {
   const has = (b) => buffs.includes(b);
-  return Math.max(40, 100 + (has('vital') ? 100 : 0) + (has('jugg') ? 100 : 0) + (has('avatar') ? 100 : 0) - (has('glass') ? 30 : 0));
+  return Math.max(40, 100 + (has('vital') ? 100 : 0) + (has('jugg') ? 100 : 0) + (has('avatar') ? 100 : 0) - (has('glass') ? 40 : 0));
 }
 // 狂戰士：血越少越強。回傳 0..1（滿血 0、剩三成以下 1）
 export const rage = (hp, maxHp) => Math.max(0, Math.min(1, (1 - hp / Math.max(1, maxHp)) / 0.7));
