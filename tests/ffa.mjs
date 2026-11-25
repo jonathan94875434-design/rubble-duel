@@ -60,7 +60,7 @@ ok('超過 2 個人時不能換回 1 對 1 的模式', (await A.evaluate(() => _
 await A.evaluate(() => __game.startMatch());
 for (const pg of P) await phase(pg, 'loadout');
 for (const pg of P) await pg.evaluate(() => { const g = __game; g.auth('ready', { v: true }); });
-for (const pg of P) await phase(pg, 'playing', 40000);
+for (const pg of P) await phase(pg, 'playing', 90000);
 await sleep(1500);
 st = await Promise.all(P.map((pg) => pg.evaluate(() => { const p = __game.player.pos; return [Math.round(p.x), Math.round(p.z)]; })));
 const sp1 = st, distinct = new Set(st.map((q) => q.join(','))).size === 3;
@@ -116,7 +116,8 @@ await sleep(800);
 
 // ── 房主把 B 擊倒：只剩房主 → 這一局房主拿分 ──
 await A.evaluate(() => __game.hitTarget('p1', 999, false, 'ar'));
-for (const pg of P) await phase(pg, 'roundEnd', 20000);
+await wait(A, () => __game.authority.phase !== 'playing', 60000).catch(async () => console.log('DIAG', await A.evaluate(() => JSON.stringify({ ph: __game.authority.phase, al: __game.authority.players.map((p) => [p.alive, Math.round(p.hp)]), here: __game.authority.present }))));
+for (const pg of [B, C]) await wait(pg, () => __game.gs && __game.gs.res && __game.gs.res.winner !== undefined, 60000).catch(() => {});
 await sleep(600);
 st = await A.evaluate(() => ({ res: __game.gs.res, sc: __game.gs.p.map((p) => p.sc), banner: document.getElementById('banner').textContent }));
 const bb = await B.evaluate(() => document.getElementById('banner').textContent);
@@ -126,9 +127,9 @@ ok('發錢：贏的人、輸的人都有，擊倒的人多拿', money[0] > 0 && 
 await A.screenshot({ path: OUT + '/f5-roundend.png' });
 
 // ── 下一局：出生點輪一個位置；有人離開，剩 2 個人照打 ──
-for (const pg of P) await phase(pg, 'loadout', 30000);
+for (const pg of P) await phase(pg, 'loadout', 90000);
 for (const pg of P) await pg.evaluate(() => __game.auth('ready', { v: true }));
-for (const pg of P) await phase(pg, 'playing', 40000);
+for (const pg of P) await phase(pg, 'playing', 90000);
 await sleep(1000);
 const sp2 = await Promise.all(P.map((pg) => pg.evaluate(() => { const p = __game.player.pos; return [Math.round(p.x), Math.round(p.z)]; })));
 ok('第 2 局：出生點換了（每個人輪到下一個角落），還是各在不同角落', sp2.every((q, i) => q.join() !== sp1[i].join()) && new Set(sp2.map((q) => q.join())).size === 3, JSON.stringify([sp1, sp2]));

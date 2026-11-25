@@ -56,7 +56,7 @@ export class Minimap {
     }
     // 混戰的毒圈：圈外塗紫色、圈的邊界一條亮線
     if (s.storm && s.storm.r < 1e5) {
-      g.fillStyle = 'rgba(120,40,220,0.32)'; g.beginPath(); g.rect(0, 0, S, S); g.arc(s.storm.x * k, s.storm.z * k, s.storm.r * k, 0, 6.283, true); g.fill();
+      g.fillStyle = 'rgba(120,40,220,0.32)'; g.beginPath(); g.rect(0, 0, S, S); g.moveTo(s.storm.x * k + s.storm.r * k, s.storm.z * k); g.arc(s.storm.x * k, s.storm.z * k, s.storm.r * k, 0, 6.283); g.fill('evenodd');
       g.strokeStyle = '#c58cff'; g.lineWidth = 2; g.beginPath(); g.arc(s.storm.x * k, s.storm.z * k, s.storm.r * k, 0, 6.283); g.stroke();
     }
     // 對手：聽到槍聲 = 一圈往外擴的波紋；看到 = 實心點
