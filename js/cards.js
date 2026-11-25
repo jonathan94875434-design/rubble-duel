@@ -61,7 +61,7 @@ export const CARDS = {
   flasher:    P('c', '閃', '閃光大師', '閃光彈閃得更遠更久（+60%），自己不會被自己的閃光閃到；每局多送一顆閃光彈', { bot: false }),
   // ── 被動：稀有 ──
   frenzy:     P('r', '狂', '扳機狂熱', '射速 +35%、換彈快 25%'),
-  glass:      P('r', '玻', '玻璃大砲', '傷害 +40%，但最大生命 −40'),
+  glass:      P('r', '玻', '玻璃大砲', '傷害 +40%，但最大生命 −30%'),
   jugg:       P('r', '巨', '重裝巨人', '最大生命 +100、受到的傷害 −10%，但移動速度 −30%'),
   berserk:    P('r', '怒', '狂戰士', '血越少越強：最多傷害 +60%、速度 +25%'),
   thorns:     P('r', '棘', '荊棘', '你受到的傷害有 30% 反彈給打你的人（不會把人彈死）'),
@@ -164,7 +164,8 @@ export function cardMods(ids = []) {
 // 被動卡影響的最大生命（裁判端用）
 export function maxHpOf(buffs = []) {
   const has = (b) => buffs.includes(b);
-  return Math.max(40, 100 + (has('vital') ? 100 : 0) + (has('jugg') ? 100 : 0) + (has('avatar') ? 100 : 0) - (has('glass') ? 40 : 0));
+  const hp = 100 + (has('vital') ? 100 : 0) + (has('jugg') ? 100 : 0) + (has('avatar') ? 100 : 0);
+  return Math.max(40, Math.round(hp * (has('glass') ? 0.7 : 1)));   // 玻璃大砲：最大生命 −30%（跟其他加血卡疊的時候也是扣三成）
 }
 // 狂戰士：血越少越強。回傳 0..1（滿血 0、剩三成以下 1）
 export const rage = (hp, maxHp) => Math.max(0, Math.min(1, (1 - hp / Math.max(1, maxHp)) / 0.7));
