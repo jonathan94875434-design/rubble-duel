@@ -244,6 +244,40 @@ for (const [map, spots] of [
   await page.close();
 }
 
+// ═══ 5c. 投擲物不限數量（只看錢）、少買一個；傷害報告算進打掉的護甲 ═══
+{
+  const page = await open({ pmap: 'plaza', bot: 'dummy' });
+  await page.click('#btn-bot'); await page.waitForFunction(() => __game.phase === 'loadout');
+  await sleep(300);
+  let st = await page.evaluate(() => {
+    const g = __game, out = {};
+    g.buy('he'); g.buy('he'); out.two = g.sel.he;                      // $800：兩顆 $600
+    g.buy('he'); out.three = g.sel.he;                                  // 第三顆 $900 > $800 → 買不起
+    g.buy('he', null, true); out.dec = g.sel.he;                        // 少買一個
+    const a = g.authority; a.players[0].money = 9000; a.dirty = true; a.flush();
+    return out;
+  });
+  ok('投擲物一直點一直買，錢不夠才停；「少買一個」會減一', st.two === 2 && st.three === 2 && st.dec === 1, JSON.stringify(st));
+  await sleep(300);
+  await page.evaluate(() => { for (let i = 0; i < 6; i++) __game.buy('flash'); });
+  await page.click('.gcard[data-id="flash"]', { button: 'right' }); await sleep(150);   // 右鍵 = 少買一個
+  st = await page.evaluate(() => ({ flash: __game.sel.flash, dec: !!document.querySelector('.gcard[data-id="flash"] .dec'), auth: __game.authority.players[0].loadout.flash }));
+  ok('閃光彈可以買到 6 顆（以前最多 2）；卡片上按右鍵少買一個，裁判那邊也是 5', st.flash === 5 && st.dec && st.auth === 5, JSON.stringify(st));
+  await page.click('#btn-ready'); await page.waitForFunction(() => __game.phase === 'playing', { timeout: 15000 });
+  await sleep(300);
+  st = await page.evaluate(() => {
+    const g = __game, a = g.authority, T = a.players[1];
+    const nades = { ...g.combat.nades };
+    T.armor = 50; T.hp = 100; a.players[0].rDmg = 0; a.players[0].dmg = 0;
+    a.handle(0, 'hit', { r: a.round, d: 30, h: false, w: 'ar' });     // 全部被護甲吃掉
+    a.handle(0, 'hit', { r: a.round, d: 30, h: false, w: 'ar' });     // 20 打護甲、10 打血
+    return { nades, rdm: a.players[0].rDmg, hp: T.hp, armor: T.armor };
+  });
+  ok('開打後身上真的有 5 顆閃光彈', st.nades.flash === 5, JSON.stringify(st.nades));
+  ok('傷害報告：打在護甲上的也算（30 + 30 = 60，對手剩 90 血 0 護甲）', st.rdm === 60 && st.hp === 90 && st.armor === 0, JSON.stringify(st));
+  await page.close();
+}
+
 // ═══ 6. 經濟：連敗加碼、商店每局重置 ═══
 {
   const page = await open({ pmap: 'plaza', bot: 'dummy' });

@@ -144,13 +144,15 @@ export const THROWABLES = {
 export const projDef = (id) => WEAPONS[id] || THROWABLES[id];
 export const itemName = (id) => (projDef(id) ? projDef(id).name : '');
 
-// 裝備（買槍畫面的第三區）。max = 一局最多帶幾個
+// 裝備（買槍畫面的第三區）。max = 一局最多帶幾個；投擲物沒有上限（NADE_MAX 只是防呆），只看錢夠不夠
+export const NADE_MAX = 99;
+export const FREE_NADES = 5;   // 熱身、機器人模式（全部免費）一種最多拿幾顆
 export const GEAR = {
   armor: { name: '防彈衣', price: 600, max: 1, glyph: '甲', desc: '開局 50 護甲，受傷先扣護甲、扣光了才扣血' },
-  he: { name: '手榴彈', price: 300, max: 1, glyph: '爆', desc: '1.6 秒後爆炸，範圍大、能炸開一大片方塊' },
-  flash: { name: '閃光彈', price: 200, max: 2, glyph: '閃', desc: '看著它爆炸的人會全白好幾秒（自己也會）' },
-  smoke: { name: '煙霧彈', price: 250, max: 1, glyph: '煙', desc: '放出一大團擋視線的煙，維持 16 秒；可以撲滅火' },
-  molotov: { name: '燃燒瓶', price: 400, max: 1, glyph: '火', desc: '地上燒一大片 9 秒的火，站在裡面一直扣血，還會燒掉木頭' },
+  he: { name: '手榴彈', price: 300, max: NADE_MAX, glyph: '爆', desc: '1.6 秒後爆炸，範圍大、能炸開一大片方塊' },
+  flash: { name: '閃光彈', price: 200, max: NADE_MAX, glyph: '閃', desc: '看著它爆炸的人會全白好幾秒（自己也會）' },
+  smoke: { name: '煙霧彈', price: 250, max: NADE_MAX, glyph: '煙', desc: '放出一大團擋視線的煙，維持 16 秒；可以撲滅火' },
+  molotov: { name: '燃燒瓶', price: 400, max: NADE_MAX, glyph: '火', desc: '地上燒一大片 9 秒的火，站在裡面一直扣血，還會燒掉木頭' },
 };
 export const NADE_IDS = ['he', 'flash', 'smoke', 'molotov'];
 export const GEAR_IDS = Object.keys(GEAR);

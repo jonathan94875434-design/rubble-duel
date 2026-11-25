@@ -318,13 +318,13 @@ export class Authority {
       if (T.buffs.includes('avatar')) dmg *= 0.8;
       if (T.buffs.includes('survivor') && T.hp < T.maxHp * 0.35) dmg *= 0.6;
     }
-    let toHp = lethal ? Math.max(dmg, T.hp) : dmg;
+    let toHp = lethal ? Math.max(dmg, T.hp) : dmg, toArmor = 0;
     // 護甲：受傷先扣護甲（比例看 ARMOR_ABSORB），扣光了才扣血
-    if (T.armor > 0 && !lethal) { const ab = Math.min(T.armor, dmg * PLAYER.ARMOR_ABSORB); T.armor -= ab; toHp = dmg - ab; }
+    if (T.armor > 0 && !lethal) { toArmor = Math.min(T.armor, dmg * PLAYER.ARMOR_ABSORB); T.armor -= toArmor; toHp = dmg - toArmor; }
     const dealt = Math.min(T.hp, toHp);
     T.hp -= toHp; T.lastHurt = now;
     if (A && attacker !== target) {
-      A.dmg += dealt; A.rDmg += dealt; A.rHits++; if (head) A.rHead++;
+      A.dmg += dealt + toArmor; A.rDmg += dealt + toArmor; A.rHits++; if (head) A.rHead++;   // 傷害報告、總傷害：打掉的護甲也算（吸血只算扣到的血）
       if (A.buffs.includes('leech') && A.alive) A.hp = Math.min(A.maxHp, A.hp + dealt * 0.5);
       // 以下只有「真的被對手的槍或刀打中」才算（灼燒、反彈這類後續傷害不會再觸發一輪）
       if (WEAPONS[weapon]) {

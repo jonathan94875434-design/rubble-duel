@@ -13,7 +13,7 @@ import { Bot } from './bot.js';
 import { validLook, ITEMS, KNIVES } from './skins.js';
 import { Crate, REWARD } from './crate.js';
 import { Hud } from './hud.js';
-import { WEAPONS, GEAR, NADE_IDS, validLoadout, loadoutCost, itemName } from './weapons.js';
+import { WEAPONS, GEAR, NADE_IDS, FREE_NADES, validLoadout, loadoutCost, itemName } from './weapons.js';
 import { DEFAULT_BINDS, loadBinds } from './binds.js';
 import { MAPS, decodeMap, registerCustom, loadSavedMaps } from './maps.js';
 import { clamp, lerp, r3, roomCode, store } from './util.js';
@@ -574,7 +574,8 @@ class Game {
 
   // ───────── 買裝備 ─────────
   // kind: 'p' 主武器 / 's' 副武器 / 裝備代號（armor、he、flash、smoke、molotov）
-  buy(kind, id) {
+  // 裝備：點一下多買一個（防彈衣是買／不買），dec = true 少買一個（商店卡片上的「−」或右鍵）
+  buy(kind, id, dec = false) {
     const gs = this.gs;
     if (!gs) return;
     if (gs.phase === 'warmup' || gs.phase === 'horde') {   // 熱身、機器人模式：全部免費，愛拿什麼拿什麼
@@ -582,7 +583,7 @@ class Game {
       const horde = gs.phase === 'horde', n = { ...(horde ? this.hsel : this.wsel) };
       if (kind === 'p' && n.p !== id && (HZ_TIER[id] || 1) > this.hzTier()) { this.sfx.deny(); this.hud.toast(`撐到第 ${HZ_TIER[id]} 波才開放`); return; }
       if (kind === 'p') n.p = n.p === id ? null : id; else if (kind === 's') n.s = id;
-      else if (GEAR[kind]) n[kind] = n[kind] >= GEAR[kind].max ? 0 : n[kind] + 1; else return;
+      else if (GEAR[kind]) { const cap = Math.min(GEAR[kind].max, FREE_NADES); n[kind] = dec ? Math.max(0, n[kind] - 1) : n[kind] >= cap ? 0 : n[kind] + 1; } else return;
       if (horde) this.hsel = n; else { this.wsel = n; store.set('wsel', n); }
       this.sfx.buy(); this.hud.onState(gs);
       return;
@@ -594,8 +595,10 @@ class Game {
       next.p = next.p === id ? null : id;
     } else if (kind === 's') next.s = id;
     else if (GEAR[kind]) {
-      next[kind] = next[kind] >= GEAR[kind].max ? 0 : next[kind] + 1;
-      if (this.sel[kind] > 0 && loadoutCost(next) > money) next[kind] = 0;   // 買不起下一個 → 當作取消
+      const n = next[kind] || 0;
+      if (dec) next[kind] = Math.max(0, n - 1);
+      else if (GEAR[kind].max === 1) next[kind] = n ? 0 : 1;                       // 防彈衣：再點一次 = 取消
+      else next[kind] = Math.min(GEAR[kind].max, n + 1);                           // 投擲物：一直點一直買，只看錢夠不夠
     }
     else return;
     if (loadoutCost(next) > money) { this.sfx.deny(); this.hud.toast('錢不夠'); return; }

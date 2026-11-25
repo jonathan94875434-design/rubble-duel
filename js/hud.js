@@ -91,8 +91,10 @@ export class Hud {
     for (const id of GEAR_IDS) {
       const d = GEAR[id], el = document.createElement('div');
       el.className = 'gcard'; el.dataset.id = id;
-      el.innerHTML = `<div class="glyph">${ICON[id] || d.glyph}</div><div class="info"><div class="t"><span>${esc(d.name)}${d.max > 1 ? `（最多 ${d.max}）` : ''}</span><span class="price" data-p="${d.price}">$${d.price}</span></div><div class="d">${esc(d.desc)}</div></div><div class="cnt"></div>`;
-      el.addEventListener('click', () => this.g.buy(id));
+      el.innerHTML = `<div class="glyph">${ICON[id] || d.glyph}</div><div class="info"><div class="t"><span>${esc(d.name)}${d.max > 1 ? '<small>無上限</small>' : ''}</span><span class="price" data-p="${d.price}">$${d.price}</span></div><div class="d">${esc(d.desc)}</div></div><div class="cnt"></div>`
+        + (d.max > 1 ? '<button class="dec" type="button" title="少買一個（在卡片上按右鍵也可以）">−</button>' : '');
+      el.addEventListener('click', (e) => this.g.buy(id, null, !!e.target.closest('.dec')));
+      el.addEventListener('contextmenu', (e) => { e.preventDefault(); this.g.buy(id, null, true); });   // 右鍵 = 少買一個
       $('lo-g').appendChild(el);
     }
   }

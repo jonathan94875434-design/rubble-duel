@@ -63,7 +63,7 @@ ok('開場 $800', (await A.evaluate(() => __game.gs.p.map((p) => p.$).join())) =
 await A.click('.wcard[data-id="rocket"]'); await sleep(150);
 ok('第 1 局不能買主武器', (await A.evaluate(() => __game.sel.p)) === null);
 // A：只買左輪（先把預設的防彈衣取消）；B：衝鋒手槍 + 閃光彈
-const clearGear = () => { const g = __game; for (const k of ['armor', 'he', 'smoke']) if (g.sel[k]) g.buy(k); for (let i = 0; i < 3 && g.sel.flash; i++) g.buy('flash'); };
+const clearGear = () => { const g = __game; if (g.sel.armor) g.buy('armor'); for (const k of ['he', 'smoke', 'flash', 'molotov']) while (g.sel[k]) g.buy(k, null, true); };   // 投擲物不限數量：用「少買一個」清掉
 await A.evaluate(clearGear);
 await A.click('.wcard[data-id="revolver"]');
 await B.evaluate(clearGear); await B.click('.wcard[data-id="mp"]'); await B.evaluate(() => __game.buy('flash'));
@@ -145,7 +145,7 @@ ok('輸家拿到 3 個強化選項', Array.isArray(ch) && ch.length === 3, JSON.
 const mon = await A.evaluate(() => ({ m: __game.gs.p.map((p) => p.$), inc: __game.gs.res.inc }));
 ok('發錢：輸家 +3000、贏家 +2000', mon.inc.join() === '3000,2000' && mon.m.join() === '3200,2200', JSON.stringify(mon));
 // A 用輸家的錢買步槍 + 防彈衣
-await A.evaluate(() => { const g = __game; for (const k of ['he', 'smoke']) if (g.sel[k]) g.buy(k); for (let i = 0; i < 3 && g.sel.flash; i++) g.buy('flash'); g.buy('s', 'pistol'); if (g.sel.p !== 'ar') g.buy('p', 'ar'); if (!g.sel.armor) g.buy('armor'); });
+await A.evaluate(() => { const g = __game; for (const k of ['he', 'smoke', 'flash', 'molotov']) while (g.sel[k]) g.buy(k, null, true); g.buy('s', 'pistol'); if (g.sel.p !== 'ar') g.buy('p', 'ar'); if (!g.sel.armor) g.buy('armor'); });
 await sleep(300);
 ok('第 2 局可以買主武器', (await A.evaluate(() => __game.sel.p + ':' + __game.sel.armor)) === 'ar:1');
 ok('贏家沒有強化選項', (await B.evaluate(() => __game.gs.p[1].ch)) === null);
