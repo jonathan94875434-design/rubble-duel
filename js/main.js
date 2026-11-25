@@ -41,6 +41,10 @@ const qs = new URLSearchParams(location.search);
 const LOCAL = qs.get('local') === '1';    // 同一台電腦兩個分頁測試
 const NOLOCK = qs.get('nolock') === '1';  // 自動化測試用：不需要鎖定滑鼠
 const DEG = Math.PI / 180;
+// 滑鼠靈敏度跟 Apex（還有 CS）同一套數字：滑鼠每動一個單位，轉 0.022° × 靈敏度
+const YAW_PER_COUNT = 0.022 * DEG;
+// 舊版的靈敏度（每像素 0.0022 弧度 × 值）換成 Apex 的數字，手感不變
+const OLD_SENS = 0.0022 / YAW_PER_COUNT;
 const _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v2s = new THREE.Vector2(), _c1 = new THREE.Color();
 const ROUND_PHASES = ['countdown', 'playing', 'roundEnd', 'warmup', 'horde'];
 const WARM_LOADOUT = { p: 'ar', s: 'pistol', armor: 1, he: 1, flash: 1, smoke: 1, molotov: 1 };
@@ -53,7 +57,10 @@ class Game {
     this.crate = new Crate();   // 補給箱（抽獎）：要比造型先讀，刀和特殊塗裝只能裝已經抽到的
     const look = validLook({ s: store.get('skin'), w: store.get('wskin'), k: store.get('knife'), p: store.get('wsp', null) });
     this.settings = {
-      name: store.get('name', ''), sens: store.get('sens', 1), fov: store.get('fov', 82), vol: store.get('vol', 0.6),
+      name: store.get('name', ''), fov: store.get('fov', 82), vol: store.get('vol', 0.6),
+      // 靈敏度（Apex 的數字，預設 5 跟 Apex 一樣）、開鏡倍率（1 = 照放大倍數等比縮小，跟 Apex 的 1.0 一樣）、原始輸入（不吃系統的滑鼠加速）
+      asens: store.get('asens', null) ?? Math.round(store.get('sens', 5 / OLD_SENS) * OLD_SENS * 100) / 100,
+      adsMul: store.get('adsMul', 1), raw: store.get('raw', true),
       wheel: store.get('wheel', true),          // 滾輪切槍（Magic Mouse 容易誤觸，可以關）
       bot: store.get('bot', 'normal'), pmap: store.get('pmap', 'random'),  // 練習模式的難度與地圖
       prog: store.get('prog', false),           // 練習時也用 Roguelike 模式
@@ -249,8 +256,9 @@ class Game {
     addEventListener('mousemove', (e) => {
       if (!this.locked) return;
       const mx = clamp(e.movementX || 0, -400, 400), my = clamp(e.movementY || 0, -400, 400);
-      if (this.phase === 'editor') { const k = 0.0022 * this.settings.sens; this.editor.yaw -= mx * k; this.editor.pitch = clamp(this.editor.pitch - my * k, -1.54, 1.54); return; }
-      const k = (0.0022 * this.settings.sens * this.skills.lookMul()) / this.zoom();   // 被時間凝結時轉頭也變慢
+      if (this.phase === 'editor') { const k = YAW_PER_COUNT * this.settings.asens; this.editor.yaw -= mx * k; this.editor.pitch = clamp(this.editor.pitch - my * k, -1.54, 1.54); return; }
+      // 開鏡：照放大倍數等比縮小（畫面上移動的距離跟腰射一樣），再乘開鏡倍率；被時間凝結時轉頭也變慢
+      const ads = this.combat.w ? this.combat.ads : 0, k = (YAW_PER_COUNT * this.settings.asens * lerp(1, this.settings.adsMul, ads) * this.skills.lookMul()) / this.zoom();
       this.player.yaw -= mx * k;
       this.player.pitch = clamp(this.player.pitch - my * k, -1.54, 1.54);
       this.mouse.dx += mx; this.mouse.dy += my;
@@ -333,7 +341,10 @@ class Game {
   requestLock() {
     if (NOLOCK || this.locked) return;
     const fail = () => { if (this.phase !== 'editor') this.hud.setPaused(this.inRound() && !this.buyOpen); };
-    try { const p = this.canvas.requestPointerLock(); if (p && p.catch) p.catch(fail); } catch { fail(); }
+    // 原始輸入（unadjustedMovement）：Windows 上不吃「增強指標準確度」這種加速，跟 Apex 一樣；Mac 不支援就退回一般鎖定
+    const lock = (o) => { const p = this.canvas.requestPointerLock(o); return p && p.then ? p : Promise.resolve(); };
+    const raw = this.settings.raw ? { unadjustedMovement: true } : undefined;
+    try { lock(raw).catch((e) => { if (raw && e && e.name === 'NotSupportedError') return lock(); throw e; }).catch(fail); } catch { fail(); }
   }
   exitLock() { if (document.pointerLockElement) document.exitPointerLock(); this.hud.setPaused(false); }
 

@@ -799,3 +799,8 @@ input[type=color] { width: 100%; height: 30px; padding: 0; border: 1px solid var
   .gcard { padding: 6px 9px; }
   .lo-foot { margin-top: 6px; padding: 6px 0 8px; }
 }
+/* 設定：拉桿旁邊一個可以直接打數字的小框（靈敏度） */
+.numrow { display: flex; align-items: center; gap: 10px; }
+.numrow input[type="range"] { flex: 1; min-width: 0; }
+.numrow input.num { width: 74px; flex: none; padding: 4px 6px; font: 700 15px var(--f-num); color: var(--acc); text-align: right; background: rgba(0, 0, 0, 0.35); border: 1px solid var(--line); border-radius: 3px; }
+.numrow input.num:focus { outline: none; border-color: var(--acc); }

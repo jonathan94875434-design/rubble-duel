@@ -214,6 +214,32 @@ for (const [map, spots] of [
   await page.close();
 }
 
+// ═══ 5b. 滑鼠靈敏度：跟 Apex 同一套數字（每單位 0.022° × 靈敏度）、開鏡倍率、舊設定換算 ═══
+{
+  const page = await open({ pmap: 'plaza', bot: 'dummy', sens: 1 });
+  await page.evaluate(() => { for (const k of ['asens', 'adsMul', 'raw']) localStorage.removeItem('rubble.' + k); });
+  await reload(page); await sleep(500);
+  ok('舊版的靈敏度 1 換算成 Apex 的 5.73（手感不變）', (await page.evaluate(() => __game.settings.asens)) === 5.73, String(await page.evaluate(() => __game.settings.asens)));
+  await page.click('#btn-settings'); await sleep(200);
+  await page.$eval('#num-sens', (e) => { e.value = '1.6'; e.dispatchEvent(new Event('change')); });
+  let st = await page.evaluate(() => ({ s: __game.settings.asens, rng: +document.getElementById('rng-sens').value, hint: document.getElementById('sens-hint').textContent, stored: localStorage.getItem('rubble.asens'), raw: document.getElementById('chk-raw').checked }));
+  ok('數字框直接填 1.6：拉桿跟著動、記住、底下算出 eDPI 和轉一圈幾公分；原始輸入預設打開', st.s === 1.6 && st.rng === 1.6 && st.stored === '1.6' && st.hint.includes('eDPI 1280') && st.hint.includes('32.5') && st.raw, JSON.stringify(st));
+  await page.click('#btn-resume'); await sleep(150);
+  await page.click('#btn-bot'); await page.waitForFunction(() => __game.phase === 'loadout');
+  await page.click('#btn-ready'); await page.waitForFunction(() => __game.phase === 'playing', { timeout: 15000 });
+  await sleep(300);
+  st = await page.evaluate(() => {
+    const g = __game, p = g.player, c = g.combat, turn = (ads) => { g.locked = true; c.ads = ads; const y0 = p.yaw; dispatchEvent(new MouseEvent('mousemove', { movementX: 400 })); g.locked = false; return (y0 - p.yaw) * 180 / Math.PI; };
+    g.setSetting('asens', 2); g.setSetting('adsMul', 0.5);
+    const hip = turn(0), ads = turn(1), zoom = c.w.def.zoom;
+    return { hip, ads, zoom };
+  });
+  ok('腰射：動 400 單位、靈敏度 2 → 轉 400 × 0.022° × 2 = 17.6°', Math.abs(st.hip - 17.6) < 0.01, JSON.stringify(st));
+  ok('開鏡：照放大倍數等比變慢，再乘開鏡倍率 0.5', Math.abs(st.ads - 17.6 * 0.5 / st.zoom) < 0.01, JSON.stringify(st));
+  await page.evaluate(() => { for (const k of ['sens', 'asens', 'adsMul']) localStorage.removeItem('rubble.' + k); });
+  await page.close();
+}
+
 // ═══ 6. 經濟：連敗加碼、商店每局重置 ═══
 {
   const page = await open({ pmap: 'plaza', bot: 'dummy' });
