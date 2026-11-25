@@ -482,10 +482,16 @@ export class Skills {
     return true;
   }
 
-  // 時間暫停（神話）：對手完全不能動
+  // 時間暫停（神話）：對手完全不能動。要看得到、在範圍內才放得出去（放不出去不會進冷卻）
   _timestop(now) {
-    const g = this.g, rp = g.remote.pos;
+    const g = this.g, rp = g.remote.pos, p = g.player.pos;
     if (!g.remote.alive) return false;
+    const ex = p.x, ey = p.y + 1.4, ez = p.z;
+    let dx = rp.x - ex, dy = rp.y + 1.2 - ey, dz = rp.z - ez;
+    const dist = Math.hypot(dx, dy, dz);
+    if (dist > SK.timestop.range || dist < 0.3) return false;
+    dx /= dist; dy /= dist; dz /= dist;
+    if (g.world.raycast(ex, ey, ez, dx, dy, dz, dist - 0.3)) return false;
     this.rStopEnd = now + SK.timestop.time * 1000;
     g.sfx.skill('chrono'); this.nova(rp.x, rp.y + 0.1, rp.z, 0xffffff, 5, 0.8); this.nova(rp.x, rp.y + 1, rp.z, 0x59b8ff, 3, 1.2);
     this._send({ id: 'timestop', d: SK.timestop.time });
@@ -624,7 +630,7 @@ export class Skills {
       }
       case 'timestop': {
         const p = g.player.pos;
-        this.stopEnd = now + dur(0.5, 3.5); g.sfx.skill('chrono'); g.hud.banner('時間暫停', '你完全動不了', 1300);
+        this.stopEnd = now + dur(0.5, 2); g.sfx.skill('chrono'); g.hud.banner('時間暫停', '你完全動不了', 1300);
         this.nova(p.x, p.y + 0.1, p.z, 0xffffff, 5, 0.8); this.nova(p.x, p.y + 1, p.z, 0x59b8ff, 3, 1.2);
         if (this.grap) this._dropGrap(false);
         break;

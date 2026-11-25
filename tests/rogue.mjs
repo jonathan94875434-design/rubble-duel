@@ -287,9 +287,14 @@ st = await ev(() => { const g = __game, now = performance.now(), p = g.player, y
 ok('換位的效果：自己有傷害加成；被換的人轉成背對、不能開槍、跑不快', st.bonus && st.turned && st.noFire && st.spd < 0.7, JSON.stringify(st));
 await setSkills('timestop', 'meteor');
 await place(SX, SZ, SX, SZ - 10, 0); await sleep(300);
+// 中間隔一道牆：看不到就放不出去，也不會進冷卻
+await ev(() => { const w = __game.world; w.box(40, 3, 57, 56, 12, 58, 3); w.rebuildAll(); });
+st = await ev(() => { const g = __game, u = g.skills.use(0); return { u, left: g.skills.hudState(performance.now()).slots[0].left }; });
+ok('時間暫停：隔著牆看不到對手就放不出去，也不進冷卻', !st.u && !(st.left > 0), JSON.stringify(st));
+await ev(() => { const w = __game.world; w.box(40, 3, 57, 56, 12, 58, 0); w.rebuildAll(); }); await sleep(200);
 used = await ev(() => __game.skills.use(0)); await sleep(200);
-st = await ev(() => ({ bot: __game.bot.stopUntil - performance.now(), mine: __game.skills.rStopEnd - performance.now() }));
-ok('時間暫停：機器人完全停住 2.5 秒', used && st.bot > 1500 && st.mine > 1500, JSON.stringify(st));
+st = await ev(() => ({ bot: __game.bot.stopUntil - performance.now(), mine: __game.skills.rStopEnd - performance.now(), left: __game.skills.hudState(performance.now()).slots[0].left }));
+ok('時間暫停：看得到 → 機器人停住 1.5 秒，冷卻 30 秒', used && st.bot > 600 && st.bot <= 1500 && st.mine > 600 && st.mine <= 1500 && st.left > 25, JSON.stringify(st));
 st = await ev(() => { const g = __game; g.skills.onNet({ r: g.round, id: 'timestop', d: 1.5 }); return { frozen: g.skills.frozen(), spd: g.skills.speedMul(g.gs.p[0]), look: g.skills.lookMul(), cast: g.skills.use(1) }; });
 ok('被時間暫停：不能動、不能轉頭、不能放技能', st.frozen && st.spd === 0 && st.look === 0 && !st.cast, JSON.stringify(st));
 await sleep(1700);
