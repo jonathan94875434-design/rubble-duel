@@ -409,6 +409,8 @@ function pickupBuf(d) {
   d.add(x, d.tone(0.2, 660, 990, 0.05), 0.8); d.add(x, d.tone(0.35, 990, 1320, 0.08), 0.75, 0.08); d.add(x, d.ring(0.3, [[2640, 0.06, 1], [3960, 0.04, 0.6]]), 0.2, 0.16);
   return d.fin(x, 0.9, 0.02);
 }
+// 開箱轉盤每經過一格的「喀」：比按鈕聲更短更高
+function tickBuf(d) { const x = d.z(0.05); d.add(x, d.tone(0.035, 1900, 1500, 0.008, [[1, 1], [2, 0.25]], 0.001), 0.7); d.add(x, d.dec(d.bp(d.noise(0.015), 4200, 2), 0.002, 0.0002), 0.5); return d.fin(x, 0.9, 0.004); }
 function uiBuf(d) { const x = d.z(0.09); d.add(x, d.tone(0.07, 700, 900, 0.018, [[1, 1], [2, 0.2]], 0.002), 0.8); d.add(x, d.dec(d.bp(d.noise(0.02), 2600, 1.5), 0.003, 0.0003), 0.4); return d.fin(x, 0.9, 0.01); }
 function beepBuf(d, hi) {
   const f = hi ? 1040 : 520, len = hi ? 0.38 : 0.13, x = d.tone(len + 0.06, f, f, 9, [[1, 1], [2, 0.18], [3, 0.11], [5, 0.04]], 0.004);
@@ -801,6 +803,7 @@ export class Sfx {
   deny() { this._one('deny', denyBuf, { g: 0.18, ui: true }); }
   pickup() { this._one('pickup', pickupBuf, { g: 0.21, ui: true }); }
   ui() { this._one('ui', uiBuf, { g: 0.13, ui: true }); }
+  tick() { this._one('tick', tickBuf, { g: 0.11, ui: true, rate: rr(0.96, 1.04) }); }
   beep(hi) { this._one(hi ? 'beep:1' : 'beep:0', (d) => beepBuf(d, hi), { g: 0.21, ui: true }); }
   win() { this._one('win', winBuf, { g: 0.28, ui: true }); }
   lose() { this._one('lose', loseBuf, { g: 0.28, ui: true }); }

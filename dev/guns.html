@@ -21,13 +21,14 @@
 //   only=ar,smg      只看這幾把（放大；cols=2 改欄數）      view=left|right|top|rear|front|q（預設 q = 左前上方斜視）
 //   open=0..1        把會動的零件拉開（彈匣抽出、滑套後退、轉輪甩開…），檢查零件有沒有切對
 //   aim=1            打開看得穿的瞄準鏡鏡片
+//   wskin=*dragon    特殊塗裝（花紋）；only=knife/butterfly 看抽獎的刀型、only=ar@*galaxy 每把各自指定塗裝
 import * as THREE from 'three';
 import { buildGun, buildProp, GUN_IDS, PROP_IDS } from '../js/gunmodel.js';
 import { WEAPONS } from '../js/weapons.js';
 import { WSKINS, WSKIN_IDS } from '../js/skins.js';
 
 const qs = new URLSearchParams(location.search);
-const wskin = WSKINS[qs.get('wskin')] ? qs.get('wskin') : 'stock', only = qs.get('only'), view = qs.get('view') || 'q', open = +(qs.get('open') || 0);
+const wskin = qs.get('wskin') || 'stock', only = qs.get('only'), view = qs.get('view') || 'q', open = +(qs.get('open') || 0);
 const NAMES = { knife: '戰鬥刀', he: '手榴彈', flash: '閃光彈', smoke: '煙霧彈', molotov: '汽油彈' };
 document.getElementById('bar').innerHTML = WSKIN_IDS.map((w) => `<a class="${w === wskin ? 'on' : ''}" href="?${new URLSearchParams({ ...Object.fromEntries(qs), wskin: w })}">${WSKINS[w].name}</a>`).join('');
 
@@ -57,7 +58,7 @@ const sun = new THREE.DirectionalLight(0xfff2dc, 2.6); sun.position.set(-2, 4, 1
 
 const ids = only ? only.split(',') : [...GUN_IDS, ...PROP_IDS];
 const items = ids.map((id) => {
-  const prop = PROP_IDS.includes(id), g = prop ? buildProp(id) : buildGun(id, wskin), u = g.userData;
+  const [gk, ws = wskin] = id.split('@'), [gid, km] = gk.split('/'), prop = PROP_IDS.includes(id), g = prop ? buildProp(id) : buildGun(gid, km ? ws + '/' + km : ws), u = g.userData;
   // 把會動的零件拉開一點
   if (open && !prop) {
     const p = u.parts, a = u.anim || {};

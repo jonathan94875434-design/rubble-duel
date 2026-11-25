@@ -3,6 +3,8 @@ import * as GM from './gunmodel.js';
 
 // 槍的小圖：用一個臨時的小畫布把 3D 模型拍成側面照，給商店和 HUD 用。拍完就把那個畫布釋放掉。
 // 回傳 { 武器代號: 圖片網址 }；任何一步失敗就回傳空的（介面會退回純文字）
+// ids 的每一項：武器代號，或 { key, id, skin }（補給箱的物品：同一把武器不同塗裝）
+// wskin：塗裝字串，或 (武器代號) => 塗裝字串（每把槍各自的特殊塗裝）
 export function shootIcons(ids, wskin = 'stock', props = []) {
   const out = {};
   let r = null;
@@ -25,7 +27,11 @@ export function shootIcons(ids, wskin = 'stock', props = []) {
       out[id] = c.toDataURL('image/png');
       scene.remove(pivot);
     };
-    for (const id of ids) { try { snap(id, GM.buildGun(id, wskin)); } catch { /* 這一把沒有模型就跳過 */ } }
+    for (const it of ids) {
+      const key = typeof it === 'string' ? it : it.key, id = typeof it === 'string' ? it : it.id;
+      const ws = typeof it !== 'string' ? it.skin : typeof wskin === 'function' ? wskin(id) : wskin;
+      try { snap(key, GM.buildGun(id, ws)); } catch { /* 這一把沒有模型就跳過 */ }
+    }
     if (GM.buildProp) for (const id of props) { try { snap(id, GM.buildProp(id)); } catch { /* 跳過 */ } }
   } catch { /* 開不了第二個畫布：不要圖示 */ }
   if (r) { r.dispose(); if (r.forceContextLoss) r.forceContextLoss(); }

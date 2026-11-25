@@ -8,7 +8,8 @@ import { TEAM_CSS, ROGUE, HORDE } from './config.js';
 import { MOBS, HZ_LEVELS, HZ_BEH, HZ_TIER } from './horde.js';
 import { MAPS, MAP_IDS, customIds, deleteMap } from './maps.js';
 import { BOT_LEVELS } from './bot.js';
-import { SKINS, SKIN_IDS, WSKINS, WSKIN_IDS } from './skins.js';
+import { SKINS, SKIN_IDS, WSKINS, WSKIN_IDS, ITEMS, ITEM_IDS, TIERS, TIER_IDS, gunSkin } from './skins.js';
+import { itemLabel, itemGun, PITY, SHARDS, REWARD } from './crate.js';
 import { BLOCK } from './world.js';
 import { ENVS, ENV_IDS } from './env.js';
 import { SPRAYS, SPRAY_IDS, sprayCanvas } from './sprays.js';
@@ -18,7 +19,7 @@ import { store } from './util.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const SCREENS = ['menu', 'lobby', 'loadout', 'end', 'locker', 'stats', 'editor'];
+const SCREENS = ['menu', 'lobby', 'loadout', 'end', 'locker', 'stats', 'editor', 'crate'];
 const hex = (n) => '#' + n.toString(16).padStart(6, '0');
 const opts = (list, cur) => list.map(([v, t]) => `<option value="${esc(v)}"${v === cur ? ' selected' : ''}>${esc(t)}</option>`).join('');
 const svg = (d, vb = '0 0 16 16') => `<svg viewBox="${vb}" aria-hidden="true">${d}</svg>`;
@@ -66,10 +67,10 @@ export class Hud {
 
   // 槍的側面照（第一次要用到時才拍；沒有顯示卡的環境就不拍，介面退回純文字）
   _icons() {
-    const g = this.g, skin = g.settings.wskin;
+    const g = this.g, look = g.look(), skin = JSON.stringify([look.w, look.k, look.p]);   // 塗裝、刀型、特殊塗裝任何一個換了就重拍
     if (g.qualityId === 'min') return {};
     if (!this.icons || this.iconSkin !== skin) {
-      this.icons = shootIcons([...PRIMARIES, ...SECONDARIES, 'knife'], skin, NADE_IDS); this.iconSkin = skin;
+      this.icons = shootIcons([...PRIMARIES, ...SECONDARIES, 'knife'], (id) => gunSkin(look, id), NADE_IDS); this.iconSkin = skin;
       document.querySelectorAll('.wcard').forEach((el) => { const im = el.querySelector('img'), u = this.icons[el.dataset.id]; if (im && u) { im.src = u; im.classList.remove('hidden'); } });
       this.cache.wimg = null; this.cache.slots = null;
     }
@@ -242,6 +243,15 @@ export class Hud {
     $('chk-prog').addEventListener('change', (e) => g.setSetting('prog', e.target.checked));
     $('btn-reroll').addEventListener('click', () => g.reroll());
     $('btn-locker').addEventListener('click', () => { g.sfx.ui(); g.openLocker(); });
+    $('btn-crate').addEventListener('click', () => { g.sfx.ui(); this.openCrate(); });
+    $('btn-crate-back').addEventListener('click', () => { g.sfx.ui(); this.show('menu'); });
+    $('btn-crate-open').addEventListener('click', () => this.spin());
+    $('cr-reel').addEventListener('click', () => { if (this.spinning) this.skipSpin = true; });   // 轉盤轉的時候點一下 = 直接看結果
+    $('cr-coll').addEventListener('click', (e) => { const el = e.target.closest('.ci'); if (!el || el.classList.contains('lock')) return; g.equipItem(el.dataset.id); this._crateColl(); });
+    $('lk-items').addEventListener('click', (e) => {
+      if (e.target.closest('[data-go]')) { g.closeLocker(); this.openCrate(); return; }
+      const el = e.target.closest('.it'); if (el) { g.equipItem(el.dataset.id); this._lockerItems(); }
+    });
     $('btn-locker-back').addEventListener('click', () => { g.sfx.ui(); g.closeLocker(); });
     $('btn-stats').addEventListener('click', () => { g.sfx.ui(); this.show('stats'); this.renderStats(); });
     $('btn-stats-back').addEventListener('click', () => { g.sfx.ui(); this.show('menu'); });
@@ -351,6 +361,97 @@ export class Hud {
     $('btn-gear').classList.toggle('hidden', !name || name === 'editor' || name === 'menu');   // 對局外隨時可以開設定（主選單上有自己的按鈕）；對戰中用 Esc
     if (!name && this.setMode === 'menu') this._settings(null);
     if (name === 'loadout') this._icons();
+    if (name === 'menu') this.crateBadge();
+    if (name === 'locker') this._lockerItems();
+    if (name !== 'end') $('end-tix').classList.add('hidden');
+  }
+
+  // ───────── 補給箱（抽獎）─────────
+  crateBadge() { const n = this.g.crate.tickets, b = $('crate-badge'); b.textContent = n > 99 ? '99+' : String(n); b.classList.toggle('hidden', n < 1); }
+  // 比賽結束拿到抽獎券
+  ticketGain(n) {
+    const el = $('end-tix'); if (!n) { el.classList.add('hidden'); return; }
+    el.innerHTML = `抽獎券 +${n}　·　現在有 ${this.g.crate.tickets} 張，回主選單的「補給箱」開箱`;
+    el.classList.remove('hidden');
+  }
+  openCrate() {
+    this.show('crate');
+    if (!this.spinning) { $('cr-idle').classList.remove('hidden'); $('cr-result').classList.add('hidden'); $('cr-strip').innerHTML = ''; }
+    const pct = (t) => Math.round((TIERS[t].w / TIER_IDS.reduce((a, k) => a + TIERS[k].w, 0)) * 100) + '%';
+    $('cr-rules').textContent = `機率：${TIER_IDS.map((t) => TIERS[t].name + ' ' + pct(t)).join('・')}。拿券：打完一場對戰 +${REWARD.duel}、練習 +${REWARD.practice}、機器人模式 +${REWARD.horde}，贏了再 +${REWARD.win}。`
+      + `重複抽到的東西變成碎片，${SHARDS} 片自動換 1 張券；連續 ${PITY} 抽沒出刀，下一抽一定出刀。純外觀，不影響數值；對手看得到你的刀和塗裝。`;
+    this._crateWallet(); this._crateColl();
+  }
+  // 物品的側面照（第一次打開補給箱才拍；最低畫質不拍，改用文字）
+  _itemIcons() {
+    if (!this.itemIcons) this.itemIcons = this.g.qualityId === 'min' ? {} : shootIcons(ITEM_IDS.map((id) => ({ key: id, ...itemGun(id) })));
+    return this.itemIcons;
+  }
+  _ci(id, cls = '', badge = '') {
+    const it = ITEMS[id], L = itemLabel(id), ic = this._itemIcons()[id];
+    return `<div class="ci t-${it.t}${cls}" data-id="${id}">${badge}${ic ? `<img src="${ic}" alt="">` : `<span class="g">${esc(L.main[0])}</span>`}<b>${esc(L.main)}</b><small>${esc(L.sub)}</small></div>`;
+  }
+  _crateWallet() {
+    const c = this.g.crate;
+    $('cr-tix').textContent = c.tickets;
+    $('cr-shards').innerHTML = `碎片 <b>${c.shards}</b> / ${SHARDS}`;
+    $('cr-pity').innerHTML = `再 <b>${PITY - c.pity}</b> 抽內一定出刀`;
+    $('btn-crate-open').disabled = !!this.spinning || c.tickets < 1;
+    $('btn-crate-back').disabled = !!this.spinning;
+    this.crateBadge();
+  }
+  _crateColl() {
+    const g = this.g, c = g.crate, rank = (id) => TIER_IDS.indexOf(ITEMS[id].t);
+    const order = [...ITEM_IDS].sort((a, b) => rank(b) - rank(a) || (c.has(b) - c.has(a)));
+    $('cr-count').textContent = `${c.inv.size} / ${ITEM_IDS.length}`;
+    $('cr-coll').innerHTML = order.map((id) => {
+      const own = c.has(id), badge = own && g.equipped(id) ? '<span class="eq">裝備中</span>' : own && this.newItems && this.newItems.has(id) ? '<span class="new">新</span>' : '';
+      return this._ci(id, own ? '' : ' lock', badge);
+    }).join('');
+  }
+  // 開箱：先決定抽到什麼（crate.open），轉盤只是表演，最後停在那一格
+  spin() {
+    const g = this.g, c = g.crate;
+    if (this.spinning || c.tickets < 1) return;
+    const res = c.open(); if (!res) return;
+    this.spinning = true; this.skipSpin = false;
+    $('cr-result').classList.add('hidden'); $('cr-idle').classList.add('hidden');
+    const N = 56, WIN = 47, TW = 158, list = [];
+    for (let i = 0; i < N; i++) list.push(i === WIN ? res.id : c.filler());
+    const strip = $('cr-strip'), reel = $('cr-reel'), half = reel.clientWidth / 2;
+    strip.innerHTML = list.map((id) => this._ci(id)).join('');
+    const target = WIN * TW + 75 - half + (Math.random() - 0.5) * 118;   // 停在得獎那一格裡面的隨機位置（不要每次都剛好正中間）
+    const t0 = performance.now(), DUR = 5800; let last = -1;
+    reel.classList.add('spin'); this._crateWallet(); g.sfx.ui();
+    const step = (now) => {
+      const t = this.skipSpin ? 1 : Math.min(1, (now - t0) / DUR), x = target * (1 - Math.pow(1 - t, 4));
+      strip.style.transform = `translateX(${(-x).toFixed(1)}px)`;
+      const idx = Math.floor((x + half) / TW); if (idx !== last) { last = idx; if (t < 1) g.sfx.tick(); }
+      if (t < 1 && this.screen === 'crate') requestAnimationFrame(step); else this._spinDone(res, strip.children[WIN], target);
+    };
+    requestAnimationFrame(step);
+  }
+  _spinDone(res, el, target) {
+    const g = this.g, it = ITEMS[res.id], L = itemLabel(res.id), ic = this._itemIcons()[res.id];
+    this.spinning = false; $('cr-reel').classList.remove('spin');
+    $('cr-strip').style.transform = `translateX(${(-target).toFixed(1)}px)`;
+    if (el) el.classList.add('win');
+    if (!res.dup) (this.newItems ||= new Set()).add(res.id);
+    const r = $('cr-result'); r.className = 'cr-result t-' + it.t;
+    const note = res.dup ? `已經有了 → 碎片 +1${res.bonus ? `，湊滿 ${SHARDS} 片換到 1 張抽獎券！` : ''}` : '新收藏！';
+    r.innerHTML = `${ic ? `<img src="${ic}" alt="">` : ''}<div class="info"><span class="tier">${esc(TIERS[it.t].name)}</span><span class="nm">${esc(L.main)}</span><span class="sub">${esc(L.sub)}</span><span class="note">${esc(note)}</span></div>`
+      + `<button id="btn-cr-equip" class="btn primary">${g.equipped(res.id) ? '已裝備' : '裝備'}</button>`;
+    $('btn-cr-equip').addEventListener('click', () => { if (!g.equipped(res.id)) g.equipItem(res.id); $('btn-cr-equip').textContent = '已裝備'; this._crateColl(); });
+    g.sfx.card({ b: 'c', p: 'r', k: 'l', m: 'm', g: 'm' }[it.t]);
+    if (it.t === 'g' || it.t === 'm') g.sfx.win();
+    this._crateWallet(); this._crateColl();
+  }
+  // 造型頁：已經抽到的刀和特殊塗裝
+  _lockerItems() {
+    const g = this.g, c = g.crate, own = ITEM_IDS.filter((id) => c.has(id)).sort((a, b) => TIER_IDS.indexOf(ITEMS[b].t) - TIER_IDS.indexOf(ITEMS[a].t));
+    $('lk-items').innerHTML = own.length
+      ? own.map((id) => { const L = itemLabel(id); return `<div class="it t-${ITEMS[id].t}${g.equipped(id) ? ' sel' : ''}" data-id="${id}">${esc(L.main)}<small>${esc(L.sub)}</small></div>`; }).join('')
+      : '<div class="empty">還沒有東西。<a data-go="crate">去補給箱開箱 →</a></div>';
   }
 
   // 被閃光彈閃到：整個畫面變白，撐一下再慢慢退
@@ -363,7 +464,7 @@ export class Hud {
   clearFlash() { clearTimeout(this.flashT); const f = $('flashfx'); f.style.transition = 'none'; f.style.opacity = '0'; }
   showHud(v) { $('hud').classList.toggle('hidden', !v); }
   menuMsg(t) { $('menu-msg').textContent = t || ''; }
-  menuBusy(b) { for (const id of ['btn-host', 'btn-join', 'btn-bot', 'btn-dm', 'btn-def', 'btn-locker', 'btn-editor', 'btn-stats']) $(id).disabled = b; }
+  menuBusy(b) { for (const id of ['btn-host', 'btn-join', 'btn-bot', 'btn-dm', 'btn-def', 'btn-locker', 'btn-editor', 'btn-stats', 'btn-crate']) $(id).disabled = b; }
 
   // 主選單卡片上的最佳紀錄（這台電腦）
   _hzBest() {

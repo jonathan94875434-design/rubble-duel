@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { WSKINS } from './skins.js';
+import { WSKINS, FINISHES } from './skins.js';
+import { finishTex } from './finishes.js';
 
 // 槍枝與投擲物的模型：全部用程式拼（側面輪廓擠出＋車削＋方塊），真實比例、單位公尺。
 // 座標：原點 = 右手虎口（握把後上緣），槍口朝 -Z，+Y 向上，+X 是射手的右邊。
@@ -91,7 +92,13 @@ const FIN = {
 // 太黑的原廠色提亮到「深灰」：純黑的槍在陰影裡只剩一塊剪影，看不出造型
 const lift = (hex) => { const c = new THREE.Color(hex), m = Math.max(c.r, c.g, c.b); if (m < 0.085) c.multiplyScalar(0.085 / Math.max(m, 1e-3)); return c; };
 // 這把槍這個塗裝要用的材質：body 機匣、furn 護木／托／握把、glow 發光條（沒有 = null）
+// 特殊塗裝（'*花紋'）：機匣和護木都貼花紋（護木暗一點），刀身也換成花紋，blade = 刀身材質（一般塗裝沒有 = 拋光鋼）
 function look(def, wskin) {
+  if (wskin && wskin[0] === '*' && FINISHES[wskin.slice(1)]) {
+    const id = wskin.slice(1), f = FINISHES[id], map = finishTex(id), o = { metalness: f.m, roughness: f.r, roughnessMap: noiseTex(), map, emissive: 0xffffff, emissiveMap: map, emissiveIntensity: f.em };
+    const body = M('fin:' + id + ':b', { color: 0xffffff, ...o });
+    return { body, furn: M('fin:' + id + ':f', { color: 0xb4b4b4, ...o, emissiveIntensity: f.em * 0.7, roughness: Math.min(1, f.r + 0.12) }), blade: M('fin:' + id + ':k', { color: 0xffffff, ...o, metalness: Math.max(0.55, f.m), roughness: Math.min(f.r, 0.3) }), glow: f.glow ? glowM(f.glow) : null };
+  }
   const sk = WSKINS[wskin] || {}, c = sk.color, glow = sk.glow ? glowM(sk.glow) : null;
   if (c === null || c === undefined) {
     const b = def.body, f = def.furn;
@@ -605,7 +612,7 @@ GUNS.mp = { kind: 'pistol', body: [0x5a4a3a, 0.65, 0.5], furn: [0x1f2023, 0, 0.8
 
 // 戰鬥刀：刀尖朝 -Z、刀刃朝下，原點在握柄中段
 GUNS.knife = { kind: 'knife', body: [0x2a2c30, 0.1, 0.8], furn: [0x2a2c30, 0.1, 0.8], build(k, L) {
-  k.prof(S.chrome, [[-0.058, 0.0145], [-0.168, 0.0145], [-0.204, 0.0085], [-0.24, -0.002], [-0.214, -0.012], [-0.18, -0.0165], [-0.074, -0.0165], [-0.066, -0.011], [-0.058, -0.012]], 0.0046, 0, { b: 0.0021 });   // 刀身
+  k.prof(L.blade || S.chrome, [[-0.058, 0.0145], [-0.168, 0.0145], [-0.204, 0.0085], [-0.24, -0.002], [-0.214, -0.012], [-0.18, -0.0165], [-0.074, -0.0165], [-0.066, -0.011], [-0.058, -0.012]], 0.0046, 0, { b: 0.0021 });   // 刀身
   k.box(L.glow || S.dark, 0.0049, 0.0042, 0.088, 0, 0.0055, -0.118);                                                                                                                                         // 血槽
   k.prof(S.dark, [[-0.05, 0.026], [-0.059, 0.028], [-0.06, -0.026], [-0.05, -0.022]], 0.013, 0, { b: 0.003 });                                                                                              // 護手
   const hp = [[0.062, 0.0118], [0.058, 0.0128]]; for (let i = 0; i < 6; i++) { const z = 0.05 - i * 0.017; hp.push([z, 0.0134], [z - 0.011, 0.0134], [z - 0.013, 0.0118]); } hp.push([-0.05, 0.0126]);
@@ -614,16 +621,55 @@ GUNS.knife = { kind: 'knife', body: [0x2a2c30, 0.1, 0.8], furn: [0x2a2c30, 0.1, 
   return { muzzle: V(0, -0.002, -0.24), sightY: 0, eject: null, gripL: null, gripAng: 0, eyeZ: 0, hold: 'none', anim: { reload: null, cycle: null } };
 } };
 
+// ───────── 補給箱抽到的刀型（跟戰鬥刀同一套座標：刀尖朝 -Z、刀刃朝下、原點在握柄中段）─────────
+const knifeOut = (tip) => ({ muzzle: tip, sightY: 0, eject: null, gripL: null, gripAng: 0, eyeZ: 0, hold: 'none', anim: { reload: null, cycle: null } });
+export const KNIFE_MODELS = {
+  // 蝴蝶刀：兩片鏤空的握柄夾著刀身，前面樞軸、後面卡榫
+  butterfly: { kind: 'knife', body: [0x8a9099, 0.85, 0.32], furn: [0x8a9099, 0.85, 0.32], build(k, L) {
+    const holes = []; for (let i = 0; i < 4; i++) { const z = 0.05 - i * 0.027; holes.push([[z, 0.0045], [z - 0.011, 0.0045], [z - 0.0135, 0], [z - 0.011, -0.0045], [z, -0.0045], [z + 0.0025, 0]]); }
+    for (const sx of [-1, 1]) k.prof(L.body, [[0.08, 0.008], [0.074, 0.0115], [-0.048, 0.0115], [-0.058, 0.007], [-0.058, -0.007], [-0.048, -0.0115], [0.074, -0.0115], [0.08, -0.008]], 0.0058, sx * 0.0068, { b: 0.0016, holes });
+    k.cyl(S.chrome, 0.0036, 0.0196, 0, 0, -0.051, { ax: 'x', seg: 10 }).cyl(S.chrome, 0.003, 0.0196, 0, 0, 0.073, { ax: 'x', seg: 8 });    // 樞軸、卡榫的軸
+    k.prof(S.chrome, [[0.074, -0.011], [0.094, -0.012], [0.098, -0.008], [0.08, -0.006]], 0.004, 0, { b: 0.001 });                            // 卡榫
+    k.prof(L.blade || S.chrome, [[-0.044, 0.0105], [-0.17, 0.0105], [-0.214, 0.004], [-0.236, -0.0015], [-0.205, -0.0105], [-0.066, -0.0115], [-0.058, -0.0062], [-0.044, -0.0062]], 0.0042, 0, { b: 0.0019 });   // 刀身
+    k.box(L.glow || S.dark, 0.0045, 0.003, 0.07, 0, 0.0055, -0.11);
+    return knifeOut(V(0, -0.0015, -0.236));
+  } },
+  // 爪刀：彎得像爪子的刀身、刀刃在內彎那一側，握柄尾巴一個指環
+  karambit: { kind: 'knife', body: [0x23262b, 0.1, 0.78], furn: [0x23262b, 0.1, 0.78], build(k, L) {
+    const C = [-0.05, -0.112], R = 0.117, A = 1.24, sp = [], ed = [];
+    for (let i = 0; i <= 14; i++) { const a = -0.06 + (A + 0.06) * (i / 14), w = 0.0205 * (1 - 0.78 * Math.max(0, a / A)); sp.push([C[0] - (R + w / 2) * Math.sin(a), C[1] + (R + w / 2) * Math.cos(a)]); ed.unshift([C[0] - (R - w / 2) * Math.sin(a), C[1] + (R - w / 2) * Math.cos(a)]); }
+    const tip = [C[0] - R * Math.sin(A + 0.09), C[1] + R * Math.cos(A + 0.09)];
+    k.prof(L.blade || S.chrome, [...sp, tip, ...ed], 0.0046, 0, { b: 0.0019 });
+    k.prof(L.body, [[0.064, 0.0135], [0.03, 0.0125], [-0.02, 0.0115], [-0.05, 0.0135], [-0.058, 0.006], [-0.055, -0.011], [-0.04, -0.0165], [-0.028, -0.011], [-0.014, -0.0165], [0, -0.011], [0.014, -0.0165], [0.028, -0.011], [0.044, -0.0165], [0.064, -0.012]], 0.0168, 0, { b: 0.0048 });   // 有指槽的握柄
+    k.ring(L.blade || S.chrome, 0.0185, 0.0042, 0, -0.001, 0.084, { ax: 'x', rs: 6, ts: 16 });                                                // 指環
+    for (const z of [0.04, -0.03]) for (const sx of [-1, 1]) k.cyl(S.chrome, 0.0028, 0.0012, sx * 0.0084, 0, z, { ax: 'x', seg: 8 });       // 螺絲
+    return knifeOut(V(0, tip[1], tip[0]));
+  } },
+  // 獵刀：大片的斜削刀尖、黃銅護手和柄尾、木頭握柄
+  bowie: { kind: 'knife', body: [0x2a2c30, 0.1, 0.8], furn: [0x6b3a1e, 'wood'], build(k, L) {
+    k.prof(L.blade || S.chrome, [[-0.054, 0.0165], [-0.196, 0.0165], [-0.236, 0.0075], [-0.27, -0.0005], [-0.252, -0.0155], [-0.215, -0.0235], [-0.14, -0.0255], [-0.072, -0.0225], [-0.062, -0.016], [-0.054, -0.016]], 0.0052, 0, { b: 0.0023 });
+    k.box(L.glow || S.dark, 0.0054, 0.0036, 0.1, 0, 0.007, -0.128);                                                                          // 血槽
+    k.prof(S.chrome, [[-0.196, 0.0167], [-0.236, 0.0077], [-0.233, 0.0045], [-0.196, 0.0128]], 0.0056, 0, { b: 0.0008 });                    // 斜削刀背的開鋒
+    k.prof(S.brass, [[-0.046, 0.026], [-0.056, 0.03], [-0.059, 0.026], [-0.059, -0.038], [-0.055, -0.042], [-0.046, -0.034]], 0.013, 0, { b: 0.003 });   // 護手
+    k.lathe(L.furn, [[0.07, 0.0118], [0.05, 0.0146], [0.02, 0.0134], [-0.012, 0.0146], [-0.046, 0.0126]], 0, -0.002, { seg: 12, sx: 0.78, sy: 1.18, smooth: true });
+    k.lathe(S.brass, [[0.088, 0], [0.088, 0.0085], [0.083, 0.013], [0.07, 0.0136], [0.07, 0.0112]], 0, -0.002, { seg: 12, sx: 0.78, sy: 1.18 });
+    for (const z of [0.04, -0.02]) for (const sx of [-1, 1]) k.cyl(S.brass, 0.0032, 0.001, sx * 0.0106, -0.002, z, { ax: 'x', seg: 8 });
+    return knifeOut(V(0, -0.0005, -0.27));
+  } },
+};
+
 export const GUN_IDS = Object.keys(GUNS);
 
+// wskin：'塗裝' 或 '*特殊花紋'；刀可以再接 '/刀型'（skins.js 的 gunSkin 組出來的）
 export function buildGun(id, wskin = 'stock') {
-  const def = GUNS[id] || GUNS.pistol, k = new Kit();
-  const u = def.build(k, look(def, wskin)), g = k.bake(), parts = g.userData.parts, rest = {};
+  const [sk, model] = String(wskin).split('/');
+  const def = (id === 'knife' && KNIFE_MODELS[model]) || GUNS[id] || GUNS.pistol, k = new Kit();
+  const u = def.build(k, look(def, sk)), g = k.bake(), parts = g.userData.parts, rest = {};
   for (const n in parts) rest[n] = { pos: parts[n].position.clone(), rot: parts[n].rotation.clone() };
   if (parts.aim) parts.aim.visible = false;   // 看得穿的鏡片只有第一人稱瞄準時才打開
   const bb = new THREE.Box3().setFromObject(g);
   g.name = 'gun:' + id;
-  Object.assign(g.userData, { id: GUNS[id] ? id : 'pistol', wskin, kind: def.kind, hold: 'hold', rest, len: bb.max.z - bb.min.z }, u);
+  Object.assign(g.userData, { id: GUNS[id] ? id : 'pistol', wskin, model: id === 'knife' && KNIFE_MODELS[model] ? model : id, kind: def.kind, hold: 'hold', rest, len: bb.max.z - bb.min.z }, u);
   return g;
 }
 

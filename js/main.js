@@ -10,7 +10,8 @@ import { ViewModel } from './viewmodel.js';
 import { Net } from './net.js';
 import { Authority } from './authority.js';
 import { Bot } from './bot.js';
-import { validLook } from './skins.js';
+import { validLook, ITEMS, KNIVES } from './skins.js';
+import { Crate, REWARD } from './crate.js';
 import { Hud } from './hud.js';
 import { WEAPONS, GEAR, NADE_IDS, validLoadout, loadoutCost, itemName } from './weapons.js';
 import { DEFAULT_BINDS, loadBinds } from './binds.js';
@@ -44,12 +45,13 @@ const _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v2s = new THREE.Vec
 const ROUND_PHASES = ['countdown', 'playing', 'roundEnd', 'warmup', 'horde'];
 const WARM_LOADOUT = { p: 'ar', s: 'pistol', armor: 1, he: 1, flash: 1, smoke: 1, molotov: 1 };
 // 音效模組還沒有的新聲音先當作沒事（舊版 audio.js 也能跑）
-const SFX_OPTIONAL = ['setEnv', 'ambient', 'stopLoops', 'loop', 'impact', 'whiz', 'knifeSwing', 'knifeHit', 'molotov', 'shell', 'spray', 'emote', 'respawn', 'roundStart', 'voiceBlip', 'duck', 'skill', 'card'];
+const SFX_OPTIONAL = ['setEnv', 'ambient', 'stopLoops', 'loop', 'impact', 'whiz', 'knifeSwing', 'knifeHit', 'molotov', 'shell', 'spray', 'emote', 'respawn', 'roundStart', 'voiceBlip', 'duck', 'skill', 'card', 'tick'];
 
 class Game {
   constructor() {
     this.EMOTES = EMOTES; this.DEFAULT_XHAIR = DEFAULT_XHAIR; this.QUALITY = QUALITY;
-    const look = validLook({ s: store.get('skin'), w: store.get('wskin') });
+    this.crate = new Crate();   // 補給箱（抽獎）：要比造型先讀，刀和特殊塗裝只能裝已經抽到的
+    const look = validLook({ s: store.get('skin'), w: store.get('wskin'), k: store.get('knife'), p: store.get('wsp', null) });
     this.settings = {
       name: store.get('name', ''), sens: store.get('sens', 1), fov: store.get('fov', 82), vol: store.get('vol', 0.6),
       wheel: store.get('wheel', true),          // 滾輪切槍（Magic Mouse 容易誤觸，可以關）
@@ -59,6 +61,8 @@ class Game {
       hzdm: { n: 8, beh: 'hunt', atk: true, lv: 'normal', time: 300, map: store.get('hzmap', 'random'), ...(store.get('hzdm', null) || {}) },
       hzdef: { lv: store.get('hzlv', 'normal'), map: store.get('hzmap', 'random'), ...(store.get('hzdef', null) || {}) },
       skin: look.s, wskin: look.w,
+      knife: this.crate.has('k:' + look.k) ? look.k : 'knife',                                                    // 刀型（補給箱抽到的）
+      wsp: Object.fromEntries(Object.entries(look.p).filter(([w, f]) => this.crate.has(w + ':' + f))),   // 特殊塗裝 { 武器: 花紋 }
       quality: store.get('quality', 'auto'),    // 畫質：auto / low / medium / high
       xh: { ...DEFAULT_XHAIR, ...(store.get('xh', null) || {}) },   // 準星
       minimap: store.get('minimap', true), fps: store.get('fps', false),
@@ -347,13 +351,34 @@ class Game {
     const ok = await this.voice.setMode(mode);
     if (!ok && this.voice.err) { this.hud.toast(this.voice.err); this.settings.voice = 'off'; store.set('voice', 'off'); this.hud.syncSettings(); }
   }
-  look() { return { s: this.settings.skin, w: this.settings.wskin }; }
+  look() { return { s: this.settings.skin, w: this.settings.wskin, k: this.settings.knife, p: { ...this.settings.wsp } }; }
+  // 補給箱的東西：裝上／卸下（再點一次 = 卸下）。刀型換回戰鬥刀，特殊塗裝換回一般塗裝
+  equipped(id) { const it = ITEMS[id]; return !!it && (it.knife ? this.settings.knife === it.knife : this.settings.wsp[it.w] === it.f); }
+  equipItem(id) {
+    const it = ITEMS[id], st = this.settings;
+    if (!it || !this.crate.has(id)) return;
+    if (it.knife) { st.knife = st.knife === it.knife ? 'knife' : it.knife; store.set('knife', st.knife); }
+    else { const p = { ...st.wsp }; if (p[it.w] === it.f) delete p[it.w]; else p[it.w] = it.f; st.wsp = p; store.set('wsp', p); }
+    this.lockerGun = it.knife ? 'knife' : it.w; this.sfx.ui(); this._lookChanged();
+  }
+  _lookChanged() {
+    if (this.lockerOpen) this._dressDoll();
+    if (this.combat.w && this.phase !== 'menu') this.view.setWeapon(this.combat.w.id, this.look());
+    if (this.authority || this.net.connected) this.auth('look', this.look());
+  }
+  // 打完一場給抽獎券（同一場只給一次）
+  _reward(kind, win, key) {
+    if (this._rewardKey === key) return;
+    this._rewardKey = key;
+    const n = (REWARD[kind] || 0) + (win ? REWARD.win : 0);
+    this.crate.earn(n); this.hud.ticketGain(n);
+  }
   setLook(kind, id) {
     this.settings[kind] = id; store.set(kind, id); this.sfx.ui();
     this._dressDoll();
     if (this.authority || this.net.connected) this.auth('look', this.look());
   }
-  _dressDoll() { this.doll.applySkin(this.settings.skin, TEAM[0]); this.doll.setWeapon('ar', this.settings.wskin); this.doll._lit(); }
+  _dressDoll() { this.doll.applySkin(this.settings.skin, TEAM[0]); this.doll.setWeapon(this.lockerGun || 'ar', this.look()); this.doll._lit(); }
   openLocker() { this.lockerOpen = true; this._dressDoll(); this.doll.group.visible = this.pedestal.visible = true; this.hud.show('locker'); }
   closeLocker() { this.lockerOpen = false; this.doll.group.visible = this.pedestal.visible = false; this.hud.show('menu'); }
   previewEmote(id) { if (this.doll.emote) this.doll.emote(id); }
@@ -606,8 +631,8 @@ class Game {
       if (bk !== this.hzBf) { this.hzBf = bk; this.combat.applyMods(gs.p[this.me].bf); }
     }
     const opp = gs.p[1 - this.me];
-    const lk = opp.lk.s + '|' + opp.lk.w;
-    if (lk !== this.oppLook) { this.oppLook = lk; this.remote.applySkin(opp.lk.s, TEAM[1 - this.me]); this.remote.setWeapon(this.remote.weapon, opp.lk.w); this.remote._lit(); }
+    const lk = JSON.stringify(opp.lk);
+    if (lk !== this.oppLook) { this.oppLook = lk; this.remote.applySkin(opp.lk.s, TEAM[1 - this.me]); this.remote.setWeapon(this.remote.weapon, opp.lk); this.remote._lit(); }
     // 大廳裡房主指定地圖時，背景直接換成那張圖預覽
     if (gs.phase === 'lobby' && MAPS[gs.set.map] && this.world.mapId !== gs.set.map) this.setMap(gs.set.map);
     const inR = this.inRound(), wasAlive = this.remote.alive;
@@ -660,10 +685,11 @@ class Game {
     }
     else if (gs.phase === 'matchEnd') {
       this.exitLock(); h.showHud(false); h.clearBanner(); h.show('end'); this.sfx.stopLoops(); this.skills.clear();
-      if (gs.hz) { this._hzRecord(gs); this.sfx.win(); return; }   // 機器人模式：結算畫面另外畫，也不記進對戰戰績
+      if (gs.hz) { this._hzRecord(gs); this.sfx.win(); this._reward('horde', false, this.code + ':' + gs.round + ':hz'); return; }   // 機器人模式：結算畫面另外畫，也不記進對戰戰績
       if (gs.mw === this.me) this.sfx.win(); else this.sfx.lose();
       const me = gs.p[this.me], opp = gs.p[1 - this.me];
       this.stats.match(this.mode(), { win: gs.mw === this.me, my: me.sc, their: opp.sc, opp: opp.n, map: MAPS[gs.map].name });
+      this._reward(this.mode(), gs.mw === this.me, this.code + ':' + gs.round + ':' + me.sc + ':' + opp.sc);
     }
   }
 
@@ -693,7 +719,7 @@ class Game {
     const os = sp[(1 - this.me + gs.round) % 2];
     this.remote.clearBuffer(); this.remote.pos.set(os.x, os.y, os.z); this.remote.yaw = os.yaw; this.remote.lastPos.copy(this.remote.pos);
     if (this.remote.revive) this.remote.revive();
-    this.remote.applySkin(opp.lk.s, TEAM[1 - this.me]); this.remote.setWeapon(opp.lo.p || opp.lo.s, opp.lk.w); this.remote._lit();
+    this.remote.applySkin(opp.lk.s, TEAM[1 - this.me]); this.remote.setWeapon(opp.lo.p || opp.lo.s, opp.lk); this.remote._lit();
     this.ghost.group.visible = false; this.emote = null; this.kc = false; this.kcAt = 0;
     this.replay.clear(); this.mini.reset(); this.rs0 = this.combat.shots; this.rh0 = this.combat.hits; this.hurtSrc = null; this.hud.hurtDir(0, 0);
     this.deathT = 0; this.shake = 0; this.landDip = 0; this.roll = 0; this.rStep = 0;
@@ -752,7 +778,7 @@ class Game {
     this.kcAt = 0;
     if (!this.kc) return;
     this.kc = false; this.replay.stop(); this.ghost.group.visible = false; this.hud.killcam(false);
-    if (this.combat.w) this.view.setWeapon(this.combat.w.id, this.settings.wskin);
+    if (this.combat.w) this.view.setWeapon(this.combat.w.id, this.look());
     if (this.gs) { const opp = this.gs.p[1 - this.me]; this.remote.group.visible = this.inRound() && (opp.al || !!this.remote.dead); }
   }
 
@@ -948,7 +974,7 @@ class Game {
     if (this.emote || this.kc || !this.meAlive()) return;
     const id = this.settings.emote, def = EMOTES[id]; if (!def) return;
     const g = this.ghost;
-    g.applySkin(this.settings.skin, TEAM[this.me]); g.setWeapon(this.combat.w ? this.combat.w.id : 'pistol', this.settings.wskin); g._lit();
+    g.applySkin(this.settings.skin, TEAM[this.me]); g.setWeapon(this.combat.w ? this.combat.w.id : 'pistol', this.look()); g._lit();
     if (g.revive) g.revive();
     if (g.emote) g.emote(id);
     this.emote = { id, end: performance.now() + (def.dur || 2.5) * 1000 };
@@ -1025,7 +1051,7 @@ class Game {
         this.kcAt = 0;
         if (this.phase === 'roundEnd' && this.replay.play(this.kcDeath - 3600, this.kcDeath + 250, now)) {
           this.kc = true; this.hud.killcam(true, gs.p[1 - this.me].n);
-          const g = this.ghost; g.applySkin(this.settings.skin, TEAM[this.me]); g.setWeapon(cb.w ? cb.w.id : 'pistol', this.settings.wskin); g._lit(); if (g.revive) g.revive();
+          const g = this.ghost; g.applySkin(this.settings.skin, TEAM[this.me]); g.setWeapon(cb.w ? cb.w.id : 'pistol', this.look()); g._lit(); if (g.revive) g.revive();
         }
       }
       this.shake = Math.max(0, this.shake - dt * 3.5);
@@ -1051,7 +1077,7 @@ class Game {
         const g = this.ghost;
         g.pos.set(frame.vx, frame.vy, frame.vz); g.yaw = frame.vyaw; g.crouched = !!frame.vcr; g.alive = true; g.group.visible = true; g.update(dt);
         this.remote.group.visible = false;
-        if (WEAPONS[frame.kw] && this.view.cur !== frame.kw + '|' + this.remote.wskin) this.view.setWeapon(frame.kw, this.remote.wskin);
+        if (WEAPONS[frame.kw]) this.view.setWeapon(frame.kw, this.remote.wskin);   // 同一把會直接略過
         this.hud.killcamTime(frame.left);
         showView = true;
       } else if (this.emote && alive) {

@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { NET, PLAYER } from './config.js';
 import { clamp, lerp, lerpAngle, rayPlayer } from './util.js';
 import { buildGun } from './gunmodel.js';
-import { SKINS } from './skins.js';
+import { SKINS, gunSkin } from './skins.js';
 
 // 對手的身體模型（第三人稱）+ 位置插值 + 受擊判定。造型預覽的假人也用這個。
 // 模型是「一節一節的剛體」掛在關節上：骨盆 → 脊椎 → 胸 → 頭；肩 → 上臂 → 前臂 → 手；髖 → 大腿 → 小腿 → 腳。
@@ -453,8 +453,10 @@ export class RemotePlayer {
   setColor(c) { this.applySkin(this.skin || 'recruit', c); }
   setThird() { /* 保留給之後用 */ }
 
-  setWeapon(id, wskin = this.wskin) {
-    const key = id + '|' + wskin;
+  // look：塗裝字串或整個造型物件（記下來，之後換槍時用同一套造型算這把槍的塗裝）
+  setWeapon(id, look = this.wskin) {
+    const wskin = gunSkin(look, id), key = id + '|' + wskin;
+    this.wskin = look;
     if (key === this.gunKey) return;
     if (this.gun) this.gun.visible = false;
     if (!(key in this.guns)) {
@@ -465,7 +467,7 @@ export class RemotePlayer {
     }
     const g = this.gun = this.guns[key], ud = (g && g.userData) || {};
     if (g) g.visible = true;
-    this.gunKey = key; this.weapon = id; this.wskin = wskin;
+    this.gunKey = key; this.weapon = id;
     // 槍的握法：新模型會在 userData 給 kind / gripL；沒有就照武器代號猜
     this.kind = HOLD[ud.kind] ? ud.kind : id === 'knife' ? 'knife' : id === 'rocket' ? 'launcher' : PISTOLS.has(id) ? 'pistol' : 'rifle';
     if (ud.gripL && ud.gripL.isVector3) this.gripL.copy(ud.gripL);

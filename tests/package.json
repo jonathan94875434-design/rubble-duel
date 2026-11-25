@@ -11,6 +11,7 @@
     "warm": "node warm.mjs shots",
     "warm:peer": "node warm.mjs shots peer",
     "rogue": "node rogue.mjs shots",
+    "crate": "node crate.mjs shots",
     "rogue:duel": "node rogue-duel.mjs shots",
     "rogue:peer": "node rogue-duel.mjs shots peer",
     "horde": "node horde.mjs shots",

@@ -324,6 +324,40 @@ st = await ev((s0, y0) => { const g = __game, p = g.player; return { added: g.wo
 ok('堡壘：蓋出一座城堡（上千塊），自己站上 6 公尺高的哨塔，沒有把人埋住', used && st.added > 700 && st.dy > 5.5 && st.dy < 6.5 && !st.stuck && !st.bot, JSON.stringify(st));
 await page.screenshot({ path: OUT + '/r10-fortress.png' });
 await arena(); await sleep(300);
+// 升天：把看得到的對手往上噴、扣血
+await setSkills('launch', 'stim');
+await place(SX, SZ, SX, SZ - 10, 0); await sleep(600);
+await ev(() => { __game.player.yaw = 0; __game.player.pitch = -0.05; __game.bot.fire = () => {}; });
+const hpL0 = await ev(() => __game.gs.p[1].hp), yL0 = await ev(() => __game.bot.body.pos.y);
+used = await ev(() => __game.skills.use(0));
+await page.waitForFunction((y0) => __game.bot.body.pos.y > y0 + 3, { timeout: 10000 }, yL0).catch(() => {});
+const dyL = await ev((y0) => __game.bot.body.pos.y - y0, yL0); await sleep(1000);
+st = await ev((h0) => ({ hp: __game.gs.p[1].hp, h0 }), hpL0);
+ok('升天：對手被原地噴上天、扣血', used && dyL > 3 && st.hp < st.h0, JSON.stringify({ ...st, dyL }));
+// 賭博：亂數固定 → 賭贏（對手被凝結）、賭輸（自己著火）
+await setSkills('gamble', 'stim'); await sleep(300);
+st = await ev(() => { const g = __game, R = Math.random; Math.random = () => 0.1; let used; try { used = g.skills.use(0); } finally { Math.random = R; } return { used, slow: g.skills.rSlowEnd > performance.now() }; });
+ok('賭博：賭贏 → 對手吃負面效果', st.used && st.slow, JSON.stringify(st));
+st = await ev(async () => { const g = __game, R = Math.random; g.skills.ready = [0, 0]; Math.random = () => 0.9; let used; try { used = g.skills.use(0); } finally { Math.random = R; } await new Promise((r) => setTimeout(r, 600)); return { used, burn: g.authority.players[0].burnT > Date.now() }; });
+ok('賭博：賭輸 → 自己吃（著火由裁判算）', st.used && st.burn, JSON.stringify(st));
+await ev(() => { const a = __game.authority; a.players[0].burnT = 0; a.players[0].hp = a.players[0].maxHp; a.dirty = true; a.flush(); });
+// 召喚：梁允猴、gay tay；對手的召喚物看得到、打得到
+await setSkills('monkey', 'gaytay');
+await place(SX, SZ, SX, SZ - 12, 0); await sleep(400);
+used = await ev(() => __game.skills.use(0)); const used2 = await ev(() => __game.skills.use(1)); await sleep(500);
+st = await ev(() => __game.pets.mine.map((p) => p.kind + ':' + p.hp + ':' + !!p.view.tag));
+ok('召喚：梁允猴（60 血）、gay tay（700 血）都出現，頭上有名牌', used && used2 && st.includes('monkey:60:true') && st.includes('gaytay:700:true'), JSON.stringify(st));
+await page.screenshot({ path: OUT + '/r11-pets.png' });
+st = await ev(() => {
+  const g = __game, p = g.player, e = { x: p.pos.x, y: p.pos.y + 1.6, z: p.pos.z };
+  g.pets.onNet({ r: g.round, id: 'pets', l: [77, 0, e.x, p.pos.y, e.z - 5, 0, 60, 60, 0] });   // 假裝對手放了一隻猴子在正前方 5 公尺
+  const t = g.rayTarget(e.x, e.y - 0.9, e.z, 0, 0, -1), seen = g.pets.theirs.has(77);
+  g.pets.hit('pet77', 30, false); const hp = g.pets.theirs.get(77).hp;
+  g.pets.onNet({ r: g.round, id: 'petdie', n: 77 });
+  return { seen, id: t && t.id, hp, gone: !g.pets.theirs.has(77) };
+});
+ok('召喚：對手的召喚物會出現、子彈打得到（先扣自己這邊的血條），死掉就消失', st.seen && st.id === 'pet77' && st.hp === 30 && st.gone, JSON.stringify(st));
+await ev(() => __game.pets.clear());
 await setSkills('orbital', 'stim');
 await place(SX, SZ, SX + 6, SZ - 10, 0); await sleep(300);
 await ev(() => { __game.player.yaw = 0; __game.player.pitch = -0.2; __game.bot.fire = () => {}; });

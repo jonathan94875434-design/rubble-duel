@@ -28,6 +28,67 @@ export const WSKINS = {
 };
 export const WSKIN_IDS = Object.keys(WSKINS);
 
+// 造型：s 角色、w 武器塗裝、k 刀型、p 特殊塗裝 { 武器: 花紋 }（只留下真的存在的組合）
 export function validLook(l) {
-  return { s: l && SKINS[l.s] ? l.s : 'recruit', w: l && WSKINS[l.w] ? l.w : 'stock' };
+  const out = { s: l && SKINS[l.s] ? l.s : 'recruit', w: l && WSKINS[l.w] ? l.w : 'stock', k: l && KNIVES[l.k] ? l.k : 'knife', p: {} };
+  if (l && l.p && typeof l.p === 'object') for (const w in l.p) if (ITEMS[w + ':' + l.p[w]]) out.p[w] = l.p[w];
+  return out;
+}
+
+// ───────── 補給箱（抽獎）拿到的東西 ─────────
+// 刀型：戰鬥刀是預設，其他要抽到
+export const KNIVES = {
+  knife: { name: '戰鬥刀' },
+  butterfly: { name: '蝴蝶刀' },
+  karambit: { name: '爪刀' },
+  bowie: { name: '獵刀' },
+};
+export const KNIFE_IDS = Object.keys(KNIVES);
+
+// 特殊塗裝的花紋（圖案在 finishes.js 用程式畫）。m 金屬度、r 粗糙度、glow 發光條、em 花紋自己發一點光（暗處也看得到）
+export const FINISHES = {
+  dragon: { name: '赤焰龍', m: 0.35, r: 0.34, em: 0.22, glow: 0xff6a1a },
+  galaxy: { name: '星河', m: 0.4, r: 0.3, em: 0.5, glow: 0x6ad8ff },
+  inferno: { name: '煉獄', m: 0.2, r: 0.42, em: 0.45, glow: 0xff8a1a },
+  storm: { name: '雷霆', m: 0.45, r: 0.36, em: 0.45, glow: 0xb48cff },
+  fade: { name: '霓彩漸層', m: 1, r: 0.2, em: 0.06 },
+  ice: { name: '冰晶', m: 0.6, r: 0.18, em: 0.18, glow: 0x9ee8ff },
+  circuit: { name: '電路板', m: 0.3, r: 0.45, em: 0.35, glow: 0x3dff8a },
+  marble: { name: '大理石', m: 0.15, r: 0.22, em: 0.04 },
+  hex: { name: '蜂巢', m: 0.8, r: 0.3, em: 0.08 },
+  sakura: { name: '櫻吹雪', m: 0.1, r: 0.5, em: 0.08 },
+  tiger: { name: '虎紋', m: 0.25, r: 0.48, em: 0.05 },
+  digital: { name: '數位迷彩', m: 0.1, r: 0.66, em: 0.02 },
+};
+
+// 稀有度（由低到高）：w 是抽到這一級的權重
+export const TIERS = {
+  b: { name: '精良', w: 52, c: '#4b8bff' },
+  p: { name: '稀有', w: 27, c: '#9a5cff' },
+  k: { name: '隱秘', w: 12, c: '#e64bd6' },
+  m: { name: '神話', w: 5, c: '#ff3b4a' },
+  g: { name: '傳奇刀', w: 4, c: '#ffc23a' },
+};
+export const TIER_IDS = Object.keys(TIERS);
+
+// 物品：「武器:花紋」是那把武器專用的特殊塗裝（knife = 任何刀型都能用），「刀:刀型」是刀
+export const ITEMS = {};
+for (const [t, list] of Object.entries({
+  m: ['sniper:dragon', 'ar:galaxy'],
+  k: ['ar:inferno', 'lmg:storm', 'pistol:fade', 'sniper:ice', 'knife:fade', 'knife:galaxy'],
+  p: ['smg:circuit', 'shotgun:marble', 'dmr:hex', 'revolver:inferno', 'pistol:sakura', 'knife:tiger', 'knife:marble'],
+  b: ['ar:digital', 'smg:tiger', 'mp:digital', 'rocket:hex', 'shotgun:tiger', 'gl:circuit', 'dmr:digital'],
+  g: ['k:butterfly', 'k:karambit', 'k:bowie'],
+})) for (const id of list) { const [a, b] = id.split(':'); ITEMS[id] = a === 'k' ? { t, knife: b } : { t, w: a, f: b }; }
+export const ITEM_IDS = Object.keys(ITEMS);
+
+// 一把武器實際要用的塗裝字串（給 gunmodel.buildGun）：
+//   '塗裝' 一般塗裝、'*花紋' 特殊塗裝；刀再接 '/刀型'，例：'*fade/butterfly'
+// lk 可以是造型物件 { w, k, p }，也可以直接是塗裝字串（舊的寫法）
+export function gunSkin(lk, id) {
+  if (!lk || typeof lk !== 'object') return lk || 'stock';
+  const f = lk.p && lk.p[id];
+  let s = f && ITEMS[id + ':' + f] ? '*' + f : WSKINS[lk.w] ? lk.w : 'stock';
+  if (id === 'knife' && lk.k && lk.k !== 'knife' && KNIVES[lk.k]) s += '/' + lk.k;
+  return s;
 }

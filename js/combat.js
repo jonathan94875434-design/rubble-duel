@@ -46,7 +46,7 @@ export class Combat {
     if (this.mods.arsenal) { this.nades.he += 2; this.nades.flash++; this.nades.smoke++; }   // 軍火庫：多送兩顆手榴彈、閃光彈、煙霧彈
     this.throwAt = 0;
     this.bloom = 0; this.recP = this.recY = 0; this.ads = 0; this.switchEnd = 0; this.fireQueued = 0;
-    this.g.view.setWeapon(this.w.id, this.g.settings.wskin);
+    this.g.view.setWeapon(this.w.id, this.g.look());
   }
 
   // 卡片變了但槍不換（守據點一波打完選的、下一波開始時自動拿的）：倍率馬上生效，彈匣大小跟著改
@@ -87,7 +87,7 @@ export class Combat {
     this.last = this.cur; this.cur = i; this.ads = 0;
     this.switchDur = (this.w.def.melee ? 220 : 350) * this.mods.handling;
     this.switchEnd = performance.now() + this.switchDur;
-    this.g.view.setWeapon(this.w.id, this.g.settings.wskin);
+    this.g.view.setWeapon(this.w.id, this.g.look());
     this.g.sfx.swap();
   }
   switchLast() { this.switchTo(this.slots[this.last] ? this.last : this.cur === 1 ? 2 : 1); }

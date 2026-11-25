@@ -52,8 +52,10 @@ ok('訪客看到房主改的規則', (await B.evaluate(() => __game.gs.set.targe
 ok('訪客的背景換成房主指定的地圖', (await B.evaluate(() => __game.world.mapId)) === 'plaza');
 // 造型同步：B 換造型，A 看到的對手要跟著變
 await B.evaluate(() => { __game.setLook('skin', 'neon'); __game.setLook('wskin', 'gold'); });
-await sleep(400);
-ok('造型同步給對手', (await A.evaluate(() => __game.remote.skin + '/' + __game.remote.wskin)) === 'neon/gold', await A.evaluate(() => JSON.stringify(__game.gs.p[1].lk)));
+// remote.wskin 是整個造型物件（刀型、特殊塗裝也在裡面）；機器慢的時候要等一下才會傳到
+const lookOf = () => { const r = __game.remote, w = r.wskin; return r.skin + '/' + (w && typeof w === 'object' ? w.w : w); };
+await A.waitForFunction((f) => eval(f)() === 'neon/gold', { timeout: 8000 }, '(' + lookOf + ')').catch(() => {});
+ok('造型同步給對手', (await A.evaluate(lookOf)) === 'neon/gold', await A.evaluate(() => JSON.stringify(__game.gs.p[1].lk)));
 await A.click('#btn-start');
 await waitPhase(A, 'loadout'); await waitPhase(B, 'loadout');
 // ── 經濟：第 1 局是手槍局 ──
@@ -62,7 +64,8 @@ await A.click('.wcard[data-id="rocket"]'); await sleep(150);
 ok('第 1 局不能買主武器', (await A.evaluate(() => __game.sel.p)) === null);
 // A：只買左輪（先把預設的防彈衣取消）；B：衝鋒手槍 + 閃光彈
 const clearGear = () => { const g = __game; for (const k of ['armor', 'he', 'smoke']) if (g.sel[k]) g.buy(k); for (let i = 0; i < 3 && g.sel.flash; i++) g.buy('flash'); };
-await A.evaluate(clearGear); await A.click('.wcard[data-id="revolver"]');
+await A.evaluate(clearGear);
+await A.click('.wcard[data-id="revolver"]');
 await B.evaluate(clearGear); await B.click('.wcard[data-id="mp"]'); await B.evaluate(() => __game.buy('flash'));
 await sleep(300);
 await A.screenshot({ path: OUT + '/n1b-buy-r1.png' });

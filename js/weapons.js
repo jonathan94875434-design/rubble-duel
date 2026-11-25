@@ -147,10 +147,10 @@ export const itemName = (id) => (projDef(id) ? projDef(id).name : '');
 // 裝備（買槍畫面的第三區）。max = 一局最多帶幾個
 export const GEAR = {
   armor: { name: '防彈衣', price: 600, max: 1, glyph: '甲', desc: '開局 50 護甲，受傷先扣護甲、扣光了才扣血' },
-  he: { name: '手榴彈', price: 300, max: 1, glyph: '爆', desc: '1.6 秒後爆炸，會彈牆、能炸開方塊' },
+  he: { name: '手榴彈', price: 300, max: 1, glyph: '爆', desc: '1.6 秒後爆炸，範圍大、能炸開一大片方塊' },
   flash: { name: '閃光彈', price: 200, max: 2, glyph: '閃', desc: '看著它爆炸的人會全白好幾秒（自己也會）' },
-  smoke: { name: '煙霧彈', price: 250, max: 1, glyph: '煙', desc: '放出一團擋視線的煙，維持 12 秒；可以撲滅火' },
-  molotov: { name: '燃燒瓶', price: 400, max: 1, glyph: '火', desc: '地上燒 7 秒的火，站在裡面一直扣血，還會燒掉木頭' },
+  smoke: { name: '煙霧彈', price: 250, max: 1, glyph: '煙', desc: '放出一大團擋視線的煙，維持 16 秒；可以撲滅火' },
+  molotov: { name: '燃燒瓶', price: 400, max: 1, glyph: '火', desc: '地上燒一大片 9 秒的火，站在裡面一直扣血，還會燒掉木頭' },
 };
 export const NADE_IDS = ['he', 'flash', 'smoke', 'molotov'];
 export const GEAR_IDS = Object.keys(GEAR);

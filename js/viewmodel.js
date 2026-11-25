@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { buildGun, buildProp } from './gunmodel.js';
-import { SKINS } from './skins.js';
+import { SKINS, gunSkin } from './skins.js';
 
 // 第一人稱手上的槍＋雙手：獨立場景、獨立鏡頭，畫在世界上面（深度清掉），所以不會插進牆裡。
 // 槍是真實比例（js/gunmodel.js），右手握在槍的原點，左手扶在 userData.gripL；
@@ -231,8 +231,9 @@ export class ViewModel {
   setAspect(a) { this.camera.aspect = a; this.camera.updateProjectionMatrix(); }
 
   // ───────── 外觀 ─────────
-  setWeapon(id, wskin = 'stock') {
-    const key = id + '|' + wskin;
+  // look：塗裝字串，或整個造型物件 { w, k, p }（刀型、特殊塗裝要看是哪一把武器，skins.js 的 gunSkin）
+  setWeapon(id, look = 'stock') {
+    const wskin = gunSkin(look, id), key = id + '|' + wskin;
     if (key === this.key) return;
     if (this.gun) this.gun.visible = false;
     if (!this.guns[key]) { this.guns[key] = buildGun(id, wskin); this.holder.add(this.guns[key]); }

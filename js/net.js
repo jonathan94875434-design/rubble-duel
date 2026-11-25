@@ -36,10 +36,15 @@ export class Net {
     this.sideBot = null;                                // 真人連上了：之後的封包一律走真的連線，不再送給陪練機器人
     this.connected = true; this.lastRecv = performance.now();
     clearInterval(this._pingTimer);
+    let tick = performance.now();
     if (this.mode !== 'bot') this._pingTimer = setInterval(() => {
-      // 對方關掉分頁時 WebRTC 不一定會馬上通知，所以自己用心跳判斷
-      if (performance.now() - this.lastRecv > 8000) { this._drop(); return; }
-      this.send('ping', performance.now());
+      // 對方關掉分頁時 WebRTC 不一定會馬上通知，所以自己用心跳判斷。
+      // 自己這邊卡住的時間（開局建地圖、慢電腦）不算在對方頭上：心跳本身晚了多久，就多等多久
+      const now = performance.now();
+      if (now - tick > 2000) this.lastRecv += now - tick - 1000;
+      tick = now;
+      if (now - this.lastRecv > 8000) { this._drop(); return; }
+      this.send('ping', now);
     }, 1000);
     this.emit('_open');
   }

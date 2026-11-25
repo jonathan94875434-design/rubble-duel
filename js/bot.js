@@ -5,7 +5,7 @@ import { CARDS, SK, BERSERK, cardMods, rage } from './cards.js';
 import { MAPS } from './maps.js';
 import { BLOCK } from './world.js';
 import { Nav } from './nav.js';
-import { SKIN_IDS, WSKIN_IDS } from './skins.js';
+import { SKIN_IDS, WSKIN_IDS, KNIFE_IDS, ITEM_IDS, ITEMS } from './skins.js';
 import { rayPlayer, lerp, lerpAngle, r3 } from './util.js';
 
 // 練習難度。aimErr：瞄準誤差（度）；react：看到人之後多久開槍（毫秒）
@@ -75,7 +75,10 @@ export class Bot {
     const prev = this.gs; this.gs = gs;
     if (!this.sentLook) {
       this.sentLook = true;
-      this.send('auth', { t: 'look', s: SKIN_IDS[1 + ((Math.random() * (SKIN_IDS.length - 1)) | 0)], w: WSKIN_IDS[(Math.random() * WSKIN_IDS.length) | 0] });
+      // 機器人也會隨便帶一把抽獎才有的刀和幾個特殊塗裝（讓人看看長什麼樣子）
+      const pick = (l) => l[(Math.random() * l.length) | 0], p = {};
+      for (let i = 0; i < 4; i++) { const it = ITEMS[pick(ITEM_IDS)]; if (it.w) p[it.w] = it.f; }
+      this.send('auth', { t: 'look', s: SKIN_IDS[1 + ((Math.random() * (SKIN_IDS.length - 1)) | 0)], w: pick(WSKIN_IDS), k: pick(KNIFE_IDS), p });
     }
     if (prev && prev.phase === gs.phase && prev.round === gs.round) return;
     const me = gs.p[1];
