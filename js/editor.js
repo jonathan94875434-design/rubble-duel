@@ -30,8 +30,8 @@ export class Editor {
     const g = this.g, w = g.world;
     this.on = true; this.undo = []; this.boxA = null;
     w.resize(WORLD); g.syncBounds();                         // 自製地圖固定是標準大小（大地圖不能拿來改）
-    if (src && MAPS[src] && !MAPS[src].size) {
-      const M = MAPS[src];
+    if (src && MAPS[src] && (!MAPS[src].size || MAPS[src].ed)) {
+      const M = MAPS[src].size ? { ...MAPS[src], ...MAPS[src].ed } : MAPS[src];   // 四張小地圖放大了：編輯器拿舊的 48×48 版本當底
       w.types.fill(0); w.hp.fill(0); M.build(w);
       this.env = M.env; this.G = Math.round((M.ground || 2) / BS); this.name = M.custom ? M.name : M.name + '（改）'; this.editId = M.custom ? src : null;
       this.spawns = M.spawns.map((s) => ({ ...s })); this.pickups = M.pickups.map((p) => ({ ...p }));

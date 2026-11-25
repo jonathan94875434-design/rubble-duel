@@ -38,8 +38,6 @@ function rampX(put, z0, z1, xStart, dx, run, yLo, hTop, type) {
 // ═════════ 1. 廢墟廣場：開闊、中央兩層塔、角落高台（繞中心旋轉 180° 對稱）═════════
 function buildPlaza(w) {
   const S = (...a) => w.boxSym(...a), G = GP;
-  base(w, GROUND, G);
-
   // 中央塔（40..55）
   const c0 = 40, c1 = 55;
   S(c0, G, c0, c1, G + 5, c0, BRICK); S(c0, G, c0, c0, G + 5, c1, BRICK);
@@ -103,8 +101,6 @@ function buildPlaza(w) {
 //   東邊「隧道」有屋頂、轉角多，適合近戰；屋頂上也能走
 function buildLanes(w) {
   const M = (...a) => w.boxMir(...a), G = GL;
-  base(w, SANDGROUND, G);
-
   // 地下道：從中路南段走樓梯下去，穿過中央水泥塊底下，再從北段上來（頂板只有一格厚，炸得開）
   for (let i = 0; i < 5; i++) M(46, G - 1 - i, 30 + i * 2, 49, G - 1, 39, AIR);
   M(46, G - 5, 40, 49, G - 2, 47, AIR);
@@ -169,8 +165,6 @@ function container(w, x0, y0, z0, alongX, type, hollow) {
 
 function buildYard(w) {
   const S = (...a) => w.boxSym(...a), G = GY;
-  base(w, GROUND, G, 12, 12, 83, 83);
-
   // 碼頭邊的高起平台（比地面高 1m），兩端用緩坡接地
   S(14, G, 60, 26, G + 1, 81, CONCRETE);
   rampX(S, 66, 75, 27, 1, 3, G, 2, CONCRETE);
@@ -206,8 +200,6 @@ function buildYard(w) {
 // ═════════ 4. 礦場：南北兩塊高地、中間是谷底，有緩坡、陡階、木橋、穿山隧道、山裡的地道（以 z 中線鏡像）═════════
 function buildQuarry(w) {
   const M = (...a) => w.boxMir(...a), LO = QLO, HI = QHI, UP = HI - LO; // 高地比谷底高 6 格 = 3m
-  base(w, ROCK, LO);
-
   // 南北高地（出生點在上面）
   M(2, LO, 2, 93, HI - 1, 25, ROCK);
   // 三條下谷的路：西邊緩坡、中間陡階、東邊中等坡
@@ -245,6 +237,182 @@ function buildQuarry(w) {
   M(26, LO, 44, 27, LO + 4, 47, ROCK);
   M(64, LO, 38, 66, LO + 1, 40, WOOD);
 }
+
+// ═════════ 四張小地圖的新版（2026-11-25）：原本 48×48 公尺的內容整個放在正中間，四周往外擴 8 公尺 ═════════
+// 新地圖 64×64 公尺。外面那一圈各自加了可以爬的高建築、新的路線、掩體和裝飾。
+// 地圖編輯器還是可以拿舊的 48×48 版本當底圖（MAPS 裡的 ed）。
+const SMALL = { X: 128, Y: 32, Z: 128 }, OFF = 16;
+// 給舊內容用的世界：座標全部 +OFF，對稱、鏡像都以整張新地圖的中心為準（剛好跟舊的一樣）
+function shifted(w) {
+  const o = { X: 96, Y: w.Y, Z: 96, box: (x0, y0, z0, x1, y1, z1, t) => w.box(x0 + OFF, y0, z0 + OFF, x1 + OFF, y1, z1 + OFF, t) };
+  o.boxSym = (x0, y0, z0, x1, y1, z1, t) => { o.box(x0, y0, z0, x1, y1, z1, t); o.box(95 - x1, y0, 95 - z1, 95 - x0, y1, 95 - z0, t); };
+  o.boxMir = (x0, y0, z0, x1, y1, z1, t) => { o.box(x0, y0, z0, x1, y1, z1, t); o.box(x0, y0, 95 - z1, x1, y1, 95 - z0, t); };
+  return o;
+}
+const sh = (o) => ({ ...o, x: o.x + OFF * BS, z: o.z + OFF * BS });   // 舊的出生點、補給品搬到新地圖
+// 路燈：一根鐵柱、頂上橫出去一截燈罩
+function lamp(put, x, G, z, h = 8) { put(x, G, z, x, G + h, z, METAL); put(x, G + h, z, x + 1, G + h, z, SHEET); }
+// 車：車身、車頂（燒過的就是黑的鐵皮）
+function car(put, x, G, z, alongX) {
+  if (alongX) { put(x, G, z, x + 7, G + 1, z + 3, METAL); put(x + 2, G + 2, z, x + 5, G + 2, z + 3, SHEET); }
+  else { put(x, G, z, x + 3, G + 1, z + 7, METAL); put(x, G + 2, z + 2, x + 3, G + 2, z + 5, SHEET); }
+}
+
+// ── 廢墟廣場：兩個角落各一座三層的鐘樓廢墟（爬得到頂），外圈幾棟兩層的破房子、燒掉的車、瓦礫、路燈 ──
+function plazaRing(w) {
+  const S = (...a) => w.boxSym(...a), G = GP;
+  bigTower(S, G, 2, 2, 13, 3, BRICK, ['xmax', 'zmax']);                      // 西南角（東北角對稱）
+  S(14, G + 8, 5, 14, G + 10, 9, AIR); S(5, G + 14, 14, 9, G + 16, 14, AIR);  // 被炸開的大洞（往場內看）
+  // 南邊一排房子：兩層、一層各一棟，牆上有破洞
+  bigTower(S, G, 20, 2, 13, 2, PLASTER, ['zmax', 'xmin']);
+  S(24, G + 8, 14, 28, G + 10, 14, AIR); S(32, G + 7, 6, 32, G + 10, 9, AIR);
+  bigTower(S, G, 36, 2, 12, 1, BRICK, ['zmax', 'xmax']);
+  S(40, G + 2, 13, 43, G + 4, 13, AIR);
+  // 西邊：兩層的倉庫廢墟、一層的小屋
+  bigTower(S, G, 2, 20, 13, 2, BRICK, ['xmax', 'zmax']);
+  S(14, G + 8, 24, 14, G + 10, 28, AIR);
+  bigTower(S, G, 2, 37, 12, 1, PLASTER, ['xmax', 'zmin']);
+  // 南邊東半：燒掉的車、瓦礫堆、半倒的矮牆
+  car(S, 64, G, 5, true); car(S, 80, G, 9, false);
+  S(90, G, 4, 94, G, 8, BRICK); S(91, G + 1, 5, 93, G + 1, 7, BRICK); S(92, G + 2, 6, 92, G + 2, 6, CONCRETE);
+  S(98, G, 11, 108, G + 2, 12, CONCRETE); S(102, G, 11, 103, G + 2, 12, AIR);
+  S(56, G, 10, 58, G + 1, 12, WOOD);
+  // 西邊北半：一台燒掉的公車（走得進去）、沙包堆
+  S(4, G, 66, 9, G + 5, 86, METAL); S(5, G + 1, 66, 8, G + 4, 86, AIR); S(9, G + 1, 74, 9, G + 4, 77, AIR);   // 車裡淨高 2 公尺
+  S(5, G + 1, 66, 8, G + 4, 66, SHEET); S(5, G + 1, 86, 8, G + 4, 86, SHEET);   // 兩頭是車頭車尾（打得穿），從側門進去
+  S(10, G, 82, 11, G + 1, 85, WOOD); S(10, G + 2, 84, 11, G + 3, 85, WOOD);   // 木箱階梯：爬上公車頂
+  S(6, G, 54, 13, G + 2, 55, SANDBAG); S(12, G, 98, 14, G + 2, 104, SANDBAG);
+  S(4, G, 106, 7, G, 109, CONCRETE); S(5, G + 1, 107, 6, G + 1, 108, BRICK);
+  for (const [x, z] of [[17, 16], [60, 14], [86, 14], [16, 60], [16, 92]]) lamp(S, x, G, z);
+}
+
+// ── 三線街區：最外面多一條後巷、兩棟三層公寓；出生區後面是停車場；東邊鐵軌上有貨車廂 ──
+function lanesRing(w) {
+  const M = (...a) => w.boxMir(...a), G = GL;
+  bigTower(M, G, 2, 20, 14, 3, BRICK, ['xmax', 'zmax']);                    // 西邊後巷的公寓（北邊對稱）
+  M(15, G + 8, 25, 15, G + 10, 28, AIR); M(15, G + 14, 25, 15, G + 16, 28, AIR);   // 每層朝巷子的大窗
+  M(6, G, 40, 8, G + 2, 42, WOOD); M(10, G, 48, 12, G + 1, 50, WOOD); M(4, G, 56, 6, G + 3, 58, CONT_Y);   // 後巷的雜物
+  // 停車場：矮圍牆（中間留出入口）、幾台車
+  M(30, G, 13, 54, G + 1, 14, CONCRETE); M(74, G, 13, 98, G + 1, 14, CONCRETE);
+  car(M, 34, G, 3, false); car(M, 44, G, 4, false); car(M, 80, G, 3, false); car(M, 90, G, 5, false);
+  M(60, G, 4, 67, G + 2, 5, WOOD);
+  for (const [x, z] of [[28, 8], [100, 8], [16, 36], [16, 52]]) lamp(M, x, G, z);
+  // 東邊：鐵軌（埋在地上）、兩節貨車廂當掩體，車廂之間留路
+  M(114, G - 1, 2, 114, G - 1, 63, METAL); M(119, G - 1, 2, 119, G - 1, 63, METAL);
+  M(112, G, 22, 121, G + 4, 38, CONT_R); M(112, G, 46, 121, G + 4, 58, CONT_B);
+  M(116, G + 5, 30, 118, G + 6, 32, WOOD);
+  M(110, G, 36, 111, G + 5, 63, BRICK); M(110, G, 40, 111, G + 4, 42, AIR); M(110, G, 56, 111, G + 4, 58, AIR);   // 隧道東邊的牆（原本是外圍牆），開兩個門到鐵道
+  M(122, G, 40, 123, G + 1, 42, WOOD); M(122, G, 43, 123, G + 3, 44, WOOD);   // 箱子：跳上車廂頂
+}
+
+// ── 貨櫃碼頭：拆掉原本那圈圍牆；外面有貨櫃（單層的有木箱可以爬上去、兩層的當高牆）、角落有起重機塔（吊臂可以走出去）、西邊有倉庫 ──
+function yardRing(w) {
+  const S = (...a) => w.boxSym(...a), G = GY;
+  // 起重機塔（西南、東北）：兩層的鐵塔，頂上一支吊臂往場內伸出去 10 公尺，可以走到吊臂上
+  bigTower(S, G, 3, 34, 12, 2, METAL, ['xmax', 'zmin']);
+  S(14, G + 12, 39, 14, G + 13, 40, AIR); S(15, G + 11, 39, 34, G + 11, 40, METAL);
+  S(34, G + 12, 39, 34, G + 12, 40, METAL);                                  // 吊臂尾端擋一下
+  // 南邊：一排貨櫃（兩層的爬不上去、單層的旁邊有木箱階梯）
+  container(w, 6, G, 3, true, CONT_B, false); container(w, 6, G + 5, 3, true, CONT_R, true);
+  container(w, 22, G, 3, true, CONT_Y, true);
+  container(w, 40, G, 3, true, CONT_R, false); container(w, 40, G + 5, 3, true, CONT_Y, false);
+  S(34, G, 4, 35, G + 1, 7, WOOD); S(34, G + 2, 4, 35, G + 3, 5, WOOD);      // 木箱階梯：爬上黃色貨櫃頂（3 公尺）
+  container(w, 60, G, 10, false, CONT_B, true);
+  container(w, 74, G, 4, true, CONT_R, false);
+  container(w, 92, G, 4, true, CONT_Y, true);
+  // 西邊：倉庫（一層、可以上屋頂）、貨櫃
+  bigTower(S, G, 3, 60, 12, 1, PLASTER, ['xmax', 'zmin', 'zmax']);
+  container(w, 4, G, 78, false, CONT_R, true); container(w, 10, G, 90, false, CONT_B, false);
+  // 裝飾：堆高機、油桶、照明燈塔
+  S(20, G, 18, 23, G + 1, 21, METAL); S(23, G + 2, 18, 23, G + 4, 21, METAL);
+  for (const [x, z] of [[30, 6], [31, 6], [30, 7], [100, 16], [8, 104], [9, 104]]) S(x, G, z, x, G + 1, z, SHEET);
+  for (const [x, z] of [[18, 28], [58, 18], [18, 100]]) lamp(S, x, G, z, 12);
+}
+
+// ── 礦場：南北高地往外延伸，各有一座兩層的木造礦井架（爬得到頂）；谷底西邊有礦工小屋、東邊平台延伸出去，有礦車軌道 ──
+function quarryRing(w) {
+  const M = (...a) => w.boxMir(...a), B = (...a) => w.box(...a), LO = QLO, HI = QHI;
+  M(2, LO, 2, 125, HI - 1, 17, ROCK);                                        // 高地往外延伸
+  M(2, LO, 18, 17, HI - 1, 41, ROCK); M(110, LO, 18, 125, HI - 1, 41, ROCK);
+  bigTower(M, HI, 8, 3, 12, 2, WOOD, ['xmax', 'zmax']);                      // 礦井架
+  M(19, HI + 8, 6, 19, HI + 10, 10, AIR);
+  M(30, HI, 6, 33, HI + 1, 9, WOOD); M(90, HI, 8, 99, HI + 2, 9, ROCK); M(104, HI, 4, 106, HI + 3, 6, ROCK);
+  for (const [x, z] of [[24, 14], [100, 14]]) lamp(M, x, HI, z, 6);
+  // 谷底西邊：礦工小屋（正中間，自己就是對稱的）、岩棚
+  bigTower(B, LO, 3, 58, 12, 1, WOOD, ['xmax']);
+  M(2, LO, 42, 8, LO + 3, 52, ROCK); rampX(M, 44, 52, 9, 1, 2, LO, 3, ROCK);   // 岩棚（貼著高地，跳一下就上高地），東邊一道緩坡下谷底
+  M(12, LO, 46, 14, LO + 1, 48, WOOD);
+  // 谷底東邊：平台延伸出去、礦車軌道、兩台礦車
+  B(110, LO, 56, 125, LO + 2, 71, ROCK);
+  M(114, LO + 2, 50, 114, LO + 2, 63, METAL); M(118, LO + 2, 50, 118, LO + 2, 63, METAL);
+  B(114, LO, 50, 118, LO + 2, 55, ROCK); B(114, LO, 72, 118, LO + 2, 77, ROCK);
+  M(113, LO + 3, 58, 119, LO + 4, 61, SHEET);
+  M(120, LO, 46, 123, LO + 2, 48, WOOD);
+}
+
+function buildPlazaV2(w) { base(w, GROUND, GP); buildPlaza(shifted(w)); plazaRing(w); }
+function buildLanesV2(w) { base(w, SANDGROUND, GL); buildLanes(shifted(w)); lanesRing(w); }
+function buildYardV2(w) { base(w, GROUND, GY); buildYard(shifted(w)); yardRing(w); }
+function buildQuarryV2(w) { base(w, ROCK, QLO); buildQuarry(shifted(w)); quarryRing(w); }
+
+// 舊版（48×48）：地圖編輯器拿來當底圖用
+const PLAZA0 = {
+  build: (w) => { base(w, GROUND, GP); buildPlaza(w); },
+  spawns: [
+    { x: m(13), y: GP * BS, z: m(13), yaw: -Math.PI * 0.75 },
+    { x: m(82), y: GP * BS, z: m(82), yaw: Math.PI * 0.25 },
+  ],
+  pickups: [
+    { type: 'hp', amount: 40, x: m(47.5), y: GP * BS, z: m(17.5) },
+    { type: 'hp', amount: 40, x: m(47.5), y: GP * BS, z: m(77.5) },
+    { type: 'armor', amount: 50, x: m(47.5), y: (GP + 7) * BS, z: m(47.5), respawn: 30 },
+    { type: 'hp', amount: 25, x: m(81), y: (GP + 8) * BS, z: m(13.5) },
+    { type: 'hp', amount: 25, x: m(14), y: (GP + 8) * BS, z: m(81.5) },
+  ],
+};
+const LANES0 = {
+  build: (w) => { base(w, SANDGROUND, GL); buildLanes(w); },
+  spawns: [
+    { x: m(47.5), y: GL * BS, z: m(7), yaw: Math.PI },
+    { x: m(47.5), y: GL * BS, z: m(88), yaw: 0 },
+  ],
+  pickups: [
+    { type: 'hp', amount: 40, x: m(15), y: GL * BS, z: m(47.5) },
+    { type: 'hp', amount: 40, x: m(84.5), y: GL * BS, z: m(47.5) },
+    { type: 'armor', amount: 50, x: m(69.5), y: (GL + 7) * BS, z: m(47.5), respawn: 30 },
+    { type: 'hp', amount: 25, x: m(30), y: GL * BS, z: m(30) },
+    { type: 'hp', amount: 25, x: m(30), y: GL * BS, z: m(65) },
+    { type: 'hp', amount: 25, x: m(47.5), y: (GL - 5) * BS, z: m(47.5) },   // 地下道正中間
+  ],
+};
+const YARD0 = {
+  build: (w) => { base(w, GROUND, GY, 12, 12, 83, 83); buildYard(w); },
+  spawns: [
+    { x: m(17.5), y: GY * BS, z: m(17.5), yaw: -Math.PI * 0.75 },
+    { x: m(77.5), y: GY * BS, z: m(77.5), yaw: Math.PI * 0.25 },
+  ],
+  pickups: [
+    { type: 'hp', amount: 40, x: m(47.5), y: GY * BS, z: m(22) },
+    { type: 'hp', amount: 40, x: m(47.5), y: GY * BS, z: m(73) },
+    { type: 'armor', amount: 50, x: m(47.5), y: (GY + 11) * BS, z: m(47.5), respawn: 30 },
+    { type: 'hp', amount: 25, x: m(29.5), y: (GY + 1) * BS, z: m(24) },
+    { type: 'hp', amount: 25, x: m(65.5), y: (GY + 1) * BS, z: m(71) },
+  ],
+};
+const QUARRY0 = {
+  build: (w) => { base(w, ROCK, QLO); buildQuarry(w); },
+  spawns: [
+    { x: m(47.5), y: QHI * BS, z: m(7), yaw: Math.PI },
+    { x: m(47.5), y: QHI * BS, z: m(88), yaw: 0 },
+  ],
+  pickups: [
+    { type: 'hp', amount: 40, x: m(15), y: QLO * BS, z: m(47.5) },
+    { type: 'hp', amount: 40, x: m(82), y: (QLO + 3) * BS, z: m(47.5) },
+    { type: 'armor', amount: 50, x: m(47.5), y: QLO * BS, z: m(47.5), respawn: 30 },   // 礦坑隧道的十字路口
+    { type: 'hp', amount: 25, x: m(41.5), y: QHI * BS, z: m(38.5) },
+    { type: 'hp', amount: 25, x: m(41.5), y: QHI * BS, z: m(56.5) },
+  ],
+};
 
 // 每張地圖：名稱、建造函式、兩個出生點（yaw 面向對手方向）、補給品
 // ═════════ 5. 城堡要塞：大地圖（72 × 72 公尺），中央城堡、四座哨塔、兩側民房（繞中心旋轉 180° 對稱）═════════
@@ -540,69 +708,32 @@ function buildSite(w) {
 
 export const MAPS = {
   plaza: {
-    name: '廢墟廣場', desc: '開闊場地，中央兩層塔與角落高台',
-    build: buildPlaza,
+    name: '廢墟廣場', desc: '開闊場地，中央兩層塔與角落高台；外圍兩座三層鐘樓廢墟、破房子和燒掉的公車',
+    build: buildPlazaV2, size: SMALL, ed: PLAZA0,
     env: 'golden', ground: GP * BS,
-    spawns: [
-      { x: m(13), y: GP * BS, z: m(13), yaw: -Math.PI * 0.75 },
-      { x: m(82), y: GP * BS, z: m(82), yaw: Math.PI * 0.25 },
-    ],
-    pickups: [
-      { type: 'hp', amount: 40, x: m(47.5), y: GP * BS, z: m(17.5) },
-      { type: 'hp', amount: 40, x: m(47.5), y: GP * BS, z: m(77.5) },
-      { type: 'armor', amount: 50, x: m(47.5), y: (GP + 7) * BS, z: m(47.5), respawn: 30 },
-      { type: 'hp', amount: 25, x: m(81), y: (GP + 8) * BS, z: m(13.5) },
-      { type: 'hp', amount: 25, x: m(14), y: (GP + 8) * BS, z: m(81.5) },
-    ],
+    spawns: PLAZA0.spawns.map(sh),
+    pickups: PLAZA0.pickups.map(sh),
   },
   lanes: {
-    name: '三線街區', desc: '長巷、中路、隧道三條路線，中路底下有地下道',
-    build: buildLanes,
+    name: '三線街區', desc: '長巷、中路、隧道三條路線，中路底下有地下道；外圍有三層公寓的後巷、停車場和鐵道貨車廂',
+    build: buildLanesV2, size: SMALL, ed: LANES0,
     env: 'noon', ground: GL * BS,
-    spawns: [
-      { x: m(47.5), y: GL * BS, z: m(7), yaw: Math.PI },
-      { x: m(47.5), y: GL * BS, z: m(88), yaw: 0 },
-    ],
-    pickups: [
-      { type: 'hp', amount: 40, x: m(15), y: GL * BS, z: m(47.5) },
-      { type: 'hp', amount: 40, x: m(84.5), y: GL * BS, z: m(47.5) },
-      { type: 'armor', amount: 50, x: m(69.5), y: (GL + 7) * BS, z: m(47.5), respawn: 30 },
-      { type: 'hp', amount: 25, x: m(30), y: GL * BS, z: m(30) },
-      { type: 'hp', amount: 25, x: m(30), y: GL * BS, z: m(65) },
-      { type: 'hp', amount: 25, x: m(47.5), y: (GL - 5) * BS, z: m(47.5) },   // 地下道正中間
-    ],
+    spawns: LANES0.spawns.map(sh),
+    pickups: LANES0.pickups.map(sh),
   },
   yard: {
-    name: '貨櫃碼頭', desc: '小而立體，考驗跳箱子的身法',
-    build: buildYard,
+    name: '貨櫃碼頭', desc: '立體、考驗跳箱子的身法；外圍有起重機塔（吊臂走得出去）、倉庫和成排的貨櫃',
+    build: buildYardV2, size: SMALL, ed: YARD0,
     env: 'overcast', ground: GY * BS,
-    spawns: [
-      { x: m(17.5), y: GY * BS, z: m(17.5), yaw: -Math.PI * 0.75 },
-      { x: m(77.5), y: GY * BS, z: m(77.5), yaw: Math.PI * 0.25 },
-    ],
-    pickups: [
-      { type: 'hp', amount: 40, x: m(47.5), y: GY * BS, z: m(22) },
-      { type: 'hp', amount: 40, x: m(47.5), y: GY * BS, z: m(73) },
-      { type: 'armor', amount: 50, x: m(47.5), y: (GY + 11) * BS, z: m(47.5), respawn: 30 },
-      { type: 'hp', amount: 25, x: m(29.5), y: (GY + 1) * BS, z: m(24) },
-      { type: 'hp', amount: 25, x: m(65.5), y: (GY + 1) * BS, z: m(71) },
-    ],
+    spawns: YARD0.spawns.map(sh),
+    pickups: YARD0.pickups.map(sh),
   },
   quarry: {
-    name: '礦場', desc: '高地、谷底、坡道、木橋與穿山隧道，高低差最大',
-    build: buildQuarry,
+    name: '礦場', desc: '高地、谷底、坡道、木橋與穿山隧道，高低差最大；高地上有木造礦井架，谷底有礦工小屋和礦車軌道',
+    build: buildQuarryV2, size: SMALL, ed: QUARRY0,
     env: 'morning', ground: QLO * BS,
-    spawns: [
-      { x: m(47.5), y: QHI * BS, z: m(7), yaw: Math.PI },
-      { x: m(47.5), y: QHI * BS, z: m(88), yaw: 0 },
-    ],
-    pickups: [
-      { type: 'hp', amount: 40, x: m(15), y: QLO * BS, z: m(47.5) },
-      { type: 'hp', amount: 40, x: m(82), y: (QLO + 3) * BS, z: m(47.5) },
-      { type: 'armor', amount: 50, x: m(47.5), y: QLO * BS, z: m(47.5), respawn: 30 },   // 礦坑隧道的十字路口
-      { type: 'hp', amount: 25, x: m(41.5), y: QHI * BS, z: m(38.5) },
-      { type: 'hp', amount: 25, x: m(41.5), y: QHI * BS, z: m(56.5) },
-    ],
+    spawns: QUARRY0.spawns.map(sh),
+    pickups: QUARRY0.pickups.map(sh),
   },
   castle: {
     name: '城堡要塞', desc: '大地圖（72×72 公尺）：中央兩層城堡可以上屋頂，四角有三層高的哨塔，城外有一圈小房子',

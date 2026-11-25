@@ -133,10 +133,10 @@ const open = async (store = {}) => {
 
 // ═══ 3. 機器人尋路：三張地圖，玩家站在各種位置，機器人都要在時限內走到看得見玩家的地方 ═══
 for (const [map, spots] of [
-  ['plaza', [['出生點', null], ['中央塔二樓', [24, 5, 24]], ['角落高台上', [40.5, 5.5, 6.75]], ['出生點牆後', [5, 1.5, 9]]]],
-  ['lanes', [['出生點', null], ['隧道深處', [42.5, 4.5, 17]], ['公寓二樓', [32, 8, 15.5]], ['倉庫裡', [15, 4.5, 15.5]], ['長巷貨櫃後', [2.2, 4.5, 24]], ['地下道裡', [24, 2, 24]]]],
-  ['yard', [['出生點', null], ['空貨櫃裡', [14.75, 2, 12.25]], ['中央第一層上', [24, 4, 22.25]], ['角落', [40, 1.5, 8]], ['碼頭高台上', [10, 2.5, 36]]]],
-  ['quarry', [['出生點（高地）', null], ['谷底西側', [5, 3.5, 24]], ['礦坑隧道十字路口', [24, 3.5, 24]], ['東邊半高平台', [41, 5, 24]], ['中央台地上', [20, 6.5, 21]], ['山裡的地道', [33.75, 3.5, 12.4]]]],
+  ['plaza', [['出生點', null], ['中央塔二樓', [32, 5, 32]], ['角落高台上', [48.5, 5.5, 14.75]], ['出生點牆後', [13, 1.5, 17]]]],
+  ['lanes', [['出生點', null], ['隧道深處', [50.5, 4.5, 25]], ['公寓二樓', [40, 8, 23.5]], ['倉庫裡', [23, 4.5, 23.5]], ['長巷貨櫃後', [10.2, 4.5, 32]], ['地下道裡', [32, 2, 32]]]],
+  ['yard', [['出生點', null], ['空貨櫃裡', [22.75, 2, 20.25]], ['中央第一層上', [32, 4, 30.25]], ['角落', [48, 1.5, 16]], ['碼頭高台上', [18, 2.5, 44]]]],
+  ['quarry', [['出生點（高地）', null], ['谷底西側', [13, 3.5, 32]], ['礦坑隧道十字路口', [32, 3.5, 32]], ['東邊半高平台', [49, 5, 32]], ['中央台地上', [28, 6.5, 29]], ['山裡的地道', [41.75, 3.5, 20.4]]]],
 ]) {
   const page = await open({ pmap: map, bot: 'normal' });
   await page.click('#btn-bot'); await page.waitForFunction(() => __game.phase === 'loadout');
@@ -368,21 +368,21 @@ for (const [map, spots] of [
       g.combat.spawnProjectile('flash', 999002 + Math.random(), [fx, 2.6, fz], [0, 0, 0], true); await wait(1500);
       return op();
     };
-    out.facing = await go(30, 4, -Math.PI / 2, 36, 4);        // 面向 +x，閃光在前方 6m
+    out.facing = await go(38, 12, -Math.PI / 2, 44, 12);        // 面向 +x，閃光在前方 6m
     await wait(2600);
-    out.behind = await go(30, 4, Math.PI / 2, 36, 4);         // 背對
+    out.behind = await go(38, 12, Math.PI / 2, 44, 12);         // 背對
     await wait(1500);
-    out.wall = await go(9, 9, -Math.PI / 2, 16, 9);           // 出生點磚牆（x 12~13m）的另一邊
+    out.wall = await go(17, 17, -Math.PI / 2, 24, 17);       // 出生點磚牆（x 20~21m）的另一邊
     return out;
   });
   ok('閃光彈：正對全白、背對較輕、隔牆沒事', fl.facing >= 0.95 && fl.behind > 0.2 && fl.behind < fl.facing && fl.wall === 0, JSON.stringify(fl));
   // 煙霧彈：煙團出現、擋住視線判定、時間到消失
   const sm = await page.evaluate(async () => {
     const g = __game, wait = (ms) => new Promise((res) => setTimeout(res, ms));
-    g.doExplosion({ p: [30, 1.5, 4], kind: 'smoke', cloud: 3.4, dur: 2.5, pid: 7 });
+    g.doExplosion({ p: [38, 1.5, 12], kind: 'smoke', cloud: 3.4, dur: 4, pid: 7 });   // 煙在第 0.5 秒到「持續時間 - 1.2 秒」之間擋視線；慢的電腦上檢查會晚一點，所以放久一點
     await wait(900);
-    const a = { n: g.fx.clouds.length, through: g.fx.smokeBlocked(24, 2.5, 4, 36, 2.5, 4), beside: g.fx.smokeBlocked(24, 2.5, 12, 36, 2.5, 12) };
-    await wait(2000);
+    const a = { n: g.fx.clouds.length, through: g.fx.smokeBlocked(32, 2.5, 12, 44, 2.5, 12), beside: g.fx.smokeBlocked(32, 2.5, 20, 44, 2.5, 20) };
+    await wait(3600);
     return { ...a, after: g.fx.clouds.length };
   });
   ok('煙霧彈：擋住穿過煙的視線、旁邊不受影響、時間到消失', sm.n === 1 && sm.through === true && sm.beside === false && sm.after === 0, JSON.stringify(sm));
@@ -396,12 +396,12 @@ for (const [map, spots] of [
   const r = await page.evaluate(async () => {
     const g = __game, b = g.bot, p = g.player, wait = (ms) => new Promise((res) => setTimeout(res, ms));
     let shots = 0; b.fire = () => { shots++; b.nextShot = performance.now() + 100; };
-    const place = () => { p.pos.set(26, 1.5, 4); p.vel.set(0, 0, 0); b.body.pos.set(40, 1.5, 4); b.body.vel.set(0, 0, 0); b.path = null; b.planAt = performance.now() + 5000; b.holdT = 5; };  // 兩邊站定、相距 14m、中間沒東西
+    const place = () => { p.pos.set(34, 1.5, 12); p.vel.set(0, 0, 0); b.body.pos.set(48, 1.5, 12); b.body.vel.set(0, 0, 0); b.path = null; b.planAt = performance.now() + 5000; b.holdT = 5; };  // 兩邊站定、相距 14m、中間沒東西
     place(); await wait(1200); const open = shots;
-    place(); g.doExplosion({ p: [33, 1.5, 4], kind: 'smoke', cloud: 3.4, dur: 4, pid: 9 }); await wait(700);
+    place(); g.doExplosion({ p: [41, 1.5, 12], kind: 'smoke', cloud: 3.4, dur: 8, pid: 9 }); await wait(700);
     shots = 0; place(); await wait(1200); const smoked = shots;
     g.fx.clearClouds(); place(); await wait(800); shots = 0;
-    b.body.yaw = Math.PI / 2; b.onFlash(36, 2.5, 4); const blind = b.blindUntil - performance.now();
+    b.body.yaw = Math.PI / 2; b.onFlash(44, 2.5, 12); const blind = b.blindUntil - performance.now();
     place(); await wait(900); const flashed = shots;
     return { open, smoked, flashed, blindMs: Math.round(blind) };
   });

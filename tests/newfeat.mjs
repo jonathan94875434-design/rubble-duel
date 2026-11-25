@@ -19,17 +19,17 @@ await load(page, BASE + '?nolock=1');
 const playing = () => page.waitForFunction(() => __game.phase === 'playing', { timeout: 20000 });
 const start = async () => { await page.waitForFunction(() => __game.phase === 'loadout', { timeout: 15000 }); await sleep(300); await page.evaluate(() => { const c = __game.gs.p[0].ch; if (c) __game.pickBuff(c[0]); }); await sleep(200); await page.click('#btn-ready'); await playing(); await sleep(400); };
 
-// 測試場：清出一條 x 方向的走道，我站在 9.25m、對手（木樁）站在 15.25m，中間可以放一道牆
+// 測試場：清出一條 x 方向的走道，我站在 17.25m、對手（木樁）站在 23.25m，中間可以放一道牆
 await page.evaluate(() => {
   const G = __game, w = G.world;
   window.T = {
     sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
-    lane() { w.box(16, 3, 74, 44, 12, 86, 0); w.rev++; for (let i = 0; i < w.chunks.length; i++) w.dirty.add(i); },
-    wall(t, n = 1) { w.box(24, 3, 74, 24 + n - 1, 10, 86, t); w.rev++; for (let i = 0; i < w.chunks.length; i++) w.dirty.add(i); },
-    nowall() { w.box(24, 3, 74, 26, 10, 86, 0); w.rev++; for (let i = 0; i < w.chunks.length; i++) w.dirty.add(i); },
-    async place(bx = 15.25, yaw = Math.PI / 2) {
-      const p = G.player; p.pos.set(9.25, 1.5, 40.25); p.vel.set(0, 0, 0); p.yaw = -Math.PI / 2; p.pitch = 0;
-      const b = G.bot.body; b.pos.set(bx, 1.5, 40.25); b.vel.set(0, 0, 0); b.yaw = yaw;
+    lane() { w.box(32, 3, 90, 60, 12, 102, 0); w.rev++; for (let i = 0; i < w.chunks.length; i++) w.dirty.add(i); },
+    wall(t, n = 1) { w.box(40, 3, 90, 40 + n - 1, 10, 102, t); w.rev++; for (let i = 0; i < w.chunks.length; i++) w.dirty.add(i); },
+    nowall() { w.box(40, 3, 90, 42, 10, 102, 0); w.rev++; for (let i = 0; i < w.chunks.length; i++) w.dirty.add(i); },
+    async place(bx = 23.25, yaw = Math.PI / 2) {
+      const p = G.player; p.pos.set(17.25, 1.5, 48.25); p.vel.set(0, 0, 0); p.yaw = -Math.PI / 2; p.pitch = 0;
+      const b = G.bot.body; b.pos.set(bx, 1.5, 48.25); b.vel.set(0, 0, 0); b.yaw = yaw;
       G.authority.players[1].hp = 100; G.authority.players[1].armor = 0; G.authority.players[0].hp = 100; G.authority.dirty = true;
       await T.sleep(450);
     },
@@ -54,7 +54,7 @@ await page.click('#btn-bot'); await start();
     const G = __game, w = G.world, o = {};
     T.lane();
     o.open = await T.shoot('ar');
-    T.wall(5); o.wood = await T.shoot('ar'); o.woodHp = Math.round(w.hp[w.idx(24, 5, 80)]) + '/' + w.types[w.idx(24, 5, 80)];
+    T.wall(5); o.wood = await T.shoot('ar'); o.woodHp = Math.round(w.hp[w.idx(40, 5, 96)]) + '/' + w.types[w.idx(40, 5, 96)];
     T.wall(5, 2); o.wood2 = await T.shoot('ar');
     T.nowall(); T.wall(3); o.concAr = await T.shoot('ar'); o.concSn = await T.shoot('sniper');
     T.nowall(); T.wall(6); o.steelSn = await T.shoot('sniper'); T.wall(6, 2); o.steel2Sn = await T.shoot('sniper');
@@ -75,11 +75,11 @@ await page.click('#btn-bot'); await start();
     G.combat.setLoadout({ p: 'ar', s: 'pistol' }, []);
     o.slots = G.combat.slots.map((s) => s && s.id).join(',');
     G.combat.switchTo(2); o.cur = G.combat.w.id; o.move = G.combat.w.def.move;
-    await T.place(13.5, Math.PI / 2);                      // 太遠：砍不到
+    await T.place(21.5, Math.PI / 2);                      // 太遠：砍不到
     G.combat.switchEnd = 0;
     let hp0 = G.gs.p[1].hp; G.combat.melee(G.combat.w, performance.now(), true); await T.sleep(300); o.far = hp0 - G.gs.p[1].hp;
     G.combat.switchLast(); o.last = G.combat.w.id; G.combat.switchTo(2);
-    await T.place(11.6, Math.PI / 2);                      // 2.35 公尺：快砍搆不到、突刺搆得到
+    await T.place(19.6, Math.PI / 2);                      // 2.35 公尺：快砍搆不到、突刺搆得到
     G.authority.players[1].armor = 50; G.authority.dirty = true; await T.sleep(150);
     G.combat.switchEnd = 0; G.combat.w.nextFire = 0;
     hp0 = G.gs.p[1].hp; G.combat.melee(G.combat.w, performance.now(), false); await T.sleep(300); o.slash = hp0 - G.gs.p[1].hp;
@@ -127,21 +127,21 @@ await start();
     o.fires = G.combat.fires.length + '/' + G.fx.fires.length; o.mine = G.combat.fires[0] && G.combat.fires[0].mine;
     G.combat.fires.length = 0; G.fx.fires.length = 0;
     // 在對手腳邊放一把火（位置固定，比較好驗證），火場裡放一塊木頭
-    w.box(31, 3, 82, 31, 3, 82, 5); w.rev++;
-    G.doExplosion({ r: G.round, pid: 9001, p: [15.25, 1.6, 40.25], kind: 'molotov', cloud: 2.6, dur: 7, own: 0 });
+    w.box(47, 3, 98, 47, 3, 98, 5); w.rev++;
+    G.doExplosion({ r: G.round, pid: 9001, p: [23.25, 1.6, 48.25], kind: 'molotov', cloud: 2.6, dur: 7, own: 0 });
     const hp0 = G.gs.p[1].hp;
     await T.sleep(1600);
     o.burn = hp0 - G.gs.p[1].hp;
-    G.bot.body.pos.set(19.75, 1.5, 44.25); G.authority.players[1].hp = 100;   // 量完就把對手移出火場，免得等木頭燒掉的時候他先被燒死
-    for (let i = 0; i < 60 && w.types[w.idx(31, 3, 82)]; i++) await T.sleep(100);
-    o.wood = w.types[w.idx(31, 3, 82)];
-    const me0 = G.gs.p[0].hp; G.player.pos.set(14.6, 1.5, 40.25); await T.sleep(700); o.self = me0 - G.gs.p[0].hp; G.player.pos.set(9.25, 1.5, 40.25);   // 自己走進去也會燒
+    G.bot.body.pos.set(27.75, 1.5, 52.25); G.authority.players[1].hp = 100;   // 量完就把對手移出火場，免得等木頭燒掉的時候他先被燒死
+    for (let i = 0; i < 60 && w.types[w.idx(47, 3, 98)]; i++) await T.sleep(100);
+    o.wood = w.types[w.idx(47, 3, 98)];
+    const me0 = G.gs.p[0].hp; G.player.pos.set(22.6, 1.5, 48.25); await T.sleep(700); o.self = me0 - G.gs.p[0].hp; G.player.pos.set(17.25, 1.5, 48.25);   // 自己走進去也會燒
     const f = G.combat.fires[0];
     if (f) { G.doExplosion({ r: G.round, pid: 9100, p: [f.x, f.y, f.z], kind: 'smoke', cloud: 3.4, dur: 12 }); }
     await T.sleep(150);
     o.quenched = G.combat.fires.length + '/' + G.fx.fires.length;
     await T.sleep(600);
-    G.doExplosion({ r: G.round, pid: 9101, p: [15.25, 1.6, 40.25], kind: 'molotov', cloud: 2.6, dur: 7, own: 0 });   // 丟進煙裡：燒不起來
+    G.doExplosion({ r: G.round, pid: 9101, p: [23.25, 1.6, 48.25], kind: 'molotov', cloud: 2.6, dur: 7, own: 0 });   // 丟進煙裡：燒不起來
     await T.sleep(100); o.inSmoke = G.combat.fires.length;
     G.fx.clearClouds();
     return o;
@@ -170,11 +170,11 @@ await start();
   const r = await page.evaluate(async () => {
     const G = __game, o = {};
     T.lane(); T.wall(3); await T.place();
-    G.player.pos.set(11.2, 1.5, 40.25); await T.sleep(250);
+    G.player.pos.set(19.2, 1.5, 48.25); await T.sleep(250);
     G.doSpray(); await T.sleep(100);
     o.spray = G.fx.sprays.length; o.sprayCell = G.fx.sprays[0] && G.fx.sprays[0].cell >= 0;
     G.doSpray(); o.cooldown = G.fx.sprays.length;                 // 冷卻中，不會再噴
-    G.world.box(24, 3, 74, 24, 10, 86, 0); G.world.rev++; await T.sleep(150);
+    G.world.box(40, 3, 90, 40, 10, 102, 0); G.world.rev++; await T.sleep(150);
     o.sprayGone = G.fx.sprays.length;                             // 牆被拆掉，噴漆跟著消失
     G.doEmote(); await T.sleep(300);
     o.emote = !!G.emote; o.ghost = G.ghost.group.visible; o.third = G.camera.position.distanceTo(G.player.pos) > 2.2;

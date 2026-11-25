@@ -216,7 +216,7 @@ export class Hud {
     $('dm-map').innerHTML = opts([['random', '隨機'], ...all], mm('hzdm'));
     $('df-map').innerHTML = opts([['random', '隨機'], ...all], mm('hzdef'));
     this._hzBest();
-    $('ed-src').innerHTML = opts([['', '空地'], ...all.filter(([id]) => !MAPS[id].size)], '');   // 大地圖不能拿來當編輯器的底圖
+    $('ed-src').innerHTML = opts([['', '空地'], ...all.filter(([id]) => !MAPS[id].size || MAPS[id].ed)], '');   // 大地圖不能拿來當編輯器的底圖（四張小地圖有舊的 48×48 版本可以用）
   }
 
   // ───────── 地圖編輯器的面板 ─────────
