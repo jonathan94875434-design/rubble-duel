@@ -481,7 +481,7 @@ class Game {
     this.sfx.init(); this.hud.menuMsg('連線中…'); this.hud.menuBusy(true);
     this.code = code; this.me = 1;
     try {
-      await this.net.join(code, LOCAL); this.hud.menuMsg('已連上，等待房主資料…');
+      await this.net.join(code, LOCAL, (m) => this.hud.menuMsg(m)); this.hud.menuMsg('已連上，等待房主資料…');
       this.voice.attach(); if (this.settings.voice !== 'off') this.setVoice(this.settings.voice);
     } catch (e) { this.net.close(); this.hud.menuMsg(e.message || '加入失敗'); }
     this.hud.menuBusy(false);

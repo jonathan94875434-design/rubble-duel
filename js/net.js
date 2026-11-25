@@ -1,5 +1,15 @@
 import { NET } from './config.js';
 
+// 打洞用的伺服器（兩邊各自問「我在外面看起來是哪個位址」），和直連不通時的中繼。
+// 中繼是 PeerJS 官方免費提供的（帳號密碼是 PeerJS 內建的公開預設值，不是祕密）；多加 TCP 的連法，擋 UDP 的網路也有機會連上。
+// 一定要整份寫出來：傳了 config 就會取代 PeerJS 原本的預設值。
+const ICE = { iceServers: [
+  { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302', 'stun:stun2.l.google.com:19302'] },
+  { urls: 'stun:stun.cloudflare.com:3478' },
+  { urls: ['turn:us-0.turn.peerjs.com:3478', 'turn:eu-0.turn.peerjs.com:3478', 'turn:us-0.turn.peerjs.com:3478?transport=tcp', 'turn:eu-0.turn.peerjs.com:3478?transport=tcp'], username: 'peerjs', credential: 'peerjsp' },
+] };
+const JOIN_TIMEOUT = 30000;   // 跨國走中繼比較慢，不要太早放棄
+
 // 連線層。三種通道，介面一樣：
 //   peer  — WebRTC 點對點（PeerJS 公用訊號伺服器），正式對戰用
 //   local — 同一台電腦開兩個分頁（BroadcastChannel），測試用，網址加 ?local=1
@@ -67,7 +77,7 @@ export class Net {
     this.mode = 'peer';
     return new Promise((resolve, reject) => {
       let opened = false;
-      const peer = this.peer = new Peer(NET.PREFIX + code, { debug: 1 });
+      const peer = this.peer = new Peer(NET.PREFIX + code, { debug: 1, config: ICE });
       peer.on('open', () => { opened = true; resolve(); });
       peer.on('connection', (conn) => {
         if (this.conn && this.conn.open) { conn.on('open', () => conn.close()); return; } // 房間已滿
@@ -83,22 +93,34 @@ export class Net {
   }
 
   // ───────── 加入房間 ─────────
-  join(code, local) {
+  // step(文字)：連線進度，給選單顯示（連配對伺服器 → 跟房主打洞 → 連上）
+  join(code, local, step = () => {}) {
     this.isHost = false;
     if (local) return this._joinLocal(code);
     this.mode = 'peer'; this.hostId = NET.PREFIX + code;
     return new Promise((resolve, reject) => {
-      let done = false;
-      const fail = (m) => { if (!done) { done = true; reject(new Error(m)); } };
-      const peer = this.peer = new Peer(undefined, { debug: 1 });
-      const timer = setTimeout(() => fail('連線逾時：房主可能還沒開房，或雙方網路無法直連'), 15000);
+      let done = false, stage = 'signal', ice = '', kinds = new Set();
+      const fail = (m) => { if (!done) { done = true; clearTimeout(timer); reject(new Error(m)); } };
+      // 失敗時說清楚卡在哪一段：連不到配對伺服器、還是兩邊的網路打不通（有沒有拿到中繼位址）
+      const why = () => stage === 'signal'
+        ? '連不到配對伺服器（0.peerjs.com）：可能是網路擋住了，或伺服器正忙，過一下再試'
+        : `找到房間了，但連不上房主${ice ? `（${ice}）` : ''}：雙方網路沒辦法直接連線${kinds.has('relay') ? '，走中繼也失敗' : '，也連不上中繼伺服器'}。換個網路（例如手機熱點）、關掉 VPN，或換對方開房間再試`;
+      const timer = setTimeout(() => fail(why()), JOIN_TIMEOUT);
+      step('連線中：連配對伺服器…');
+      const peer = this.peer = new Peer(undefined, { debug: 1, config: ICE });
       peer.on('open', () => {
+        stage = 'ice'; step('找到配對伺服器，正在跟房主建立連線（跨國可能要十幾秒）…');
         const conn = peer.connect(NET.PREFIX + code, { reliable: true, serialization: 'json' });
+        const pc = conn.peerConnection;
+        if (pc && pc.addEventListener) {
+          pc.addEventListener('icecandidate', (e) => { if (e.candidate && e.candidate.type) kinds.add(e.candidate.type); });
+          pc.addEventListener('iceconnectionstatechange', () => { ice = pc.iceConnectionState; if (ice === 'failed') fail(why()); });
+        }
         this._wire(conn, () => { if (!done) { done = true; clearTimeout(timer); resolve(); } });
       });
       peer.on('error', (e) => {
         clearTimeout(timer);
-        if (!done) fail(e.type === 'peer-unavailable' ? '找不到這個房間，請確認房號' : '連線失敗（' + e.type + '）');
+        if (!done) fail(e.type === 'peer-unavailable' ? '找不到這個房間：確認房號，房主要停在房間裡（別關掉分頁）' : ['network', 'server-error', 'socket-error', 'socket-closed'].includes(e.type) ? why() : '連線失敗（' + e.type + '）');
         else this.emit('_error', e.type);
       });
     });
