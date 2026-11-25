@@ -16,6 +16,12 @@ function blob(c, x, y, r, col, a) {
   c.fillStyle = g; c.beginPath(); c.arc(x, y, r, 0, TAU); c.fill();
 }
 
+// 色相、飽和度、亮度 → [r, g, b]（0..255）
+function hsl(h, sat, l) {
+  const k = (n) => (n + h / 30) % 12, a = sat * Math.min(l, 1 - l), f = (n) => l - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1));
+  return [f(0) * 255, f(8) * 255, f(4) * 255];
+}
+
 const DRAW = {
   // 赤焰龍：黑漆底＋金色祥雲。龍盤在槍托上（畫布右邊），龍頭在握把前面朝槍口，火沿著護木一路噴到槍口
   // 畫布：橫向 u 0 = 狙擊槍護木前端、1 = 槍托底；直向涵蓋槍托的高度
@@ -235,6 +241,146 @@ const DRAW = {
       const x = (r() * w / s | 0) * s, y = (r() * h / s | 0) * s, bw = (1 + (r() * 5 | 0)) * s, bh = (1 + (r() * 3 | 0)) * s;
       c.fillRect(x, y, bw, bh);
     }
+  } },
+
+  // ───────── 霓虹補給箱 ─────────
+  // 夕陽格線：深紫天空、條紋太陽、地平線下一片往遠處收的霓虹格子
+  synth: { w: 512, h: 256, rep: [1.8, 4], off: [0, 0.5], draw(c, w, h) {
+    const sky = c.createLinearGradient(0, 0, 0, h * 0.55); sky.addColorStop(0, '#140a2e'); sky.addColorStop(1, '#a1287a');
+    c.fillStyle = sky; c.fillRect(0, 0, w, h * 0.55);
+    c.fillStyle = '#0b0618'; c.fillRect(0, h * 0.55, w, h * 0.45);
+    for (const cx of [w * 0.25, w * 0.75]) {   // 太陽：上黃下粉的半圓，越下面條紋越粗
+      const R = h * 0.28, g = c.createLinearGradient(0, h * 0.27, 0, h * 0.55); g.addColorStop(0, '#ffe46a'); g.addColorStop(1, '#ff3f8e');
+      c.fillStyle = g; c.beginPath(); c.arc(cx, h * 0.55, R, Math.PI, 0); c.fill();
+      c.fillStyle = '#a1287a'; for (let i = 0; i < 6; i++) { const y = h * 0.55 - R * 0.06 - i * R * 0.13; c.fillRect(cx - R, y, R * 2, 2 + (5 - i) * 0.9); }
+    }
+    c.strokeStyle = '#ff4fd8'; c.lineWidth = 1.6; c.shadowColor = '#ff4fd8'; c.shadowBlur = 6;
+    for (let i = 0; i < 9; i++) { const t = i / 8, y = h * 0.55 + Math.pow(t, 1.8) * h * 0.45; c.beginPath(); c.moveTo(0, y); c.lineTo(w, y); c.stroke(); }
+    for (let i = -12; i <= 12; i++) { c.beginPath(); c.moveTo(w / 2 + i * 14, h * 0.55); c.lineTo(w / 2 + i * 70, h); c.stroke(); }
+    c.shadowBlur = 0;
+  } },
+  // 故障：深灰底，一條條錯開的色塊（青、洋紅），掃描線
+  glitch: { w: 256, h: 256, rep: [3, 3], draw(c, w, h, r) {
+    c.fillStyle = '#16181f'; c.fillRect(0, 0, w, h);
+    for (let i = 0; i < 70; i++) {
+      const y = r() * h, hh = 2 + r() * 14, x = r() * w, ww = 20 + r() * 160, col = ['rgba(64,240,255,', 'rgba(255,60,200,', 'rgba(240,240,255,'][(r() * 3) | 0];
+      c.fillStyle = col + (0.15 + r() * 0.5) + ')'; c.fillRect(x, y, ww, hh);
+      c.fillStyle = 'rgba(255,60,200,0.35)'; c.fillRect(x + 4, y + 1, ww * 0.6, hh * 0.5);
+    }
+    c.fillStyle = 'rgba(0,0,0,0.35)'; for (let y = 0; y < h; y += 3) c.fillRect(0, y, w, 1);
+  } },
+  // 全像：彩虹色一圈一圈流動（金屬光澤由材質給）
+  holo: { w: 256, h: 256, rep: [2.5, 2.5], draw(c, w, h) {
+    const img = c.createImageData(w, h), d = img.data;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const v = (x * 0.9 + y * 0.6 + Math.sin(x * 0.05) * 30 + Math.sin(y * 0.07 + x * 0.02) * 40) % 360, rgb = hsl(v, 0.65, 0.66), o = (x + y * w) * 4;
+      d[o] = rgb[0]; d[o + 1] = rgb[1]; d[o + 2] = rgb[2]; d[o + 3] = 255;
+    }
+    c.putImageData(img, 0, 0);
+  } },
+  // 電漿：一團團交纏的青、紫電漿
+  plasma: { w: 256, h: 256, rep: [2.5, 2.5], draw(c, w, h) {
+    const img = c.createImageData(w, h), d = img.data;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const v = Math.sin(x * 0.045) + Math.sin(y * 0.06) + Math.sin((x + y) * 0.035) + Math.sin(Math.hypot(x - 128, y - 128) * 0.07), t = (v + 4) / 8, o = (x + y * w) * 4;
+      const e = Math.pow(Math.abs(Math.sin(t * Math.PI * 3)), 6);   // 幾道很亮的電弧
+      d[o] = Math.min(255, 40 + 120 * t + 200 * e); d[o + 1] = Math.min(255, 10 + 60 * (1 - t) + 220 * e); d[o + 2] = Math.min(255, 90 + 140 * t + 120 * e); d[o + 3] = 255;
+    }
+    c.putImageData(img, 0, 0);
+  } },
+  // 數位雨：黑底、一行行往下掉的綠色字元，越下面越亮
+  matrix: { w: 256, h: 256, rep: [3, 3], draw(c, w, h, r) {
+    c.fillStyle = '#020804'; c.fillRect(0, 0, w, h);
+    c.font = 'bold 12px monospace'; const ch = '01ABCDEF3457ﾊﾐﾋｰｳｼﾅﾓﾆｻﾜ';
+    for (let x = 4; x < w; x += 11) {
+      const len = 6 + ((r() * 14) | 0), y0 = r() * h;
+      for (let k = 0; k < len; k++) { const a = (k + 1) / len; c.fillStyle = k === len - 1 ? '#d8ffe0' : `rgba(61,255,106,${0.15 + a * 0.75})`; c.fillText(ch[(r() * ch.length) | 0], x, (y0 + k * 13) % h); }
+    }
+  } },
+
+  // ───────── 神話補給箱 ─────────
+  // 鳳羽：深紅底，一片片往同一個方向飄的火焰羽毛
+  phoenix: { w: 512, h: 256, rep: [2, 4], draw(c, w, h, r) {
+    const g = c.createLinearGradient(0, 0, w, h); g.addColorStop(0, '#2a0606'); g.addColorStop(1, '#4a0c06');
+    c.fillStyle = g; c.fillRect(0, 0, w, h);
+    for (let i = 0; i < 60; i++) {
+      const x = r() * w, y = r() * h, L = 30 + r() * 50, a = -0.5 + (r() - 0.5) * 0.5;
+      c.save(); c.translate(x, y); c.rotate(a);
+      const fg = c.createLinearGradient(0, 0, L, 0); fg.addColorStop(0, '#ffd34a'); fg.addColorStop(0.6, '#ff6a1a'); fg.addColorStop(1, 'rgba(200,30,10,0)');
+      c.fillStyle = fg; c.beginPath(); c.moveTo(0, 0); c.quadraticCurveTo(L * 0.4, -L * 0.22, L, -L * 0.05); c.quadraticCurveTo(L * 0.4, L * 0.16, 0, 0); c.fill();
+      c.strokeStyle = 'rgba(255,240,180,0.8)'; c.lineWidth = 1; c.beginPath(); c.moveTo(0, 0); c.quadraticCurveTo(L * 0.4, -L * 0.04, L * 0.9, -L * 0.04); c.stroke();
+      c.restore();
+    }
+    c.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 60; i++) { c.fillStyle = `rgba(255,${160 + r() * 90 | 0},60,${0.3 + r() * 0.6})`; c.beginPath(); c.arc(r() * w, r() * h, 0.8 + r() * 1.6, 0, TAU); c.fill(); }
+    c.globalCompositeOperation = 'source-over';
+  } },
+  // 青花瓷：白瓷底、鈷藍的蓮花和捲草紋
+  porcelain: { w: 256, h: 256, rep: [3, 3], draw(c, w, h, r) {
+    c.fillStyle = '#f3f1ea'; c.fillRect(0, 0, w, h);
+    const blue = (a) => `rgba(29,79,156,${a})`;
+    c.strokeStyle = blue(0.85); c.lineWidth = 2; c.lineCap = 'round';
+    for (let i = 0; i < 10; i++) {   // 捲草：一條彎曲的藤，尾巴捲起來
+      let x = r() * w, y = r() * h; c.beginPath(); c.moveTo(x, y);
+      for (let k = 0; k < 3; k++) { const nx = x + (r() - 0.5) * 90, ny = y + (r() - 0.5) * 90; c.quadraticCurveTo((x + nx) / 2 + (r() - 0.5) * 40, (y + ny) / 2 + (r() - 0.5) * 40, nx, ny); x = nx; y = ny; }
+      c.stroke(); c.beginPath(); c.arc(x, y, 5, 0, Math.PI * 1.6); c.stroke();
+    }
+    for (let i = 0; i < 7; i++) {    // 蓮花：一圈花瓣，花瓣裡淡、邊深
+      const x = r() * w, y = r() * h, R = 12 + r() * 10;
+      for (let k = 0; k < 8; k++) {
+        const a = (k / 8) * TAU; c.save(); c.translate(x, y); c.rotate(a);
+        c.fillStyle = blue(0.35); c.strokeStyle = blue(0.95); c.lineWidth = 1.4;
+        c.beginPath(); c.moveTo(0, 0); c.quadraticCurveTo(R * 0.5, -R * 0.45, R, 0); c.quadraticCurveTo(R * 0.5, R * 0.45, 0, 0); c.fill(); c.stroke(); c.restore();
+      }
+      c.fillStyle = blue(1); c.beginPath(); c.arc(x, y, R * 0.2, 0, TAU); c.fill();
+    }
+  } },
+  // 熔岩：黑色的岩塊，縫隙裡透出橘黃色的岩漿
+  lava: { w: 256, h: 256, rep: [3, 3], draw(c, w, h, r) {
+    const g = c.createRadialGradient(w / 2, h / 2, 10, w / 2, h / 2, w * 0.7); g.addColorStop(0, '#ffd34a'); g.addColorStop(0.5, '#ff7a10'); g.addColorStop(1, '#c83006');
+    c.fillStyle = g; c.fillRect(0, 0, w, h);
+    for (let i = 0; i < 55; i++) {
+      const x = r() * w, y = r() * h, s = 14 + r() * 26, n = 5 + ((r() * 3) | 0);
+      c.fillStyle = r() < 0.5 ? '#1a1210' : '#261814';
+      c.beginPath(); for (let k = 0; k < n; k++) { const a = (k / n) * TAU + r() * 0.5, rr = s * (0.7 + r() * 0.3); c.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr); } c.fill();
+    }
+  } },
+  // 金鱗：一排排疊在一起的金色鱗片
+  goldscale: { w: 256, h: 256, rep: [5, 5], draw(c, w, h) {
+    c.fillStyle = '#3a2806'; c.fillRect(0, 0, w, h);
+    const s = 16;
+    for (let row = -1; row < h / (s * 0.6) + 1; row++) for (let col = -1; col < w / s + 1; col++) {
+      const x = col * s + (row & 1 ? s / 2 : 0), y = row * s * 0.6;
+      const g = c.createRadialGradient(x, y - s * 0.2, 1, x, y, s * 0.6); g.addColorStop(0, '#fff2a8'); g.addColorStop(0.5, '#e0a21c'); g.addColorStop(1, '#7a5208');
+      c.fillStyle = g; c.strokeStyle = '#3a2806'; c.lineWidth = 1.2;
+      c.beginPath(); c.arc(x, y, s * 0.55, 0, Math.PI); c.fill(); c.stroke();
+    }
+  } },
+  // 墨竹：宣紙底、水墨竹子（一節一節的竹竿、尖尖的竹葉）、一顆紅色印章
+  inkbamboo: { w: 256, h: 256, rep: [3, 3], draw(c, w, h, r) {
+    c.fillStyle = '#efe6d2'; c.fillRect(0, 0, w, h);
+    for (let i = 0; i < 4; i++) {
+      const x = 20 + r() * (w - 40), lean = (r() - 0.5) * 0.2, wd = 6 + r() * 5, ink = 0.5 + r() * 0.4;
+      for (let y = 0; y < h; y += 34 + r() * 10) {   // 竹竿：一節一節，節的地方深一點
+        c.fillStyle = `rgba(30,30,28,${ink * 0.8})`; c.fillRect(x + y * lean, y + 2, wd, 30);
+        c.fillStyle = `rgba(10,10,10,${ink})`; c.fillRect(x + y * lean - 1, y, wd + 2, 3);
+      }
+      for (let k = 0; k < 6; k++) {                  // 竹葉
+        const y = r() * h, bx = x + y * lean + wd, a = (r() - 0.3) * 1.4, L = 22 + r() * 18;
+        c.save(); c.translate(bx, y); c.rotate(a); c.fillStyle = `rgba(20,20,18,${ink})`;
+        c.beginPath(); c.moveTo(0, 0); c.quadraticCurveTo(L * 0.5, -L * 0.14, L, 0); c.quadraticCurveTo(L * 0.5, L * 0.1, 0, 0); c.fill(); c.restore();
+      }
+    }
+    c.fillStyle = 'rgba(190,30,30,0.85)'; c.fillRect(w * 0.72, h * 0.78, 18, 18);
+    c.fillStyle = '#efe6d2'; c.fillRect(w * 0.72 + 4, h * 0.78 + 4, 4, 10); c.fillRect(w * 0.72 + 10, h * 0.78 + 4, 4, 4);
+  } },
+  // 翡翠：深淺交錯的綠、雲霧一樣的紋理、幾條白色的細絲
+  jade: { w: 256, h: 256, rep: [3, 3], draw(c, w, h, r) {
+    const g = c.createLinearGradient(0, 0, w, h); g.addColorStop(0, '#2f8a5a'); g.addColorStop(1, '#5fc08a');
+    c.fillStyle = g; c.fillRect(0, 0, w, h);
+    for (let i = 0; i < 40; i++) blob(c, r() * w, r() * h, 20 + r() * 50, r() < 0.5 ? 'rgba(160,240,190,A)' : 'rgba(10,70,40,A)', 0.15 + r() * 0.25);
+    c.strokeStyle = 'rgba(235,255,240,0.5)'; c.lineWidth = 0.8;
+    for (let i = 0; i < 14; i++) { const x = r() * w, y = r() * h; c.beginPath(); c.moveTo(x, y); c.bezierCurveTo(x + (r() - 0.5) * 120, y + (r() - 0.5) * 120, x + (r() - 0.5) * 120, y + (r() - 0.5) * 120, x + (r() - 0.5) * 160, y + (r() - 0.5) * 160); c.stroke(); }
   } },
 };
 

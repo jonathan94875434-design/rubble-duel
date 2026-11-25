@@ -8,8 +8,8 @@ import { TEAM_CSS, ROGUE, HORDE } from './config.js';
 import { MOBS, HZ_LEVELS, HZ_BEH, HZ_TIER } from './horde.js';
 import { MAPS, MAP_IDS, customIds, deleteMap } from './maps.js';
 import { BOT_LEVELS } from './bot.js';
-import { SKINS, SKIN_IDS, WSKINS, WSKIN_IDS, ITEMS, ITEM_IDS, TIERS, TIER_IDS, gunSkin } from './skins.js';
-import { itemLabel, itemGun, PITY, SHARDS, REWARD } from './crate.js';
+import { SKINS, SKIN_IDS, WSKINS, WSKIN_IDS, ITEMS, ITEM_IDS, TIERS, TIER_IDS, POOLS, POOL_IDS, gunSkin } from './skins.js';
+import { itemLabel, itemGun, poolItems, PITY, SHARDS, REWARD } from './crate.js';
 import { BLOCK } from './world.js';
 import { ENVS, ENV_IDS } from './env.js';
 import { SPRAYS, SPRAY_IDS, sprayCanvas } from './sprays.js';
@@ -256,7 +256,8 @@ export class Hud {
     $('btn-crate').addEventListener('click', () => { g.sfx.ui(); this.openCrate(); });
     $('btn-crate-back').addEventListener('click', () => { g.sfx.ui(); this.show('menu'); });
     $('btn-crate-open').addEventListener('click', () => this.spin());
-    $('cr-reel').addEventListener('click', () => { if (this.spinning) this.skipSpin = true; });   // 轉盤轉的時候點一下 = 直接看結果
+    $('cr-reel').addEventListener('click', () => { if (this.spinning) this.skipSpin = true; });
+    $('cr-pools').addEventListener('click', (e) => { const b = e.target.closest('.pool'); if (b) this.setPool(b.dataset.pool); });   // 轉盤轉的時候點一下 = 直接看結果
     $('cr-coll').addEventListener('click', (e) => { const el = e.target.closest('.ci'); if (!el || el.classList.contains('lock')) return; g.equipItem(el.dataset.id); this._crateColl(); });
     $('lk-items').addEventListener('click', (e) => {
       if (e.target.closest('[data-go]')) { g.closeLocker(); this.openCrate(); return; }
@@ -396,12 +397,28 @@ export class Hud {
     const pct = (t) => Math.round((TIERS[t].w / TIER_IDS.reduce((a, k) => a + TIERS[k].w, 0)) * 100) + '%';
     $('cr-rules').textContent = `機率：${TIER_IDS.map((t) => TIERS[t].name + ' ' + pct(t)).join('・')}。拿券：打完一場對戰 +${REWARD.duel}、練習 +${REWARD.practice}、機器人模式 +${REWARD.horde}，贏了再 +${REWARD.win}。`
       + `重複抽到的東西變成碎片，${SHARDS} 片自動換 1 張券；連續 ${PITY} 抽沒出刀，下一抽一定出刀。純外觀，不影響數值；對手看得到你的刀和塗裝。`;
-    this._crateWallet(); this._crateColl();
+    this._cratePools(); this._crateWallet(); this._crateColl();
   }
-  // 物品的側面照（第一次打開補給箱才拍；最低畫質不拍，改用文字）
+  // 現在看的是哪一個獎池（記在這台電腦）
+  pool() { if (!POOLS[this.crPool]) { const p = store.get('crpool', 'classic'); this.crPool = POOLS[p] ? p : 'classic'; } return this.crPool; }
+  _cratePools() {
+    const cur = this.pool(), c = this.g.crate;
+    $('cr-pools').innerHTML = POOL_IDS.map((id) => { const P = POOLS[id], ids = poolItems(id), own = ids.filter((x) => c.has(x)).length;
+      return `<button class="pool${id === cur ? ' on' : ''}" data-pool="${id}" style="--pc:${P.c}"${this.spinning ? ' disabled' : ''}><b>${esc(P.name)}</b><span>${esc(P.desc)}</span><i>收藏 ${own} / ${ids.length}</i></button>`; }).join('');
+  }
+  setPool(id) {
+    if (this.spinning || !POOLS[id] || id === this.pool()) return;
+    this.crPool = id; store.set('crpool', id); this.g.sfx.ui();
+    $('cr-idle').classList.remove('hidden'); $('cr-result').classList.add('hidden'); $('cr-strip').innerHTML = '';
+    this._cratePools(); this._crateWallet(); this._crateColl();
+  }
+  // 物品的側面照（打開那個獎池才拍那一池的；最低畫質不拍，改用文字）
   _itemIcons() {
-    if (!this.itemIcons) this.itemIcons = this.g.qualityId === 'min' ? {} : shootIcons(ITEM_IDS.map((id) => ({ key: id, ...itemGun(id) })));
-    return this.itemIcons;
+    const icons = (this.itemIcons ||= {}), pool = this.pool();
+    if (this.g.qualityId === 'min' || (this.iconPools ||= new Set()).has(pool)) return icons;
+    this.iconPools.add(pool);
+    Object.assign(icons, shootIcons(poolItems(pool).map((id) => ({ key: id, ...itemGun(id) }))));
+    return icons;
   }
   _ci(id, cls = '', badge = '') {
     const it = ITEMS[id], L = itemLabel(id), ic = this._itemIcons()[id];
@@ -411,15 +428,15 @@ export class Hud {
     const c = this.g.crate;
     $('cr-tix').textContent = c.tickets;
     $('cr-shards').innerHTML = `碎片 <b>${c.shards}</b> / ${SHARDS}`;
-    $('cr-pity').innerHTML = `再 <b>${PITY - c.pity}</b> 抽內一定出刀`;
+    $('cr-pity').innerHTML = `這一池再 <b>${PITY - (c.pity[this.pool()] | 0)}</b> 抽內一定出刀`;
     $('btn-crate-open').disabled = !!this.spinning || c.tickets < 1;
     $('btn-crate-back').disabled = !!this.spinning;
     this.crateBadge();
   }
   _crateColl() {
     const g = this.g, c = g.crate, rank = (id) => TIER_IDS.indexOf(ITEMS[id].t);
-    const order = [...ITEM_IDS].sort((a, b) => rank(b) - rank(a) || (c.has(b) - c.has(a)));
-    $('cr-count').textContent = `${c.inv.size} / ${ITEM_IDS.length}`;
+    const ids = poolItems(this.pool()), order = [...ids].sort((a, b) => rank(b) - rank(a) || (c.has(b) - c.has(a)));
+    $('cr-count').textContent = `${POOLS[this.pool()].name}　${ids.filter((x) => c.has(x)).length} / ${ids.length}`;
     $('cr-coll').innerHTML = order.map((id) => {
       const own = c.has(id), badge = own && g.equipped(id) ? '<span class="eq">裝備中</span>' : own && this.newItems && this.newItems.has(id) ? '<span class="new">新</span>' : '';
       return this._ci(id, own ? '' : ' lock', badge);
@@ -429,11 +446,11 @@ export class Hud {
   spin() {
     const g = this.g, c = g.crate;
     if (this.spinning || c.tickets < 1) return;
-    const res = c.open(); if (!res) return;
-    this.spinning = true; this.skipSpin = false;
+    const pool = this.pool(), res = c.open(pool); if (!res) return;
+    this.spinning = true; this.skipSpin = false; this._cratePools();
     $('cr-result').classList.add('hidden'); $('cr-idle').classList.add('hidden');
     const N = 56, WIN = 47, TW = 158, list = [];
-    for (let i = 0; i < N; i++) list.push(i === WIN ? res.id : c.filler());
+    for (let i = 0; i < N; i++) list.push(i === WIN ? res.id : c.filler(pool));
     const strip = $('cr-strip'), reel = $('cr-reel'), half = reel.clientWidth / 2;
     strip.innerHTML = list.map((id) => this._ci(id)).join('');
     const target = WIN * TW + 75 - half + (Math.random() - 0.5) * 118;   // 停在得獎那一格裡面的隨機位置（不要每次都剛好正中間）
@@ -460,7 +477,7 @@ export class Hud {
     $('btn-cr-equip').addEventListener('click', () => { if (!g.equipped(res.id)) g.equipItem(res.id); $('btn-cr-equip').textContent = '已裝備'; this._crateColl(); });
     g.sfx.card({ b: 'c', p: 'r', k: 'l', m: 'm', g: 'm' }[it.t]);
     if (it.t === 'g' || it.t === 'm') g.sfx.win();
-    this._crateWallet(); this._crateColl();
+    this._cratePools(); this._crateWallet(); this._crateColl();
   }
   // 造型頁：已經抽到的刀和特殊塗裝
   _lockerItems() {

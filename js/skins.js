@@ -42,6 +42,10 @@ export const KNIVES = {
   butterfly: { name: '蝴蝶刀' },
   karambit: { name: '爪刀' },
   bowie: { name: '獵刀' },
+  katana: { name: '武士刀' },
+  dagger: { name: '匕首' },
+  kris: { name: '蛇形刀' },
+  axe: { name: '戰斧' },
 };
 export const KNIFE_IDS = Object.keys(KNIVES);
 
@@ -59,7 +63,28 @@ export const FINISHES = {
   sakura: { name: '櫻吹雪', m: 0.1, r: 0.5, em: 0.08 },
   tiger: { name: '虎紋', m: 0.25, r: 0.48, em: 0.05 },
   digital: { name: '數位迷彩', m: 0.1, r: 0.66, em: 0.02 },
+  // 霓虹補給箱
+  synth: { name: '夕陽格線', m: 0.3, r: 0.35, em: 0.5, glow: 0xff4fd8 },
+  glitch: { name: '故障', m: 0.4, r: 0.4, em: 0.35, glow: 0x40f0ff },
+  holo: { name: '全像', m: 0.9, r: 0.15, em: 0.2 },
+  plasma: { name: '電漿', m: 0.3, r: 0.35, em: 0.5, glow: 0x8a5cff },
+  matrix: { name: '數位雨', m: 0.2, r: 0.5, em: 0.55, glow: 0x3dff6a },
+  // 神話補給箱
+  phoenix: { name: '鳳羽', m: 0.35, r: 0.35, em: 0.3, glow: 0xff7a1a },
+  porcelain: { name: '青花瓷', m: 0.05, r: 0.15, em: 0.05 },
+  lava: { name: '熔岩', m: 0.2, r: 0.6, em: 0.6, glow: 0xff5a10 },
+  goldscale: { name: '金鱗', m: 1, r: 0.25, em: 0.08 },
+  inkbamboo: { name: '墨竹', m: 0, r: 0.6, em: 0.03 },
+  jade: { name: '翡翠', m: 0.2, r: 0.12, em: 0.06 },
 };
+
+// 獎池：每一池有自己的東西和自己的保底；抽獎券、碎片共用
+export const POOLS = {
+  classic: { name: '經典補給箱', c: '#ffb238', desc: '赤焰龍、星河、蝴蝶刀、爪刀、獵刀' },
+  neon: { name: '霓虹補給箱', c: '#ff4fd8', desc: '夕陽格線、故障、全像、數位雨、武士刀、匕首' },
+  myth: { name: '神話補給箱', c: '#ff7a1a', desc: '鳳羽、青花瓷、熔岩、金鱗、蛇形刀、戰斧' },
+};
+export const POOL_IDS = Object.keys(POOLS);
 
 // 稀有度（由低到高）：w 是抽到這一級的權重
 export const TIERS = {
@@ -71,15 +96,31 @@ export const TIERS = {
 };
 export const TIER_IDS = Object.keys(TIERS);
 
-// 物品：「武器:花紋」是那把武器專用的特殊塗裝（knife = 任何刀型都能用），「刀:刀型」是刀
+// 物品：「武器:花紋」是那把武器專用的特殊塗裝（knife = 任何刀型都能用），「刀:刀型」是刀。pool = 哪一個獎池
 export const ITEMS = {};
-for (const [t, list] of Object.entries({
-  m: ['sniper:dragon', 'ar:galaxy'],
-  k: ['ar:inferno', 'lmg:storm', 'pistol:fade', 'sniper:ice', 'knife:fade', 'knife:galaxy'],
-  p: ['smg:circuit', 'shotgun:marble', 'dmr:hex', 'revolver:inferno', 'pistol:sakura', 'knife:tiger', 'knife:marble'],
-  b: ['ar:digital', 'smg:tiger', 'mp:digital', 'rocket:hex', 'shotgun:tiger', 'gl:circuit', 'dmr:digital'],
-  g: ['k:butterfly', 'k:karambit', 'k:bowie'],
-})) for (const id of list) { const [a, b] = id.split(':'); ITEMS[id] = a === 'k' ? { t, knife: b } : { t, w: a, f: b }; }
+for (const [pool, tiers] of Object.entries({
+  classic: {
+    m: ['sniper:dragon', 'ar:galaxy'],
+    k: ['ar:inferno', 'lmg:storm', 'pistol:fade', 'sniper:ice', 'knife:fade', 'knife:galaxy'],
+    p: ['smg:circuit', 'shotgun:marble', 'dmr:hex', 'revolver:inferno', 'pistol:sakura', 'knife:tiger', 'knife:marble'],
+    b: ['ar:digital', 'smg:tiger', 'mp:digital', 'rocket:hex', 'shotgun:tiger', 'gl:circuit', 'dmr:digital'],
+    g: ['k:butterfly', 'k:karambit', 'k:bowie'],
+  },
+  neon: {
+    m: ['ar:synth', 'sniper:glitch'],
+    k: ['smg:holo', 'pistol:plasma', 'knife:holo', 'dmr:synth'],
+    p: ['shotgun:glitch', 'revolver:matrix', 'mp:plasma', 'knife:matrix'],
+    b: ['ar:matrix', 'lmg:glitch', 'gl:plasma', 'rocket:synth'],
+    g: ['k:katana', 'k:dagger'],
+  },
+  myth: {
+    m: ['sniper:phoenix', 'ar:goldscale'],
+    k: ['pistol:porcelain', 'revolver:goldscale', 'knife:lava', 'smg:phoenix'],
+    p: ['dmr:jade', 'shotgun:inkbamboo', 'knife:jade', 'mp:porcelain'],
+    b: ['lmg:lava', 'gl:jade', 'rocket:inkbamboo', 'ar:lava'],
+    g: ['k:kris', 'k:axe'],
+  },
+})) for (const [t, list] of Object.entries(tiers)) for (const id of list) { const [a, b] = id.split(':'); ITEMS[id] = a === 'k' ? { t, pool, knife: b } : { t, pool, w: a, f: b }; }
 export const ITEM_IDS = Object.keys(ITEMS);
 
 // 一把武器實際要用的塗裝字串（給 gunmodel.buildGun）：

@@ -44,17 +44,17 @@ ok(`物品表的 ${st.n} 個東西都做得出模型：刀型換對、特殊塗�
 // ── 抽獎邏輯（固定亂數）──
 st = await ev(async () => {
   const { Crate, PITY, SHARDS } = await import('./js/crate.js'); const { ITEMS } = await import('./js/skins.js');
-  const c = new Crate(); c.save = () => {}; c.tickets = 100; c.inv.clear(); c.shards = 0; c.pity = 0;
+  const c = new Crate(); c.save = () => {}; c.tickets = 100; c.inv.clear(); c.shards = 0; c.pity.classic = 0;
   const seq = (arr) => { let i = 0; return () => arr[i++ % arr.length]; };
   const out = {};
   // 保底：差一抽就到的時候一定出刀
-  c.pity = PITY - 1; const a = c.open(seq([0.99, 0.5])); out.pity = ITEMS[a.id].t; out.pityReset = c.pity;
+  c.pity.classic = PITY - 1; const a = c.open(seq([0.99, 0.5])); out.pity = ITEMS[a.id].t; out.pityReset = c.pity.classic;
   // 同一個東西抽三次：第一次是新的，後兩次變碎片
   const b1 = c.open(seq([0.01, 0])), b2 = c.open(seq([0.01, 0])), b3 = c.open(seq([0.01, 0]));
   out.same = b1.id === b2.id && b2.id === b3.id; out.dup = [b1.dup, b2.dup, b3.dup]; out.shards = c.shards;
   c.shards = SHARDS - 1; const t0 = c.tickets, b4 = c.open(seq([0.01, 0])); out.bonus = b4.bonus; out.ticketsBack = c.tickets === t0;   // 碎片湊滿：花 1 張、換回 1 張
   // 機率：大量模擬，精良最多、傳奇刀約 4%
-  const n = {}; const d = new Crate(); d.save = () => {}; d.tickets = 1e9; d.pity = 0;
+  const n = {}; const d = new Crate(); d.save = () => {}; d.tickets = 1e9; d.pity.classic = 0;
   for (let i = 0; i < 20000; i++) { const r = d.open(); n[ITEMS[r.id].t] = (n[ITEMS[r.id].t] || 0) + 1; }
   out.rate = Object.fromEntries(Object.entries(n).map(([k, v]) => [k, Math.round((v / 200)) ]));
   c.tickets = 0; out.empty = c.open() === null;
@@ -87,6 +87,28 @@ const first = st.win;
 await page.click('#btn-cr-equip'); await sleep(300);
 st = await ev((id) => ({ eq: __game.equipped(id), badge: !!document.querySelector(`#cr-coll .ci[data-id="${id}"] .eq`), look: __game.look() }), first);
 ok('按「裝備」：裝上了，收藏那一格標「裝備中」', st.eq && st.badge, JSON.stringify(st));
+
+// ── 獎池：切到霓虹，收藏只列這一池；開出來的是這一池的東西；保底每池各算各的 ──
+await ev(() => { __game.crate.tickets += 3; __game.hud._crateWallet(); });
+st = await ev(() => ({ tabs: [...document.querySelectorAll('#cr-pools .pool')].map((e) => e.dataset.pool) }));
+ok('補給箱有三個獎池可以切換（經典、霓虹、神話）', st.tabs.join() === 'classic,neon,myth', JSON.stringify(st));
+await page.click('#cr-pools .pool[data-pool="neon"]'); await sleep(1500);
+st = await ev(async () => { const { ITEMS } = await import('./js/skins.js'); const ids = [...document.querySelectorAll('#cr-coll .ci')].map((e) => e.dataset.id); return { n: ids.length, all: ids.every((id) => ITEMS[id].pool === 'neon'), on: document.querySelector('#cr-pools .pool.on').dataset.pool, pity: __game.crate.pity, saved: localStorage.getItem('rubble.crpool') }; });
+ok('切到霓虹補給箱：收藏只列霓虹的 16 個東西，記住選的是哪一池', st.n === 16 && st.all && st.on === 'neon' && st.saved === '"neon"', JSON.stringify(st));
+const pityC = await ev(() => __game.crate.pity.classic);
+await page.click('#btn-crate-open'); await sleep(800); await page.click('#cr-reel');
+await page.waitForFunction(() => !__game.hud.spinning, { timeout: 20000 }).catch(() => {});
+st = await ev(async () => { const { ITEMS } = await import('./js/skins.js'); const w = document.querySelector('#cr-strip .ci.win'), fill = [...document.querySelectorAll('#cr-strip .ci')].every((e) => ITEMS[e.dataset.id].pool === 'neon'); return { win: w && w.dataset.id, pool: w && ITEMS[w.dataset.id].pool, fill, pity: __game.crate.pity }; });
+ok('在霓虹開箱：開到的和轉盤上的都是霓虹的東西；保底只算霓虹這一池', st.pool === 'neon' && st.fill && st.pity.classic === pityC && (st.pity.neon === 1 || st.pity.neon === 0), JSON.stringify(st));
+await page.screenshot({ path: OUT + '/k2b-neon.png' });
+st = await ev(async () => {
+  const { ITEMS, ITEM_IDS } = await import('./js/skins.js'); const { Crate } = await import('./js/crate.js');
+  const c = new Crate(); c.save = () => {}; c.tickets = 3000; const seen = new Set();
+  for (let i = 0; i < 1500; i++) { const r = c.open('myth'); seen.add(ITEMS[r.id].pool); }
+  return { pools: [...seen], knives: ['k:kris', 'k:axe'].every((id) => c.inv.has(id)) };
+});
+ok('神話池只開得出神話的東西，刀（蛇形刀、戰斧）也開得到', st.pools.join() === 'myth' && st.knives, JSON.stringify(st));
+await page.click('#cr-pools .pool[data-pool="classic"]'); await sleep(800);
 
 // ── 裝備：沒抽到的不能裝；刀型、特殊塗裝；送給裁判 ──
 st = await ev(() => { const g = __game; g.crate.inv.delete('k:karambit'); g.equipItem('k:karambit'); return g.settings.knife; });
