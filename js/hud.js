@@ -474,7 +474,7 @@ export class Hud {
     this.flashT = setTimeout(() => { f.style.transition = `opacity ${(dur * 0.6).toFixed(2)}s ease-in`; f.style.opacity = '0'; }, dur * 400);
   }
   clearFlash() { clearTimeout(this.flashT); const f = $('flashfx'); f.style.transition = 'none'; f.style.opacity = '0'; }
-  showHud(v) { $('hud').classList.toggle('hidden', !v); }
+  showHud(v) { $('hud').classList.toggle('hidden', !v); if (!v) $('killmark').classList.remove('show'); }
   menuMsg(t) { $('menu-msg').textContent = t || ''; }
   menuBusy(b) { for (const id of ['btn-host', 'btn-join', 'btn-bot', 'btn-dm', 'btn-def', 'btn-locker', 'btn-editor', 'btn-stats', 'btn-crate']) $(id).disabled = b; }
 
@@ -545,6 +545,9 @@ export class Hud {
     const el = $('killmark');
     el.querySelector('.km-ico').innerHTML = ICON.head; el.querySelector('b').textContent = head ? '爆頭擊倒' : '擊倒';
     el.classList.toggle('head', !!head); el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
+    // 播完就收掉：不然 HUD 被藏起來（進商店）再出現時，動畫會整個重播一次，看起來像下一局才跳出來
+    el.onanimationend = () => el.classList.remove('show');
+    clearTimeout(this.kmT); this.kmT = setTimeout(() => el.classList.remove('show'), 1400);
   }
   killfeed(k) {
     const d = document.createElement('div'); d.className = 'kf' + (k.mine ? ' mine' : ' theirs');
