@@ -461,8 +461,8 @@ function buildSite(w) {
   const lo = 6, hi = N - 7;                                                   // 大樓外牆（2 格厚）在 6..7、120..121
   R(lo, G, lo, hi, SL[3] + 2, lo + 1, CONCRETE);                             // 外牆一路到屋頂的女兒牆（1.5 公尺，跳不出去）
   for (const y of [SL[1] - 1, SL[2] - 1, SL[3] - 1]) w.box(lo + 2, y, lo + 2, hi - 2, y, hi - 2, CONCRETE);   // 樓板、屋頂
-  // 外牆的窗：每層、每面牆六個（3 公尺寬、1.5 公尺高，窗台 0.5 公尺）
-  for (const sl of [SL[0], SL[1], SL[2]]) for (const x of [12, 28, 44, 78, 94, 110]) R(x, sl + 1, lo, x + 5, sl + 3, lo + 1, AIR);
+  // 外牆的窗：每層、每面牆六個（3 公尺寬、2 公尺高，窗台 0.5 公尺：跳上窗台就能走出去鷹架）
+  for (const sl of [SL[0], SL[1], SL[2]]) for (const x of [12, 28, 44, 78, 94, 110]) R(x, sl + 1, lo, x + 5, sl + 4, lo + 1, AIR);
   // 牆外的鷹架：二樓、三樓高度各一圈 1 公尺寬的木板走道（貼著外牆；外側留空讓天光照進窗戶），每 8 公尺一根鐵柱
   for (const y of [SL[1] - 1, SL[2] - 1]) R(2, y, 4, N - 3, y, 5, WOOD);
   for (const x of [2, 18, 34, 50, 77, 93, 109, 125]) R(x, G, 2, x, SL[2] + 2, 2, METAL);
@@ -645,10 +645,10 @@ export const MAPS = {
       { type: 'hp', amount: 40, x: m(103), y: SL[1] * BS, z: m(24) },
       { type: 'hp', amount: 40, x: m(103), y: SL[1] * BS, z: m(103) },
       { type: 'hp', amount: 40, x: m(24), y: SL[1] * BS, z: m(103) },
-      { type: 'armor', amount: 50, x: m(50), y: SL[2] * BS, z: m(40), respawn: 30 },   // 三樓天井旁，每個象限一個
-      { type: 'armor', amount: 50, x: m(87), y: SL[2] * BS, z: m(50), respawn: 30 },
-      { type: 'armor', amount: 50, x: m(77), y: SL[2] * BS, z: m(87), respawn: 30 },
-      { type: 'armor', amount: 50, x: m(40), y: SL[2] * BS, z: m(77), respawn: 30 },
+      { type: 'armor', amount: 50, x: m(52), y: SL[2] * BS, z: m(40), respawn: 30 },   // 三樓天井旁，每個象限一個
+      { type: 'armor', amount: 50, x: m(87), y: SL[2] * BS, z: m(52), respawn: 30 },
+      { type: 'armor', amount: 50, x: m(75), y: SL[2] * BS, z: m(87), respawn: 30 },
+      { type: 'armor', amount: 50, x: m(40), y: SL[2] * BS, z: m(75), respawn: 30 },
       { type: 'hp', amount: 25, x: 32, y: SL[1] * BS, z: 32 },                 // 塔吊中間的平台
     ],
   },
