@@ -131,6 +131,11 @@ export class Skills {
   // 不能開槍：被時間暫停，或剛被換位
   noFire() { const now = performance.now(); return now < this.stopEnd || now < this.noFireEnd; }
   _send(d) { this.g.sendPeer('sk', { r: this.g.round, ...d }); }
+  // 我被時間暫停時受到傷害：馬上恢復，並告訴對手（他畫面上的冰凍效果也要拿掉）
+  breakStop() {
+    if (performance.now() >= this.stopEnd) return;
+    this.stopEnd = 0; this.g.hud.banner('時間恢復了', '', 700); this._send({ id: 'unstop' });
+  }
   _aim() { const e = this.g.camera.matrixWorld.elements; return { ox: e[12], oy: e[13], oz: e[14], dx: -e[8], dy: -e[9], dz: -e[10], rx: e[0], ry: e[1], rz: e[2] }; }
   _snd(kind, x, z) { const g = this.g; g.sfx.skill(kind, Math.hypot(x - g.camera.position.x, z - g.camera.position.z), g.panOf(x, z)); }
 
@@ -482,16 +487,10 @@ export class Skills {
     return true;
   }
 
-  // 時間暫停（神話）：對手完全不能動。要看得到、在範圍內才放得出去（放不出去不會進冷卻）
+  // 時間暫停（神話）：對手完全不能動，直到時間到、或被打到一下（breakStop）
   _timestop(now) {
-    const g = this.g, rp = g.remote.pos, p = g.player.pos;
+    const g = this.g, rp = g.remote.pos;
     if (!g.remote.alive) return false;
-    const ex = p.x, ey = p.y + 1.4, ez = p.z;
-    let dx = rp.x - ex, dy = rp.y + 1.2 - ey, dz = rp.z - ez;
-    const dist = Math.hypot(dx, dy, dz);
-    if (dist > SK.timestop.range || dist < 0.3) return false;
-    dx /= dist; dy /= dist; dz /= dist;
-    if (g.world.raycast(ex, ey, ez, dx, dy, dz, dist - 0.3)) return false;
     this.rStopEnd = now + SK.timestop.time * 1000;
     g.sfx.skill('chrono'); this.nova(rp.x, rp.y + 0.1, rp.z, 0xffffff, 5, 0.8); this.nova(rp.x, rp.y + 1, rp.z, 0x59b8ff, 3, 1.2);
     this._send({ id: 'timestop', d: SK.timestop.time });
@@ -628,9 +627,10 @@ export class Skills {
         this.slowEnd = now + dur(0.5, 6); g.sfx.skill('chrono'); g.hud.banner('時間凝結', '你的時間變慢了', 1300); this.nova(p.x, p.y + 0.1, p.z, 0x59b8ff, 3, 0.6);
         break;
       }
+      case 'unstop': this.rStopEnd = 0; break;                        // 被我暫停的對手挨了一下：提早恢復
       case 'timestop': {
         const p = g.player.pos;
-        this.stopEnd = now + dur(0.5, 2); g.sfx.skill('chrono'); g.hud.banner('時間暫停', '你完全動不了', 1300);
+        this.stopEnd = now + dur(0.5, 3.5); g.sfx.skill('chrono'); g.hud.banner('時間暫停', '你完全動不了（被打到就會恢復）', 1300);
         this.nova(p.x, p.y + 0.1, p.z, 0xffffff, 5, 0.8); this.nova(p.x, p.y + 1, p.z, 0x59b8ff, 3, 1.2);
         if (this.grap) this._dropGrap(false);
         break;

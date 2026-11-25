@@ -801,6 +801,7 @@ class Game {
 
   onEv(e) {
     if (e.t === 'hurt') {
+      if (!e.self) this.skills.breakStop();                              // 被時間暫停時挨打 → 馬上恢復
       this.sfx.hurt(); this.shake = Math.min(1.2, this.shake + 0.35);
       this.hud.hurt();
       // 被槍或刀打中：記下對手當時的位置，畫面上會有一段紅色弧線指著那個方向（轉頭時它會跟著轉）。

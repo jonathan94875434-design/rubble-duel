@@ -44,13 +44,17 @@ export class Bot {
   recv(msg) {
     const [type, d] = msg;
     if (type === 'gs') this.onGs(d);
-    else if (type === 'ev') { if (d.t === 'respawn') this._respawn(); }
+    else if (type === 'ev') {
+      if (d.t === 'respawn') this._respawn();
+      // 被時間暫停時挨了一下：馬上恢復（跟真人一樣）
+      if (d.t === 'hurt' && !d.self && this.stopUntil > performance.now()) { this.stopUntil = 0; this.reactAt = performance.now() + 250; this.send('sk', { r: this.round, id: 'unstop' }); }
+    }
     else if (type === 'sk') {
       // 玩家放的技能裡，會影響機器人的：時間凝結（變慢）、時間暫停（不能動）、迷彩（看不到人）、黑洞（被吸過去）、換位
       if (!d || d.r !== this.round) return;
       const now = performance.now(), dur = (lo, hi) => Math.max(lo, Math.min(hi, +d.d || 0)) * 1000;
       if (d.id === 'chrono') { this.slowUntil = now + dur(0.5, 6); this.reactAt = now + 700; }
-      else if (d.id === 'timestop') { this.stopUntil = now + dur(0.5, 2); this.reactAt = this.stopUntil + 400; }
+      else if (d.id === 'timestop') { this.stopUntil = now + dur(0.5, 3.5); this.reactAt = this.stopUntil + 400; }
       else if (d.id === 'cloak') this.noSeeUntil = d.d > 0 ? now + d.d * 1000 : 0;
       else if (d.id === 'launch') { const b = this.body; b.vel.y = Math.max(8, Math.min(26, +d.v || 20)); b.vel.x *= 0.3; b.vel.z *= 0.3; b.onGround = false; }
       else if (d.id === 'blind') this.blindUntil = now + dur(0.5, 4);

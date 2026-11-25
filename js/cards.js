@@ -27,7 +27,7 @@ export const SK = {
   shock:     { rad: 16, min: 50, max: 120, k: 30, br: 4.5, bp: 650 },   // 傷害 = min + (max - min) × 靠近程度；br／bp 震碎方塊的範圍和力道
   wall:      { half: 10, h: 10 },                     // 鋼牆：寬 2×half+1 格、高 h 格（一格 0.5 公尺）；守據點的沙包牆維持 7×5
   chrono:    { time: 4.5, move: 0.3, look: 0.3 },
-  timestop:  { time: 1.5, range: 40 },        // 時間暫停：對手停幾秒、要看得到而且在幾公尺內
+  timestop:  { time: 2.5 },
   orbital:   { delay: 1.0, track: 7.5, trackR: 14, full: 3, fade: 4.5, dmg: 200 },   // track：光柱追人的速度（公尺/秒），trackR 多遠內會追
   meteor:    { n: 7, gap: 0.32, delay: 0.75, spread: 3.5, trackR: 14, full: 1.6, fade: 2.6, dmg: 60 },
   blackhole: { time: 4.5, pull: 14, base: 10, str: 58, slow: 0.4, bite: 3, biteDmg: 8, boomR: 7, boomDmg: 75 },
@@ -103,7 +103,7 @@ export const CARDS = {
   anchor:     A('l', '錨', '回溯錨點', '按一次在原地留下錨點，再按一次瞬間回到錨點；錨點還在的時候受到致命傷，會直接傳回錨點、剩 50 血（每個錨點救一次）。對手看得到你的錨點', 12, { bot: false }),
   swap:       A('l', '換', '換位', '跟看得到的對手（60 公尺內）瞬間交換位置：對手被轉成背對你、1 秒不能開槍、2 秒跑不快，你 2 秒內打他傷害 +30%', 6, { bot: false }),
   // ── 主動技能：神話 ──
-  timestop:   A('m', '停', '時間暫停', '看得到的對手（40 公尺內）完全靜止 1.5 秒：不能動、不能轉頭、不能開槍', 30, { lock: 3 }),
+  timestop:   A('m', '停', '時間暫停', '對手完全靜止 2.5 秒：不能動、不能轉頭、不能開槍；但只要被打到一下就立刻恢復', 20, { lock: 3 }),
   fortress:   A('m', '堡', '堡壘', '在原地瞬間蓋起一座小城堡：四面岩石城牆、四角塔樓，你直接站上正中間 6 公尺高的哨塔頂；城門開在你面向的那一邊', 25, { lock: 3, bot: false }),
   gaytay:     A('m', '巨', 'gay tay', '召喚金色巨人「gay tay」：拿機槍掃射對手，靠近就踩地把人震飛（700 血、20 秒，對手打得到它）', 30, { lock: 3, bot: false }),
   meteor:     A('m', '隕', '流星雨', '在瞄準的地方降下 7 顆隕石，會追著附近的對手砸，每顆 60 傷害、把地形砸得稀爛', 14, { lock: 4, bot: false }),
