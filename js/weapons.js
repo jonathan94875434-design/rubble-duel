@@ -124,20 +124,20 @@ export const SECONDARIES = Object.keys(WEAPONS).filter((k) => WEAPONS[k].slot ==
 // 投擲物：跟火箭、榴彈共用拋射物系統。kind 決定引信到了之後發生什麼事
 export const THROWABLES = {
   he: {
-    name: '手榴彈', kind: 'he', dmg: 90,
-    proj: { speed: 20, gravity: 18, bounce: 0.42, fuse: 1.6, radius: 4.5, blockR: 1.7, blockPow: 340, self: 0.7, kick: 7 },
+    name: '手榴彈', kind: 'he', dmg: 110,
+    proj: { speed: 20, gravity: 18, bounce: 0.42, fuse: 1.6, radius: 7, blockR: 2.4, blockPow: 420, self: 0.7, kick: 10 },
   },
   flash: {
     name: '閃光彈', kind: 'flash', dmg: 0,
     proj: { speed: 21, gravity: 18, bounce: 0.45, fuse: 1.4, radius: 0, blockR: 0, blockPow: 0, self: 0, kick: 0 },
   },
   smoke: {
-    name: '煙霧彈', kind: 'smoke', dmg: 0, dur: 12, cloud: 3.4,
+    name: '煙霧彈', kind: 'smoke', dmg: 0, dur: 16, cloud: 5.5,
     proj: { speed: 18, gravity: 18, bounce: 0.3, fuse: 1.5, radius: 0, blockR: 0, blockPow: 0, self: 0, kick: 0 },
   },
   // 燃燒瓶：碰到東西就破，地上燒一片火。dps = 站在火裡每秒扣的血；burn = 每秒對木頭的傷害；煙霧彈可以滅火
   molotov: {
-    name: '燃燒瓶', kind: 'molotov', dmg: 0, dur: 7, cloud: 2.6, dps: 38, burn: 30,
+    name: '燃燒瓶', kind: 'molotov', dmg: 0, dur: 9, cloud: 4.2, dps: 38, burn: 30,
     proj: { speed: 19, gravity: 18, bounce: 0, fuse: 3, radius: 0, blockR: 0, blockPow: 0, self: 0, kick: 0 },
   },
 };

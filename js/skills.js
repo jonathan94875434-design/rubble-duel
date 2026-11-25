@@ -107,6 +107,7 @@ export class Skills {
 
   clear() {
     this._reset();
+    if (this.g.pets) this.g.pets.clear();                          // 召喚物每局清空
     for (const m of [...this.ropes, this.sil, ...this.domeM, ...this.holeM.map((h) => h.grp)]) m.visible = false;
     for (const m of this.markM) m.beam.visible = m.ring.visible = m.core.visible = false;
     for (const m of this.anchorM) m.ring.visible = m.beam.visible = false;
@@ -224,6 +225,65 @@ export class Skills {
     this._send({ id: 'wall', c: cells, b: this.wallType });
     return true;
   }
+  // 召喚：梁允猴、gay tay（模擬和同步在 pets.js）
+  _monkey() { return this.g.pets.spawn('monkey'); }
+  _gaytay() { return this.g.pets.spawn('gaytay'); }
+
+  // 升天：看得到的對手被往上噴飛
+  _launch() {
+    const g = this.g, p = g.player, rm = g.remote, L = SK.launch;
+    if (!rm.alive) return false;
+    const ex = p.pos.x, ey = p.pos.y + 1.4, ez = p.pos.z;
+    let dx = rm.pos.x - ex, dy = rm.pos.y + 1.2 - ey, dz = rm.pos.z - ez;
+    const dist = Math.hypot(dx, dy, dz);
+    if (dist > L.range || dist < 0.5) return false;
+    dx /= dist; dy /= dist; dz /= dist;
+    if (g.world.raycast(ex, ey, ez, dx, dy, dz, dist - 0.3)) return false;          // 看不到就噴不到
+    this._hit(L.dmg, 'launch');
+    this._launchFx(rm.pos.x, rm.pos.y, rm.pos.z); g.sfx.skill('jet');
+    this._send({ id: 'launch', v: L.up });
+    return true;
+  }
+  _launchFx(x, y, z) {
+    const fx = this.g.fx;
+    this.nova(x, y + 0.1, z, 0x8fd8ff, 2.6, 0.5);
+    for (let i = 0; i < 26; i++) { const a = Math.random() * 6.283, s = 0.5 + Math.random() * 1.5; fx.glowP.spawn(x + Math.cos(a) * 0.4, y + 0.1, z + Math.sin(a) * 0.4, Math.cos(a) * s, 8 + Math.random() * 8, Math.sin(a) * s, 0.25, 0.04, 0.5 + Math.random() * 0.3, 2.5, 5, 7, 1, -2, 2); }
+    fx.smoke(x, y + 0.2, z, 3, 0.25);
+  }
+  // 自己被噴上去（對手放的升天、或自己賭輸了）
+  _launchMe(v) {
+    const g = this.g, p = g.player;
+    if (!g.meAlive()) return;
+    if (this.grap) this._dropGrap(false);
+    p.vel.y = clamp(+v || SK.launch.up, 8, 26); p.vel.x *= 0.3; p.vel.z *= 0.3; p.onGround = false;
+    this._launchFx(p.pos.x, p.pos.y, p.pos.z); g.sfx.skill('jet'); g.shake = Math.min(1.2, g.shake + 0.5);
+  }
+
+  // 賭博：擲硬幣，贏了對手吃一種負面效果、輸了自己吃
+  _gamble(now) {
+    const g = this.g, rm = g.remote;
+    if (!rm.alive) return false;
+    const list = ['chrono', 'timestop', 'blind', 'launch', 'burn'], fx = list[(Math.random() * list.length) | 0], win = Math.random() < SK.gamble.win;
+    const name = { chrono: '時間凝結 3 秒', timestop: '時間暫停 1.5 秒', blind: '致盲 2.5 秒', launch: '升天', burn: '著火 4 秒' }[fx];
+    if (win) {
+      if (fx === 'chrono') { this.rSlowEnd = now + 3000; this._send({ id: 'chrono', d: 3 }); }
+      else if (fx === 'timestop') { this.rStopEnd = now + 1500; this._send({ id: 'timestop', d: 1.5 }); }
+      else if (fx === 'blind') this._send({ id: 'blind', d: 2.5 });
+      else if (fx === 'launch') { this._launchFx(rm.pos.x, rm.pos.y, rm.pos.z); this._send({ id: 'launch', v: 20 }); }
+      else g.auth('skill', { r: g.round, id: 'gamble', burn: 1 });
+      g.hud.banner('賭贏了！', '對手吃了「' + name + '」', 1500); g.sfx.card('l');
+    } else {
+      if (fx === 'chrono') this.slowEnd = now + 3000;
+      else if (fx === 'timestop') { this.stopEnd = now + 1500; if (this.grap) this._dropGrap(false); }
+      else if (fx === 'blind') g.hud.flash(1, 2.5);
+      else if (fx === 'launch') this._launchMe(20);
+      else g.auth('skill', { r: g.round, id: 'gamble', burn: 1, self: 1 });
+      g.hud.banner('賭輸了…', '你自己吃了「' + name + '」', 1500); g.sfx.deny();
+    }
+    this._send({ id: 'gamble', win: win ? 1 : 0, fx });
+    return true;
+  }
+
   // 回溯錨點：沒有錨點 → 在原地放一個；有錨點 → 瞬間回去
   _anchor() {
     const g = this.g, p = g.player;
@@ -567,6 +627,15 @@ export class Skills {
         this.stopEnd = now + dur(0.5, 3.5); g.sfx.skill('chrono'); g.hud.banner('時間暫停', '你完全動不了', 1300);
         this.nova(p.x, p.y + 0.1, p.z, 0xffffff, 5, 0.8); this.nova(p.x, p.y + 1, p.z, 0x59b8ff, 3, 1.2);
         if (this.grap) this._dropGrap(false);
+        break;
+      }
+      case 'launch': this._launchMe(d.v); g.hud.banner('升天！', '你被噴到天上了', 900); break;
+      case 'blind': if (g.meAlive()) g.hud.flash(1, clamp(+d.d || 2, 0.5, 4)); break;
+      case 'pets': case 'petdie': case 'pethit': g.pets.onNet(d); break;
+      case 'gamble': {
+        const nm = { chrono: '時間凝結', timestop: '時間暫停', blind: '致盲', launch: '升天', burn: '著火' }[d.fx] || '';
+        const who = g.gs ? g.gs.p[1 - g.me].n : '對手';
+        if (d.win) g.hud.feed(`${who} 賭贏了：你吃了「${nm}」`); else g.hud.feed(`${who} 賭輸了，自己吃了「${nm}」`);
         break;
       }
       case 'swap': {

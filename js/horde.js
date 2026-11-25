@@ -603,18 +603,18 @@ export class Horde {
     }
   }
   // 閃光彈：看得到、面向它的機器人會瞎一陣子不開槍
-  onFlash(x, y, z) {
+  onFlash(x, y, z, fk = 1) {
     if (!this.host) return;
     const w = this.g.world, now = performance.now();
     for (const m of this.mobs) {
       if (!m.alive) continue;
       const b = m.body, ex = b.pos.x, ey = b.pos.y + PLAYER.EYE * m.s, ez = b.pos.z;
       let dx = x - ex, dy = y - ey, dz = z - ez; const dist = Math.hypot(dx, dy, dz) || 0.01;
-      if (dist > 30) continue;
+      if (dist > 50 * fk) continue;
       dx /= dist; dy /= dist; dz /= dist;
       if (dist > 0.8 && w.raycast(ex, ey, ez, dx, dy, dz, dist - 0.5)) continue;
       const dot = -Math.sin(b.yaw) * dx - Math.cos(b.yaw) * dz;
-      m.blindUntil = now + (0.4 + 3 * (dot > 0.3 ? 1 : dot > -0.35 ? 0.55 : 0.2) * clamp(1.2 - dist / 24, 0.2, 1)) * 1000;
+      m.blindUntil = now + (0.4 + 3 * (dot > 0.3 ? 1 : dot > -0.35 ? 0.55 : 0.2) * clamp(1.2 - dist / (36 * fk), 0.2, 1)) * fk * 1000;
       m.vis[0] = m.vis[1] = false; m.reactAt = m.blindUntil;
     }
   }

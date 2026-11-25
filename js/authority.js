@@ -224,6 +224,15 @@ export class Authority {
     const p = this.players[i], now = Date.now();
     if (this.phase !== 'playing' || !p.alive || !p.skills.includes(id)) return;
     if (id === 'anchor') { p.anchor = !!d.on; return; }          // 回溯錨點：放下／收回（放著的時候受到致命傷會被救回錨點）
+    if (id === 'gamble' && d.burn) {                              // 賭博抽到「著火」：贏了燒對手、輸了燒自己（燒死算對手的）
+      if (now - (p.gambleAt || 0) < CARDS.gamble.cd * 500) return;
+      p.gambleAt = now;
+      const ti = d.self ? i : 1 - i, T = this.players[ti];
+      if (!T || !T.alive) return;
+      if (now >= T.burnT) T.burnNext = now + 500;
+      T.burnT = now + 4000; T.burnBy = d.self ? 1 - i : i; this.dirty = true;
+      return;
+    }
     if (id === 'stim') {
       if (now - p.stimAt < CARDS.stim.cd * 1000 - 500) return;
       p.stimAt = now; p.hp = Math.min(p.maxHp, p.hp + SK.stim.heal); this.dirty = true; this.flush();

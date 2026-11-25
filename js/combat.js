@@ -42,7 +42,7 @@ export class Combat {
     };
     this.slots = [mk(lo.p), mk(lo.s), mk('knife')];
     this.cur = this.slots[0] ? 0 : 1; this.last = this.slots[0] ? 1 : 2;
-    for (const k of NADE_IDS) this.nades[k] = lo[k] | 0;
+    for (const k of NADE_IDS) this.nades[k] = (lo[k] | 0) + (this.mods.extraNades ? this.mods.extraNades[k] : 0);   // 投擲物強化卡每局多送一顆
     if (this.mods.arsenal) { this.nades.he += 2; this.nades.flash++; this.nades.smoke++; }   // 軍火庫：多送兩顆手榴彈、閃光彈、煙霧彈
     this.throwAt = 0;
     this.bloom = 0; this.recP = this.recY = 0; this.ads = 0; this.switchEnd = 0; this.fireQueued = 0;
@@ -385,9 +385,16 @@ export class Combat {
   // direct = 直接砸中的目標（沒有 = undefined）
   explode(p, direct) {
     const g = this.g, pr = p.def.proj, pos = p.pos;
-    const pow = pr.blockPow * this.mods.block;
-    const msg = { r: g.round, pid: p.pid, p: [r3(pos.x), r3(pos.y), r3(pos.z)], br: pr.blockR, bp: pow, rad: pr.radius, k: pr.kick };
-    if (p.def.kind && p.def.kind !== 'he') { msg.kind = p.def.kind; msg.dur = p.def.dur; msg.cloud = p.def.cloud; msg.own = g.me; } // 閃光、煙霧、火：沒有爆炸傷害
+    const m = this.mods, he = p.def.kind === 'he', rad = pr.radius * (he ? m.heR : 1);
+    const pow = pr.blockPow * m.block * (he ? m.heDmg : 1);
+    const msg = { r: g.round, pid: p.pid, p: [r3(pos.x), r3(pos.y), r3(pos.z)], br: pr.blockR * (he ? m.heR : 1), bp: pow, rad, k: pr.kick };
+    if (p.def.kind && !he) {                                                   // 閃光、煙霧、火：沒有爆炸傷害；範圍、時間看強化卡
+      const k = p.def.kind;
+      msg.kind = k; msg.own = g.me;
+      msg.dur = p.def.dur * (k === 'smoke' ? m.smokeDur : k === 'molotov' ? m.molDur : 1);
+      msg.cloud = p.def.cloud * (k === 'smoke' ? m.smokeR : k === 'molotov' ? m.molR : 1);
+      if (k === 'flash') { msg.fk = m.flashK; if (!m.flashSelf) msg.ns = 1; }  // fk：閃光強度倍率；ns：丟的人不會被自己閃到
+    }
     this.removeProjectile(p.pid);
     g.sendPeer('expl', msg);
     g.doExplosion(msg);
@@ -395,11 +402,11 @@ export class Combat {
     let hit = false;
     g.eachTarget((id, tp, sc) => {
       const d = direct === id ? 0 : Math.hypot(pos.x - tp.x, pos.y - (tp.y + 0.9 * sc), pos.z - tp.z);
-      if (d < pr.radius) { g.hitTarget(id, p.def.dmg * (d === 0 ? 1 : Math.max(0.15, 1 - d / pr.radius)) * this.dmgMul(), false, p.id); hit = true; }
+      if (d < rad) { g.hitTarget(id, p.def.dmg * (he ? m.heDmg : 1) * (d === 0 ? 1 : Math.max(0.15, 1 - d / rad)) * this.dmgMul(), false, p.id); hit = true; }
     });
     if (hit) { g.hud.hitmarker(false); g.sfx.hit(false); }
     const me = g.player.pos, ds = Math.hypot(pos.x - me.x, pos.y - (me.y + 0.9), pos.z - me.z);
-    if (ds < pr.radius) g.auth('self', { r: g.round, d: p.def.dmg * (1 - ds / pr.radius) * pr.self, w: p.id });
+    if (ds < rad) g.auth('self', { r: g.round, d: p.def.dmg * (1 - ds / rad) * pr.self, w: p.id });
   }
 
   // ───────── 火（燃燒瓶）─────────
@@ -421,7 +428,7 @@ export class Combat {
       if (!f.mine) continue;
       if (now >= f.next) {
         f.next += 250;
-        const me = g.player.pos, d = def.dps * 0.25;
+        const me = g.player.pos, d = def.dps * 0.25 * (f.mine ? this.mods.molDps : 1);
         let hit = false;
         g.eachTarget((id, tp) => { if (this.inFire(f, tp.x, tp.y, tp.z)) { g.hitTarget(id, d * this.dmgMul(), false, 'molotov'); hit = true; } });
         if (hit) g.hud.hitmarker(false);

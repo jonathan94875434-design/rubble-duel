@@ -191,6 +191,7 @@ for (const [map, spots] of [
   await page.evaluate(() => localStorage.removeItem('rubble.binds'));
   await page.click('#btn-settings'); await sleep(200);
   ok('對局外可以開設定', await page.evaluate(() => !document.getElementById('pause').classList.contains('hidden') && document.getElementById('pause-title').textContent === '設定'));
+  await page.click('.settab[data-tab="keys"]'); await sleep(150);                // 按鍵在設定的「按鍵」分頁
   await page.click('.kb[data-a="crouch"]'); await page.keyboard.press('KeyX'); await sleep(150);
   await page.click('.kb[data-a="he"]'); await page.keyboard.press('KeyW'); await sleep(150);   // 跟「前進」撞鍵 → 應該互換
   const b1 = await page.evaluate(() => JSON.stringify([__game.binds.crouch, __game.binds.he, __game.binds.fwd]));

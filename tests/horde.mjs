@@ -217,14 +217,14 @@ await sleep(300);
 await A.click('.card[data-id="vital"]');
 await sleep(400);
 st = await A.evaluate(() => ({ bf: __game.gs.p[0].bf, mhp: __game.gs.p[0].mhp, ch: __game.gs.p[0].ch }));
-ok('選了「厚血」：血量上限變 135', st.bf.includes('vital') && st.mhp === 135 && !st.ch, JSON.stringify(st));
+ok('選了「厚血」：血量上限變 200', st.bf.includes('vital') && st.mhp === 200 && !st.ch, JSON.stringify(st));
 await A.evaluate(() => __game.closeBuy());
 await sleep(200);
 const mag0 = await A.evaluate(() => __game.combat.slots[0].mag);
 await A.evaluate(() => { const a = __game.authority; a.players[0].buffs.push('mag'); a.dirty = true; a.flush(); });   // 等於下一波開始時自動拿到「擴充彈匣」
 await sleep(300);
 st = await A.evaluate(() => ({ m: __game.combat.mods.mag, mag: __game.combat.slots[0].mag }));
-ok('拿到新卡（沒有重生、沒換槍）馬上生效：彈匣變大', st.m === 1.5 && st.mag > mag0, JSON.stringify({ mag0, st }));
+ok('拿到新卡（沒有重生、沒換槍）馬上生效：彈匣變大', st.m === 1.75 && st.mag > mag0, JSON.stringify({ mag0, st }));
 // 第 5 波有巨人；巨人會砲擊（先畫紅圈）
 st = await A.evaluate(async () => { const H = await import(new URL('js/horde.js', location.href).href); return { w5: H.waveList(5).slice(-1)[0], w4: H.waveList(4).includes('boss'), two: H.waveList(3, true).length > H.waveList(3).length }; });
 ok('每 5 波來一隻巨人；兩個人一起守時敵人比較多', st.w5 === 'boss' && !st.w4 && st.two, JSON.stringify(st));

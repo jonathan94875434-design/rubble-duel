@@ -32,7 +32,12 @@ export const SK = {
   meteor:    { n: 7, gap: 0.32, delay: 0.75, spread: 3.5, trackR: 14, full: 1.6, fade: 2.6, dmg: 60 },
   blackhole: { time: 4.5, pull: 14, base: 10, str: 58, slow: 0.4, bite: 3, biteDmg: 8, boomR: 7, boomDmg: 75 },
   swap:      { range: 60, daze: 2, slow: 0.6, noFire: 1, bonus: 2, dmg: 1.3 },   // 對手被換之後暈 daze 秒（速度 ×slow），noFire 秒不能開槍；自己 bonus 秒內打他傷害 ×dmg
-  anchor:    { hp: 50, inv: 1 },                       // 回溯錨點：被救回來剩多少血、無敵幾秒
+  anchor:    { hp: 50, inv: 1 },
+  launch:    { up: 22, dmg: 20, range: 50 },              // 升天：往上噴的速度（22 ≈ 11 公尺高）、傷害、距離
+  gamble:    { win: 0.5 },                                // 賭博：贏的機率
+  // 召喚物：血量、存在幾秒、跑速倍率、每下傷害、攻擊間隔（秒）；巨人另外有射程、踩地傷害、踩地範圍、踩地冷卻
+  monkey:    { hp: 60, time: 14, speed: 1.4, dmg: 14, rate: 0.55 },
+  gaytay:    { hp: 700, time: 20, speed: 0.7, dmg: 6, rate: 0.13, range: 40, stomp: 40, stompR: 6, stompCd: 2.5 },                       // 回溯錨點：被救回來剩多少血、無敵幾秒
   fortress:  { r: 9, wall: 6, turret: 9, tower: 12 },  // 堡壘（方塊數）：城牆離中心幾格、城牆高、塔樓高、哨塔高（12 格 = 6 公尺）
 };
 
@@ -52,6 +57,8 @@ export const CARDS = {
   arsenal:    P('c', '庫', '軍火庫', '每局免費多送 50 護甲（可以跟買的防彈衣疊加）、兩顆手榴彈、閃光彈、煙霧彈', { bot: false }),
   survivor:   P('c', '存', '求生本能', '血量低於 35% 時，受到的傷害 −40%'),
   medkit:     P('c', '醫', '急救包', '每局一次：血量掉到 35 以下時自動回復 50 生命'),
+  smoker:     P('c', '霧', '煙幕大師', '煙霧彈的煙大 40%、多飄 50% 的時間；每局多送一顆煙霧彈', { bot: false }),
+  flasher:    P('c', '閃', '閃光大師', '閃光彈閃得更遠更久（+60%），自己不會被自己的閃光閃到；每局多送一顆閃光彈', { bot: false }),
   // ── 被動：稀有 ──
   frenzy:     P('r', '狂', '扳機狂熱', '射速 +35%、換彈快 25%'),
   glass:      P('r', '玻', '玻璃大砲', '傷害 +65%，但最大生命 −30'),
@@ -63,6 +70,8 @@ export const CARDS = {
   explosive:  P('r', '炸', '爆裂彈', '子彈打到東西會小爆炸：拆牆飛快，2.4 公尺內的敵人吃濺射傷害', { bot: false }),
   ricochet:   P('r', '彈', '跳彈', '子彈撞上打不穿的牆會反彈一次（傷害剩 90%），可以打轉角後面的人', { bot: false }),
   overclock:  P('r', '頻', '超頻', '主動技能冷卻 −50%'),
+  boomer:     P('r', '爆', '爆破專家', '手榴彈傷害 +40%、爆炸範圍 +30%、炸牆更快；每局多送一顆手榴彈', { bot: false }),
+  pyro:       P('r', '火', '縱火狂', '燃燒瓶的火大 40%、燒久 50%、每秒傷害 +40%；每局多送一個燃燒瓶', { bot: false }),
   hunter:     P('r', '獵', '獵人印記', '打中的對手會被標在小地圖上 4 秒，期間你對他的傷害 +20%', { bot: false }),
   // ── 被動：傳說 ──
   twin:       P('l', '雙', '雙重射擊', '每次開槍都多射一發（每發傷害 80%）→ 火力 +60%、拆牆也更快', { bot: false }),
@@ -81,6 +90,9 @@ export const CARDS = {
   stim:       A('c', '針', '腎上腺素', '立刻回復 60 生命，並加速 35% 持續 4 秒', 14),
   scan:       A('c', '視', '透視脈衝', '6 秒內隔著牆也看得到對手（隱身的也會現形），而且你對他的傷害 +20%', 12, { bot: false }),
   // ── 主動技能：稀有 ──
+  launch:     A('r', '升', '升天', '把看得到的對手（50 公尺內）原地往上噴飛 11 公尺高，順便造成 20 傷害；人在空中很難瞄準', 9),
+  gamble:     A('r', '賭', '賭博', '擲硬幣：贏了，對手隨機吃一種負面效果（凝結、暫停、致盲、升天、著火）；輸了換你自己吃', 8, { bot: false }),
+  monkey:     A('r', '猴', '梁允猴', '召喚一隻叫「梁允猴」的小猴子：跑得比人快，自己找到對手撲上去一直抓（60 血、14 秒，對手打得到牠）', 16, { bot: false }),
   cloak:      A('r', '隱', '光學迷彩', '隱身 5 秒，開槍、出刀或丟東西就會現形', 18),
   dome:       A('r', '罩', '能量護罩', '原地放出半徑 3.8 公尺的護罩 7 秒：子彈打不進也打不出，人可以走進去', 16),
   shock:      A('r', '震', '震地衝擊波', '超大範圍：震碎身邊一大片地形，把 16 公尺內的對手震飛，造成 50～120 傷害', 9),
@@ -93,6 +105,7 @@ export const CARDS = {
   // ── 主動技能：神話 ──
   timestop:   A('m', '停', '時間暫停', '對手完全靜止 2.5 秒：不能動、不能轉頭、不能開槍', 20, { lock: 3 }),
   fortress:   A('m', '堡', '堡壘', '在原地瞬間蓋起一座小城堡：四面岩石城牆、四角塔樓，你直接站上正中間 6 公尺高的哨塔頂；城門開在你面向的那一邊', 25, { lock: 3, bot: false }),
+  gaytay:     A('m', '巨', 'gay tay', '召喚金色巨人「gay tay」：拿機槍掃射對手，靠近就踩地把人震飛（700 血、20 秒，對手打得到它）', 30, { lock: 3, bot: false }),
   meteor:     A('m', '隕', '流星雨', '在瞄準的地方降下 7 顆隕石，會追著附近的對手砸，每顆 60 傷害、把地形砸得稀爛', 14, { lock: 4, bot: false }),
 };
 export const CARD_IDS = Object.keys(CARDS);
@@ -141,6 +154,10 @@ export function cardMods(ids = []) {
     grav: has('moon') ? 0.5 : 1,
     cd: has('overclock') ? 0.5 : 1, extraUses: has('overclock') ? 1 : 0,   // extraUses：守據點的沙包牆多一道
     twin: has('twin'), explosive: has('explosive'), ricochet: has('ricochet'), berserk: has('berserk'),
+    // 投擲物：爆破專家、縱火狂、煙幕大師、閃光大師
+    heDmg: has('boomer') ? 1.4 : 1, heR: has('boomer') ? 1.3 : 1, molR: has('pyro') ? 1.4 : 1, molDur: has('pyro') ? 1.5 : 1, molDps: has('pyro') ? 1.4 : 1,
+    smokeR: has('smoker') ? 1.4 : 1, smokeDur: has('smoker') ? 1.5 : 1, flashK: has('flasher') ? 1.6 : 1, flashSelf: !has('flasher'),
+    extraNades: { he: has('boomer') ? 1 : 0, molotov: has('pyro') ? 1 : 0, smoke: has('smoker') ? 1 : 0, flash: has('flasher') ? 1 : 0 },
     arsenal: has('arsenal'), radar: has('radar'), ghost: has('ghost'), hunter: has('hunter'), bullet: has('bullet'), reaper: has('reaper'),
   };
 }

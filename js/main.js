@@ -27,6 +27,7 @@ import { SPRAYS, sprayTex } from './sprays.js';
 import { Voice } from './voice.js';
 import { Editor, PALETTE, SYM } from './editor.js';
 import { Skills } from './skills.js';
+import { Pets } from './pets.js';
 import { CARDS, cardName } from './cards.js';
 import { Horde, MOBS, HZ_TIER, HZ_LEVELS } from './horde.js';
 
@@ -94,6 +95,7 @@ class Game {
     this.pedestal.position.set(24, 14.93, 24); this.pedestal.visible = false; this.pedestal.receiveShadow = true; this.scene.add(this.pedestal);
     this.combat = new Combat(this);
     this.skills = new Skills(this);
+    this.pets = new Pets(this);
     this.horde = new Horde(this);
     this.net = new Net();
     this.replay = new Replay();
@@ -308,14 +310,16 @@ class Game {
   // 子彈打得到的目標：對戰時是對手；機器人模式是場上的機器人（打不到隊友）。回傳 { t, head, id }，id -1 = 對手
   rayTarget(ox, oy, oz, dx, dy, dz) {
     if (this.horde.on) return this.horde.rayHit(ox, oy, oz, dx, dy, dz);
-    const h = this.remote.rayHit(ox, oy, oz, dx, dy, dz);
-    return h ? { t: h.t, head: h.head, id: -1 } : null;
+    const h = this.remote.rayHit(ox, oy, oz, dx, dy, dz), a = h ? { t: h.t, head: h.head, id: -1 } : null;
+    const p = this.pets.rayHit(ox, oy, oz, dx, dy, dz);                // 對手的召喚物也打得到（id 是 'pet數字'）
+    return p && (!a || p.t < a.t) ? p : a;
   }
   // 爆炸、火這類範圍傷害：每個能打的目標 fn(id, 腳底位置, 體型)
-  eachTarget(fn) { if (this.horde.on) this.horde.each(fn); else if (this.remote.alive) fn(-1, this.remote.pos, 1); }
-  targetYaw(id) { return id === -1 ? this.remote.yaw : this.horde.yawOf(id); }
+  eachTarget(fn) { if (this.horde.on) this.horde.each(fn); else { if (this.remote.alive) fn(-1, this.remote.pos, 1); this.pets.each(fn); } }
+  targetYaw(id) { return id === -1 ? this.remote.yaw : String(id).startsWith('pet') ? this.pets.yawOf(id) : this.horde.yawOf(id); }
   // 打中了：對手走裁判的 'hit'；機器人走 'mobhit'（房主那邊扣它的血）
   hitTarget(id, d, head, w, x) {
+    if (String(id).startsWith('pet')) { this.pets.hit(id, d, head); return; }   // 打中對手的召喚物：通知主人扣血
     if (id !== -1) { this.auth('mobhit', { r: this.round, id, d, h: head, w }); this.horde.flash(id); return; }
     this.auth('hit', { r: this.round, d, h: head, w, ...(x || {}) }); this.remote.hitFlash();
   }
@@ -404,7 +408,7 @@ class Game {
     // kind 'dig' = 只挖地形、沒有爆炸特效；fxk = 技能的爆炸要用哪一種特效
     const kind = ['flash', 'smoke', 'molotov', 'dig'].includes(d.kind) ? d.kind : undefined;
     const fxk = ['mini', 'shock', 'orbital', 'void'].includes(d.fxk) ? d.fxk : undefined;
-    return { r: d.r, pid: d.pid | 0, p: [d.p[0], d.p[1], d.p[2]], kind, fxk, br: num(d.br, 6), bp: num(d.bp, 1500), rad: num(d.rad, 18), k: num(d.k, 32), cloud: num(d.cloud, 4.5) || undefined, dur: num(d.dur, 15) || undefined, own: d.own === 0 || d.own === 1 ? d.own : -1 };
+    return { r: d.r, pid: d.pid | 0, p: [d.p[0], d.p[1], d.p[2]], kind, fxk, br: num(d.br, 6), bp: num(d.bp, 1500), rad: num(d.rad, 18), k: num(d.k, 32), cloud: num(d.cloud, 8.5) || undefined, dur: num(d.dur, 25) || undefined, fk: num(d.fk, 2) || undefined, ns: d.ns ? 1 : 0, own: d.own === 0 || d.own === 1 ? d.own : -1 };
   }
   _sendMap(id) { const m = MAPS[id]; if (m && m.custom && this.net.isHost && this.net.connected) this.net.send('map', { id, code: m.code }); }
 
@@ -511,6 +515,7 @@ class Game {
     this.lockerOpen = false; this.doll.group.visible = this.pedestal.visible = false; this.buyOpen = false;
     this.remote.alive = false; this.remote.group.visible = false; this.ghost.group.visible = false;
     this._endKillcam(); this.emote = null; this.editor.close(); this.hurtSrc = null; this.hud.hurtDir(0, 0);
+    this.pets.clear();
     this.exitLock(); this.hud.showHud(false); this.hud.clearBanner(); this.hud.report(null); this.hud.show('menu'); this.hud.menuMsg('');
     this.combat.clearProjectiles(); this.fx.clear(); this.skills.clear(); this.horde.stop(); this.sfx.stopLoops(); this.sfx.ambient(null);
     for (const m of this.pickMeshes) m.visible = false;
@@ -854,7 +859,7 @@ class Game {
   // 爆炸：改地形 + 特效 + 把本機玩家炸飛（傷害由開槍方另外回報）
   doExplosion(m) {
     const [x, y, z] = m.p;
-    if (m.kind === 'flash') { this.doFlash(x, y, z); return; }
+    if (m.kind === 'flash') { this.doFlash(x, y, z, m); return; }
     const dist = _v1.set(x, y, z).distanceTo(this.camera.position), pan = this.panOf(x, z);
     if (m.kind === 'smoke') {
       const r = m.cloud || 3;
@@ -903,26 +908,27 @@ class Game {
   }
 
   // 閃光彈：有看到它（沒被牆或煙擋住）才會被閃；正對著看最慘，背對只白一下
-  doFlash(x, y, z) {
-    const cam = this.camera, c = cam.position;
+  // m.fk：閃光強度倍率（閃光大師）；m.ns：丟的人自己不會被閃到
+  doFlash(x, y, z, m = {}) {
+    const cam = this.camera, c = cam.position, fk = m.fk || 1, immune = m.ns && m.own === this.me;
     let dx = x - c.x, dy = y - c.y, dz = z - c.z;
     const dist = Math.hypot(dx, dy, dz) || 0.01;
     dx /= dist; dy /= dist; dz /= dist;
     this.fx.flashBurst(x, y, z);
     let dur = 0;
-    if (this.inRound() && this.meAlive() && dist < 34 && !this.kc) {
+    if (this.inRound() && this.meAlive() && dist < 50 * fk && !this.kc && !immune) {
       const blocked = (dist > 0.8 && !!this.world.raycast(c.x, c.y, c.z, dx, dy, dz, dist - 0.5)) || this.fx.smokeBlocked(c.x, c.y, c.z, x, y, z);
       if (!blocked) {
         const e = cam.matrixWorld.elements, dot = -(e[8] * dx + e[9] * dy + e[10] * dz);
-        const k = (dot > 0.3 ? 1 : dot > -0.35 ? 0.55 : 0.2) * clamp(1.2 - dist / 24, 0.2, 1);
-        dur = 0.4 + 3 * k;
+        const k = (dot > 0.3 ? 1 : dot > -0.35 ? 0.55 : 0.2) * clamp(1.2 - dist / (36 * fk), 0.2, 1);
+        dur = (0.4 + 3 * k) * fk;
         this.hud.flash(Math.min(1, 0.4 + k), dur);
         this.sendPeer('blind', { d: +dur.toFixed(1) });
       }
     }
     this.sfx.flashbang(dist, this.panOf(x, z), dur);
-    if (this.bot) this.bot.onFlash(x, y, z);
-    this.horde.onFlash(x, y, z);
+    if (this.bot) this.bot.onFlash(x, y, z, fk);
+    this.horde.onFlash(x, y, z, fk);
   }
 
   // ───────── 噴漆、表情動作 ─────────
@@ -1074,6 +1080,7 @@ class Game {
       }
       cam.updateMatrixWorld();
       this.skills.update(dt, now);
+      this.pets.update(dt, now);
 
       const canFire = act && alive && live && !this.emote && !this.kc && !this.skills.noFire();
       cb.update(dt, { fire: this.mouse.l, firePressed: this.mouse.lp, ads: adsKey, reload: this.reloadPressed }, canFire);

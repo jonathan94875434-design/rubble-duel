@@ -52,6 +52,8 @@ export class Bot {
       if (d.id === 'chrono') { this.slowUntil = now + dur(0.5, 6); this.reactAt = now + 700; }
       else if (d.id === 'timestop') { this.stopUntil = now + dur(0.5, 3.5); this.reactAt = this.stopUntil + 400; }
       else if (d.id === 'cloak') this.noSeeUntil = d.d > 0 ? now + d.d * 1000 : 0;
+      else if (d.id === 'launch') { const b = this.body; b.vel.y = Math.max(8, Math.min(26, +d.v || 20)); b.vel.x *= 0.3; b.vel.z *= 0.3; b.onGround = false; }
+      else if (d.id === 'blind') this.blindUntil = now + dur(0.5, 4);
       else if (d.id === 'blackhole' && Array.isArray(d.p)) this.hole = { x: d.p[0], y: d.p[1], z: d.p[2], end: now + dur(1, 6) };
       else if (d.id === 'swap' && Array.isArray(d.a) && d.a.length === 3 && d.a.every(Number.isFinite)) {
         const b = this.body; b.pos.set(d.a[0], d.a[1], d.a[2]); b.prev.copy(b.pos); b.rpos.copy(b.pos); b.vel.set(0, 0, 0);
@@ -124,16 +126,16 @@ export class Bot {
   }
 
   // 被閃光彈閃到：看得到它、而且面向它才算，期間不會開槍
-  onFlash(x, y, z) {
+  onFlash(x, y, z, fk = 1) {
     const b = this.body, ex = b.pos.x, ey = b.pos.y + PLAYER.EYE, ez = b.pos.z;
     let dx = x - ex, dy = y - ey, dz = z - ez;
     const dist = Math.hypot(dx, dy, dz) || 0.01;
-    if (dist > 34 || !this.gs || !this.gs.p[1].al) return;
+    if (dist > 50 * fk || !this.gs || !this.gs.p[1].al) return;
     dx /= dist; dy /= dist; dz /= dist;
     if ((dist > 0.8 && this.world.raycast(ex, ey, ez, dx, dy, dz, dist - 0.5)) || (this.blocked && this.blocked(ex, ey, ez, x, y, z))) return;
     const dot = -Math.sin(b.yaw) * dx - Math.cos(b.yaw) * dz;
-    const k = (dot > 0.3 ? 1 : dot > -0.35 ? 0.55 : 0.2) * Math.max(0.2, Math.min(1, 1.2 - dist / 24));
-    const dur = 0.4 + 3 * k;
+    const k = (dot > 0.3 ? 1 : dot > -0.35 ? 0.55 : 0.2) * Math.max(0.2, Math.min(1, 1.2 - dist / (36 * fk)));
+    const dur = (0.4 + 3 * k) * fk;
     this.blindUntil = performance.now() + dur * 1000;
     this.send('blind', { d: +dur.toFixed(1) });
   }
@@ -246,6 +248,7 @@ export class Bot {
     const used = (id) => { this.skAt[id] = now + CARDS[id].cd * 1000 * (this.mods.cd || 1); this.skUses[id] = (this.skUses[id] || 0) + 1; };
     if (can('stim') && me.hp < me.mhp - 55) { used('stim'); this.send('auth', { t: 'skill', r, id: 'stim' }); this.send('sk', { r, id: 'stim' }); }
     if (!foe.al) return;
+    if (can('launch') && los && dist < SK.launch.range - 5) { used('launch'); this.send('sk', { r, id: 'launch', v: SK.launch.up }); this.send('auth', { t: 'hit', r, d: SK.launch.dmg, h: false, w: 'launch' }); }
     if (can('timestop') && los && dist < 30) { used('timestop'); this.send('sk', { r, id: 'timestop', d: SK.timestop.time }); }
     if (can('chrono') && los && dist < 28) { used('chrono'); this.send('sk', { r, id: 'chrono', d: SK.chrono.time }); }
     const S = SK.shock;
