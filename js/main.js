@@ -366,10 +366,8 @@ class Game {
     if (this.combat.w && this.phase !== 'menu') this.view.setWeapon(this.combat.w.id, this.look());
     if (this.authority || this.net.connected) this.auth('look', this.look());
   }
-  // 打完一場給抽獎券（同一場只給一次）
-  _reward(kind, win, key) {
-    if (this._rewardKey === key) return;
-    this._rewardKey = key;
+  // 打完一場給抽獎券（跟戰績一樣，在進入 matchEnd 那一刻呼叫一次）
+  _reward(kind, win) {
     const n = (REWARD[kind] || 0) + (win ? REWARD.win : 0);
     this.crate.earn(n); this.hud.ticketGain(n);
   }
@@ -685,11 +683,11 @@ class Game {
     }
     else if (gs.phase === 'matchEnd') {
       this.exitLock(); h.showHud(false); h.clearBanner(); h.show('end'); this.sfx.stopLoops(); this.skills.clear();
-      if (gs.hz) { this._hzRecord(gs); this.sfx.win(); this._reward('horde', false, this.code + ':' + gs.round + ':hz'); return; }   // 機器人模式：結算畫面另外畫，也不記進對戰戰績
+      if (gs.hz) { this._hzRecord(gs); this.sfx.win(); this._reward('horde', false); return; }   // 機器人模式：結算畫面另外畫，也不記進對戰戰績
       if (gs.mw === this.me) this.sfx.win(); else this.sfx.lose();
       const me = gs.p[this.me], opp = gs.p[1 - this.me];
       this.stats.match(this.mode(), { win: gs.mw === this.me, my: me.sc, their: opp.sc, opp: opp.n, map: MAPS[gs.map].name });
-      this._reward(this.mode(), gs.mw === this.me, this.code + ':' + gs.round + ':' + me.sc + ':' + opp.sc);
+      this._reward(this.mode(), gs.mw === this.me);
     }
   }
 

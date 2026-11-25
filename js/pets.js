@@ -109,9 +109,10 @@ export class Pets {
   spawn(kind) {
     const g = this.g, P = g.player, S = SK[kind];
     if (!g.remote.alive) return false;
-    const fx = -Math.sin(P.yaw), fz = -Math.cos(P.yaw);
+    const fx = -Math.sin(P.yaw), fz = -Math.cos(P.yaw), rx = Math.cos(P.yaw), rz = -Math.sin(P.yaw);
+    const f = kind === 'gaytay' ? 1 : 1.6, sd = kind === 'gaytay' ? 2.6 : 0;   // 巨人生在右手邊，不要一出來就擋住自己的視線
     const body = new Player(g.world);
-    body.spawn({ x: P.pos.x + fx * 1.6, y: P.pos.y + 0.2, z: P.pos.z + fz * 1.6, yaw: P.yaw });
+    body.spawn({ x: P.pos.x + fx * f + rx * sd, y: P.pos.y + 0.2, z: P.pos.z + fz * f + rz * sd, yaw: P.yaw });
     if (body.collides(body.pos.x, body.pos.y, body.pos.z)) body.spawn({ x: P.pos.x, y: P.pos.y + 0.2, z: P.pos.z, yaw: P.yaw });
     const n = this.nid++;
     const p = { n, kind, body, hp: S.hp, max: S.hp, end: performance.now() + S.time * 1000, atkAt: 0, stompAt: 0, path: null, pi: 0, planAt: 0, view: this._mkView(kind, true), anim: 0, lunge: 0 };
