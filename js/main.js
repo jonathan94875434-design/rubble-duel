@@ -45,6 +45,9 @@ const DEG = Math.PI / 180;
 const YAW_PER_COUNT = 0.022 * DEG;
 // 舊版的靈敏度（每像素 0.0022 弧度 × 值）換成 Apex 的數字，手感不變
 const OLD_SENS = 0.0022 / YAW_PER_COUNT;
+// FOV 也跟 Apex 同一套數字：設定裡的值是「4:3 畫面的水平視角」（Apex 90 = 16:9 螢幕水平 106°），鏡頭要的是垂直視角
+const vfovOf = (afov) => 2 * Math.atan(Math.tan((afov * DEG) / 2) * 0.75) / DEG;
+const afovOf = (vfov) => 2 * Math.atan(Math.tan((vfov * DEG) / 2) / 0.75) / DEG;
 const _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v2s = new THREE.Vector2(), _c1 = new THREE.Color();
 const ROUND_PHASES = ['countdown', 'playing', 'roundEnd', 'warmup', 'horde'];
 const WARM_LOADOUT = { p: 'ar', s: 'pistol', armor: 1, he: 1, flash: 1, smoke: 1, molotov: 1 };
@@ -57,7 +60,8 @@ class Game {
     this.crate = new Crate();   // 補給箱（抽獎）：要比造型先讀，刀和特殊塗裝只能裝已經抽到的
     const look = validLook({ s: store.get('skin'), w: store.get('wskin'), k: store.get('knife'), p: store.get('wsp', null) });
     this.settings = {
-      name: store.get('name', ''), fov: store.get('fov', 82), vol: store.get('vol', 0.6),
+      name: store.get('name', ''), vol: store.get('vol', 0.6),
+      afov: store.get('afov', null) ?? (store.get('fov', null) === null ? 90 : Math.round(afovOf(store.get('fov')))),   // 視野（Apex 的數字，預設 90 跟 Apex 一樣；舊版存的垂直視角會換算）
       // 靈敏度（Apex 的數字，預設 5 跟 Apex 一樣）、開鏡倍率（1 = 照放大倍數等比縮小，跟 Apex 的 1.0 一樣）、原始輸入（不吃系統的滑鼠加速）
       asens: store.get('asens', null) ?? Math.round(store.get('sens', 5 / OLD_SENS) * OLD_SENS * 100) / 100,
       adsMul: store.get('adsMul', 1), raw: store.get('raw', true),
@@ -143,7 +147,7 @@ class Game {
     r.shadowMap.enabled = true; r.shadowMap.type = THREE.PCFSoftShadowMap;
     r.toneMapping = THREE.ACESFilmicToneMapping;
     this.scene = new THREE.Scene();
-    this.camera = new THREE.PerspectiveCamera(this.settings.fov, 1, 0.05, 700);
+    this.camera = new THREE.PerspectiveCamera(vfovOf(this.settings.afov), 1, 0.05, 700);
     this.camera.rotation.order = 'YXZ';
     this.env = new Environment(this.scene, r, new THREE.Vector3(24, 0, 24), 24);
     this.post = new Post(r);
@@ -362,6 +366,7 @@ class Game {
     const ok = await this.voice.setMode(mode);
     if (!ok && this.voice.err) { this.hud.toast(this.voice.err); this.settings.voice = 'off'; store.set('voice', 'off'); this.hud.syncSettings(); }
   }
+  vfov() { return vfovOf(this.settings.afov); }   // 現在的垂直視角（介面上算水平視角用）
   look() { return { s: this.settings.skin, w: this.settings.wskin, k: this.settings.knife, p: { ...this.settings.wsp } }; }
   // 補給箱的東西：裝上／卸下（再點一次 = 卸下）。刀型換回戰鬥刀，特殊塗裝換回一般塗裝
   equipped(id) { const it = ITEMS[id]; return !!it && (it.knife ? this.settings.knife === it.knife : this.settings.wsp[it.w] === it.f); }
@@ -1080,7 +1085,7 @@ class Game {
       }
       if (frame) {
         // 擊殺回放：鏡頭放在對手的眼睛，畫面上的「我」是分身
-        if (Math.abs(cam.fov - this.settings.fov) > 0.01) { cam.fov = this.settings.fov; cam.updateProjectionMatrix(); }
+        const vf = vfovOf(this.settings.afov); if (Math.abs(cam.fov - vf) > 0.01) { cam.fov = vf; cam.updateProjectionMatrix(); }
         cam.position.set(frame.kx, frame.ky + lerp(PLAYER.EYE, PLAYER.CROUCH_EYE, frame.kcr), frame.kz);
         cam.rotation.set(clamp(frame.kp, -1.55, 1.55), frame.kyaw, 0);
         const g = this.ghost;
@@ -1099,7 +1104,7 @@ class Game {
         cam.position.set(ex + bx * d, ey + by * d, ez + bz * d); cam.lookAt(ex, ey - 0.25, ez);
       } else {
         const zoom = this.zoom();
-        const fov = 2 * Math.atan(Math.tan((this.settings.fov * DEG) / 2) / zoom) / DEG;
+        const fov = 2 * Math.atan(Math.tan((vfovOf(this.settings.afov) * DEG) / 2) / zoom) / DEG;
         if (Math.abs(cam.fov - fov) > 0.01) { cam.fov = fov; cam.updateProjectionMatrix(); }
         // 鏡頭小動作：落地下沉、橫移時微微傾斜
         this.landDip *= Math.exp(-9 * dt);

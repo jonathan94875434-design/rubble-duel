@@ -138,16 +138,18 @@ export class Hud {
   setPaused(v) { if (v) this._settings('pause'); else if (this.setMode === 'pause') this._settings(null); }
 
   // 把設定值填回各個控制項
-  // 靈敏度底下的換算：轉一圈要幾度（用 800 DPI 換算成公分，Apex 玩家常用的比法）
+  // 靈敏度底下的換算：轉一圈要幾公分（用 800 DPI 算，Apex 玩家常用的比法）、現在的水平視角
   _sensHint() {
     const s = this.g.settings.asens, cm = (360 / (0.022 * s)) / 800 * 2.54;
-    $('sens-hint').textContent = `滑鼠每動 1 個單位轉 0.022° × ${s}。800 DPI 時轉一圈要 ${cm.toFixed(1)} 公分（eDPI ${Math.round(s * 800)}）。開鏡時會照放大倍數等比變慢，倍率 1.0 跟 Apex 預設一樣。`;
+    const asp = innerWidth / Math.max(1, innerHeight), h = 2 * Math.atan(Math.tan((this.g.vfov() * Math.PI) / 360) * asp) * 180 / Math.PI;
+    $('sens-hint').textContent = `滑鼠每動 1 個單位轉 0.022° × ${s}。800 DPI 時轉一圈要 ${cm.toFixed(1)} 公分（eDPI ${Math.round(s * 800)}）。開鏡時會照放大倍數等比變慢，倍率 1.0 跟 Apex 預設一樣。`
+      + `視野 ${this.g.settings.afov} 看到的範圍跟在 Apex 設 ${this.g.settings.afov} 一樣（這個畫面比例左右 ${Math.round(h)}°）。`;
   }
   syncSettings() {
     const st = this.g.settings, x = st.xh;
     for (const [id, key, out, fmt] of this._ranges) { $(id).value = st[key]; $(out).textContent = fmt(+st[key]); }
     $('chk-wheel').checked = !!st.wheel; $('chk-minimap').checked = !!st.minimap; $('chk-fps').checked = !!st.fps; $('chk-raw').checked = !!st.raw;
-    $('rng-sens').value = $('num-sens').value = st.asens; $('rng-ads').value = $('num-ads').value = st.adsMul; this._sensHint();
+    $('rng-sens').value = $('num-sens').value = st.asens; $('rng-ads').value = $('num-ads').value = st.adsMul; $('rng-fov').value = $('num-fov').value = st.afov; this._sensHint();
     const q = this.g.QUALITY[this.g.qualityId];      // 開機時畫質還沒決定，這裡可能是空的
     $('sel-quality').value = st.quality; $('out-quality').textContent = st.quality === 'auto' && q ? `（目前：${q.name}）` : '';
     $('sel-voice').value = st.voice;
@@ -324,10 +326,10 @@ export class Hud {
       g.setBind(this.capture, 'Mouse' + e.button); this.capture = null; this.renderBinds();
     }, true);
     this.renderBinds();
-    this._ranges = [['rng-fov', 'fov', 'out-fov', (v) => String(v)], ['rng-vol', 'vol', 'out-vol', (v) => Math.round(v * 100) + '%'], ['rng-vvol', 'voiceVol', 'out-vvol', (v) => Math.round(v * 100) + '%']];
+    this._ranges = [['rng-vol', 'vol', 'out-vol', (v) => Math.round(v * 100) + '%'], ['rng-vvol', 'voiceVol', 'out-vvol', (v) => Math.round(v * 100) + '%']];
     for (const [id, key, out, fmt] of this._ranges) $(id).addEventListener('input', (e) => { const v = +e.target.value; $(out).textContent = fmt(v); g.setSetting(key, v); });
     // 靈敏度、開鏡倍率：拉桿和數字框兩種都能改（數字框可以打到小數第二位，跟 Apex 一樣直接填）
-    for (const [rng, num, key, lo, hi] of [['rng-sens', 'num-sens', 'asens', 0.1, 40], ['rng-ads', 'num-ads', 'adsMul', 0.1, 5]]) {
+    for (const [rng, num, key, lo, hi] of [['rng-sens', 'num-sens', 'asens', 0.1, 40], ['rng-ads', 'num-ads', 'adsMul', 0.1, 5], ['rng-fov', 'num-fov', 'afov', 70, 110]]) {
       const set = (v, from) => { if (!Number.isFinite(v)) return; v = Math.min(hi, Math.max(lo, Math.round(v * 100) / 100)); g.setSetting(key, v); if (from !== rng) $(rng).value = v; if (from !== num) $(num).value = v; this._sensHint(); };
       $(rng).addEventListener('input', (e) => set(+e.target.value, rng));
       $(num).addEventListener('change', (e) => set(+e.target.value));
